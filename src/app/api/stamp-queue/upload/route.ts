@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
       action,
       webhookUrl: inputWebhookUrl,
       imageBase64,
+      croppedBase64,
       palletStt,
       palletTag,
       palletNotes,
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Tải ảnh lên và lưu vào Hàng đợi (Upload & Queue)
+    // 2. Tải ảnh lên và lưu vào Hàng đợi (Upload & Queue) hoặc Chỉ tải ảnh (Upload Only)
     if (!imageBase64) {
       return NextResponse.json(
         { success: false, error: 'Thiếu dữ liệu ảnh (imageBase64)' },
@@ -124,7 +125,37 @@ export async function POST(req: NextRequest) {
       throw new Error('Không tạo được đường dẫn ảnh con dấu')
     }
 
-    // 3. Thêm bản ghi vào bảng stamp_scan_queue
+    // Nếu chỉ tải ảnh để gán vào thùng quét thường (không cần đưa vào hàng đợi duyệt AI)
+    if (action === 'upload_only') {
+      return NextResponse.json({
+        success: true,
+        fileId: driveFileId,
+        viewUrl: driveViewUrl || finalImageUrl,
+        imageUrl: finalImageUrl,
+        isGoogleDrive: !!driveFileId,
+      })
+    }
+
+    // Lưu ảnh crop vùng con dấu (nếu client có gửi) để AI đọc nhanh gấp 3 lần và không tạp âm
+    let finalCropUrl: string | null = null
+    if (croppedBase64 && typeof croppedBase64 === 'string') {
+      try {
+        const cleanCrop = croppedBase64.replace(/^data:image\/\w+;base64,/, '')
+        const cropBuffer = Buffer.from(cleanCrop, 'base64')
+        const cropFilePath = `stamp-queue/crops/${cleanStt}_${Date.now()}.jpg`
+        const { error: cropErr } = await admin.storage
+          .from('operation-images')
+          .upload(cropFilePath, cropBuffer, { contentType: 'image/jpeg', upsert: true })
+        if (!cropErr) {
+          const { data: cropPub } = admin.storage.from('operation-images').getPublicUrl(cropFilePath)
+          finalCropUrl = cropPub?.publicUrl || null
+        }
+      } catch (cropSaveErr) {
+        console.warn('[StampQueue] Lỗi lưu ảnh crop:', cropSaveErr)
+      }
+    }
+
+    // 3. Thêm bản ghi vào bảng stamp_scan_queue (Dành cho chế độ AI Web Mẹ duyệt)
     const insertPayload: any = {
       system_code: systemCode,
       pallet_stt: cleanStt,
@@ -133,6 +164,7 @@ export async function POST(req: NextRequest) {
       box_count: Math.max(1, parseInt(String(boxCount), 10) || 30),
       box_weight: parseFloat(String(boxWeight)) || 20,
       image_url: finalImageUrl,
+      cropped_image_url: finalCropUrl,
       drive_file_id: driveFileId,
       drive_view_url: driveViewUrl,
       status: 'pending',
@@ -140,8 +172,30 @@ export async function POST(req: NextRequest) {
       created_by_name: createdByName || 'Kho',
     }
 
-    if (companyId) {
-      insertPayload.company_id = companyId
+    let resolvedCompanyId = companyId || null
+    if (!resolvedCompanyId && createdBy) {
+      const { data: prof } = await admin
+        .from('user_profiles')
+        .select('company_id')
+        .eq('id', createdBy)
+        .maybeSingle()
+      if (prof?.company_id) {
+        resolvedCompanyId = prof.company_id
+      }
+    }
+    if (!resolvedCompanyId) {
+      const { data: aiCfg } = await admin
+        .from('company_ai_settings')
+        .select('company_id')
+        .limit(1)
+        .maybeSingle()
+      if (aiCfg?.company_id) {
+        resolvedCompanyId = aiCfg.company_id
+      }
+    }
+
+    if (resolvedCompanyId) {
+      insertPayload.company_id = resolvedCompanyId
     }
 
     const { data: inserted, error: insertErr } = await admin

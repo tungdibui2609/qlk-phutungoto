@@ -3,7 +3,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle, Check, Pencil, Loader2, X, Smartphone, Calendar, Plus, Building2 } from 'lucide-react'
 import { useState, useRef } from 'react'
-import { LotItemImageManager } from './LotItemImageManager'
+import { LotItemImageManager, resolveLotItemImages } from './LotItemImageManager'
 import { Lot } from '../_hooks/useLotManagement'
 import { useRouter, usePathname } from 'next/navigation'
 import { TagDisplay } from '@/components/lots/TagDisplay'
@@ -882,7 +882,7 @@ export function LotCard({ affixTagSet, lot, isModuleEnabled, isUtilityEnabled, i
                                                 <div
                                                     key={item.id}
                                                     onClick={() => {
-                                                        const itemImages = (lot.metadata as any)?.item_images?.[item.id] || []
+                                                        const itemImages = resolveLotItemImages(lot, item.id)
                                                         if (itemImages.length > 0) {
                                                             setOpenImageItemId(item.id)
                                                         } else if (parsedHistory) {
@@ -1181,6 +1181,50 @@ export function LotCard({ affixTagSet, lot, isModuleEnabled, isUtilityEnabled, i
                             />
                         </div>
                     )
+                })()}
+
+                {/* Xem ảnh con dấu thùng carton từ Google Drive */}
+                {(() => {
+                    const allStampImages = resolveLotItemImages(lot);
+                    if (allStampImages.length === 0) return null;
+                    const firstImg = allStampImages[0];
+                    const firstItemId = (lot.lot_items || [])[0]?.id || 'default';
+                    return (
+                        <div className="mt-2 flex items-center justify-between p-2 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/70 dark:border-indigo-800/50 text-xs">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-8 h-8 rounded-lg overflow-hidden border border-indigo-200 dark:border-indigo-800 shrink-0 bg-white">
+                                    <img
+                                        src={`https://drive.google.com/thumbnail?id=${firstImg.fileId}&sz=w120`}
+                                        alt={firstImg.name}
+                                        referrerPolicy="no-referrer"
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                            const target = e.target as HTMLImageElement;
+                                            target.src = `https://lh3.googleusercontent.com/d/${firstImg.fileId}=s120`;
+                                        }}
+                                    />
+                                </div>
+                                <div className="min-w-0 flex flex-col">
+                                    <span className="font-bold text-indigo-900 dark:text-indigo-200 truncate flex items-center gap-1">
+                                        <span>Ảnh con dấu ({allStampImages.length})</span>
+                                        <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">• Google Drive</span>
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono">
+                                        {firstImg.name}
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setOpenImageItemId(firstItemId)}
+                                className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer shrink-0"
+                                title="Xem phóng to ảnh con dấu gốc"
+                            >
+                                <Eye size={13} />
+                                <span>Xem ảnh</span>
+                            </button>
+                        </div>
+                    );
                 })()}
 
                 {/* Xem tem thùng / Dữ liệu OCR điện thoại đã gắn */}

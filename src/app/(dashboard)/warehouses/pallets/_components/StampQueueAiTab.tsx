@@ -10,6 +10,8 @@ import {
   RefreshCw,
   Trash2,
   PackagePlus,
+  PackageCheck,
+  Zap,
   Loader2,
   Image as ImageIcon,
   AlertTriangle,
@@ -23,7 +25,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
-import { DEFAULT_STAMP_DICT, decodeStampBox } from '@/lib/stampDecoder'
+import { DEFAULT_STAMP_DICT, decodeStampBox, parseGeminiApiKeys } from '@/lib/stampDecoder'
 import { STAMP_GOOGLE_APPS_SCRIPT_TEMPLATE } from '@/lib/stampDriveUpload'
 
 interface StampQueueItem {
@@ -35,6 +37,7 @@ interface StampQueueItem {
   box_count: number
   box_weight: number
   image_url: string
+  cropped_image_url?: string | null
   drive_file_id?: string | null
   drive_view_url?: string | null
   approved_lot_code?: string | null
@@ -65,7 +68,7 @@ export function StampQueueAiTab({
 
   // Cấu hình Gemini API Key
   const [apiKey, setApiKey] = useState('')
-  const [modelName, setModelName] = useState('gemini-2.5-flash')
+  const [modelName, setModelName] = useState('gemini-3.5-flash')
   const [isEnabled, setIsEnabled] = useState(true)
   const [showKey, setShowKey] = useState(false)
   const [savingKey, setSavingKey] = useState(false)
@@ -84,8 +87,32 @@ export function StampQueueAiTab({
   const [decodingAll, setDecodingAll] = useState(false)
   const [decodingId, setDecodingId] = useState<string | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [approvingAll, setApprovingAll] = useState(false)
+  const [autoApproveOnDecode, setAutoApproveOnDecode] = useState(false)
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
+
+  // Khôi phục cờ Tự Động Duyệt từ localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('stamp_auto_approve_after_decode')
+      if (saved === 'true') {
+        setAutoApproveOnDecode(true)
+      }
+    }
+  }, [])
+
+  const handleToggleAutoApprove = (val: boolean) => {
+    setAutoApproveOnDecode(val)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('stamp_auto_approve_after_decode', val ? 'true' : 'false')
+    }
+    if (val) {
+      notify('⚡ Đã BẬT Tự Động Duyệt: AI đọc số xong sẽ tự động tạo thùng vào kho!')
+    } else {
+      notify('Đã TẮT Tự Động Duyệt: Chuyển về chế độ xem lại trước khi duyệt.')
+    }
+  }
 
   const notify = (msg: string) => {
     setToastMsg(msg)
@@ -255,7 +282,48 @@ export function StampQueueAiTab({
         throw new Error(json.error || 'Giải mã thất bại')
       }
 
-      notify(`✅ Đã giải mã thành công ${json.count || 0} ảnh bằng Gemini AI!`)
+      const decodedCount = Number(json.decodedCount ?? json.count ?? 0)
+      const errorCount = Number(json.errorCount ?? 0)
+
+      if (decodedCount > 0) {
+        notify(`✅ Đã giải mã thành công ${decodedCount} ảnh bằng Gemini AI!`)
+
+        // Nếu bật chế độ TỰ ĐỘNG DUYỆT: Tự động tạo thùng ngay lập tức
+        if (autoApproveOnDecode) {
+          try {
+            const { data: freshlyDecoded } = await (supabase as any)
+              .from('stamp_scan_queue')
+              .select('*')
+              .eq('system_code', systemCode)
+              .eq('status', 'decoded')
+              .not('stamp_line1', 'is', null)
+              .not('stamp_line2', 'is', null)
+
+            if (Array.isArray(freshlyDecoded) && freshlyDecoded.length > 0) {
+              notify(`⚡ Đang tự động duyệt & tạo thùng cho ${freshlyDecoded.length} Pallet...`)
+              let autoOk = 0
+              for (const it of freshlyDecoded) {
+                try {
+                  await approveSingleQueueItem(it)
+                  autoOk++
+                } catch (autoErr) {
+                  console.warn('Lỗi tự động duyệt Pallet:', it.pallet_stt, autoErr)
+                }
+              }
+              if (autoOk > 0) {
+                notify(`🎉 Đã tự động duyệt thành công ${autoOk} Pallet vào kho!`)
+                if (onApproved) onApproved()
+              }
+            }
+          } catch (autoErr) {
+            console.warn('Lỗi tiến trình tự động duyệt:', autoErr)
+          }
+        }
+      } else if (errorCount > 0) {
+        alert(`Không giải mã được ảnh (${errorCount} lỗi). Vui lòng kiểm tra lại ảnh hoặc Key.`)
+      } else {
+        notify('Không có ảnh nào cần giải mã.')
+      }
       await loadQueue()
     } catch (e: any) {
       alert(`Lỗi giải mã: ${e.message}`)
@@ -291,93 +359,95 @@ export function StampQueueAiTab({
       .eq('id', id)
   }
 
-  const handleApproveAndCreateBoxes = async (item: StampQueueItem) => {
+  const approveSingleQueueItem = async (item: StampQueueItem) => {
     const l1 = (item.stamp_line1 || '').trim()
     const l2 = (item.stamp_line2 || '').trim()
     if (!l1 && !l2) {
-      alert('Chưa có Dòng 1 / Dòng 2. Vui lòng bấm Giải mã AI hoặc nhập tay trước khi duyệt!')
-      return
+      throw new Error(`Pallet ${item.pallet_stt} chưa có Dòng 1 / Dòng 2`)
     }
 
+    const cleanStt = item.pallet_stt.trim().toUpperCase()
+    const dec = decodeStampBox(
+      { metadata: { scan_type: 'stamp', stamp_line1: l1, stamp_line2: l2 } },
+      stampDictMap
+    )
+
+    const { data: existingBoxes } = await supabase
+      .from('box_labels')
+      .select('metadata')
+      .filter('metadata->>pallet_stt', 'eq', cleanStt)
+
+    let startIdx = 1
+    if (Array.isArray(existingBoxes) && existingBoxes.length > 0) {
+      const maxIdx = Math.max(
+        ...existingBoxes.map((b: any) => parseInt(b?.metadata?.box_index, 10) || 0)
+      )
+      if (maxIdx > 0) startIdx = maxIdx + 1
+    }
+
+    const count = Number(item.box_count) || 30
+    const weight = Number(item.box_weight) || 20
+    const rowsToInsert = []
+
+    for (let i = 0; i < count; i++) {
+      const idx = startIdx + i
+      rowsToInsert.push({
+        code: `STAMP-${l1}-${l2}-${cleanStt}-${String(idx).padStart(3, '0')}`,
+        quantity: weight,
+        unit: 'Kg',
+        semi_finished_lot_code: l2,
+        finished_lot_code: l2,
+        system_code: systemCode,
+        status: 'printed',
+        metadata: {
+          pallet_stt: cleanStt,
+          pallet_tag: item.pallet_tag || undefined,
+          pallet_notes: item.pallet_notes || undefined,
+          scan_type: 'stamp',
+          stamp_line1: l1,
+          stamp_line2: l2,
+          box_index: idx,
+          sku: dec.isSpecial12 ? dec.special12Code : dec.code || 'SKU',
+          product_name:
+            dec.productTitle || (dec.isSpecial12 ? dec.special12Name : 'Sản phẩm đóng dấu'),
+          spec: dec.spec || 'Ngoại lệ trọn gói',
+          shift_group: dec.factoryName,
+          region: dec.provinceName,
+          production_date: dec.rawMaterialDateStr,
+          raw_material_date: dec.rawMaterialDateStr,
+          packaging_date: dec.packagingDateStr,
+          supplier: dec.supplierCode,
+          is_special_12: dec.isSpecial12,
+          special_12_code: dec.special12Code,
+          special_12_name: dec.special12Name,
+          source_queue_id: item.id,
+          // Đính kèm thông tin Google Drive ảnh gốc vào từng thùng hàng
+          stamp_image_url: item.image_url,
+          drive_file_id: item.drive_file_id || undefined,
+          drive_view_url: item.drive_view_url || undefined,
+        },
+      })
+    }
+
+    const { error: insertErr } = await supabase.from('box_labels').insert(rowsToInsert as any)
+    if (insertErr) throw insertErr
+
+    const { data: userData } = await supabase.auth.getUser()
+    await (supabase as any)
+      .from('stamp_scan_queue')
+      .update({
+        status: 'approved',
+        approved_by: userData?.user?.id || null,
+        approved_at: new Date().toISOString(),
+      })
+      .eq('id', item.id)
+  }
+
+  const handleApproveAndCreateBoxes = async (item: StampQueueItem) => {
     setApprovingId(item.id)
     try {
-      const cleanStt = item.pallet_stt.trim().toUpperCase()
-      const dec = decodeStampBox(
-        { metadata: { scan_type: 'stamp', stamp_line1: l1, stamp_line2: l2 } },
-        stampDictMap
-      )
-
-      const { data: existingBoxes } = await supabase
-        .from('box_labels')
-        .select('metadata')
-        .filter('metadata->>pallet_stt', 'eq', cleanStt)
-
-      let startIdx = 1
-      if (Array.isArray(existingBoxes) && existingBoxes.length > 0) {
-        const maxIdx = Math.max(
-          ...existingBoxes.map((b: any) => parseInt(b?.metadata?.box_index, 10) || 0)
-        )
-        if (maxIdx > 0) startIdx = maxIdx + 1
-      }
-
-      const count = Number(item.box_count) || 30
-      const weight = Number(item.box_weight) || 20
-      const rowsToInsert = []
-
-      for (let i = 0; i < count; i++) {
-        const idx = startIdx + i
-        rowsToInsert.push({
-          code: `STAMP-${l1}-${l2}-${cleanStt}-${String(idx).padStart(3, '0')}`,
-          quantity: weight,
-          unit: 'Kg',
-          semi_finished_lot_code: l2,
-          finished_lot_code: l2,
-          system_code: systemCode,
-          status: 'printed',
-          metadata: {
-            pallet_stt: cleanStt,
-            pallet_tag: item.pallet_tag || undefined,
-            pallet_notes: item.pallet_notes || undefined,
-            scan_type: 'stamp',
-            stamp_line1: l1,
-            stamp_line2: l2,
-            box_index: idx,
-            sku: dec.isSpecial12 ? dec.special12Code : dec.code || 'SKU',
-            product_name:
-              dec.productTitle || (dec.isSpecial12 ? dec.special12Name : 'Sản phẩm đóng dấu'),
-            spec: dec.spec || 'Ngoại lệ trọn gói',
-            shift_group: dec.factoryName,
-            region: dec.provinceName,
-            production_date: dec.rawMaterialDateStr,
-            raw_material_date: dec.rawMaterialDateStr,
-            packaging_date: dec.packagingDateStr,
-            supplier: dec.supplierCode,
-            is_special_12: dec.isSpecial12,
-            special_12_code: dec.special12Code,
-            special_12_name: dec.special12Name,
-            source_queue_id: item.id,
-            // Đính kèm thông tin Google Drive ảnh gốc vào từng thùng hàng
-            stamp_image_url: item.image_url,
-            drive_file_id: item.drive_file_id || undefined,
-            drive_view_url: item.drive_view_url || undefined,
-          },
-        })
-      }
-
-      const { error: insertErr } = await supabase.from('box_labels').insert(rowsToInsert as any)
-      if (insertErr) throw insertErr
-
-      const { data: userData } = await supabase.auth.getUser()
-      await (supabase as any)
-        .from('stamp_scan_queue')
-        .update({
-          status: 'approved',
-          approved_by: userData?.user?.id || null,
-          approved_at: new Date().toISOString(),
-        })
-        .eq('id', item.id)
-
-      notify(`✅ Đã duyệt & tạo ${count} thùng vào Pallet ${cleanStt}! (Đã gắn ảnh Google Drive)`)
+      await approveSingleQueueItem(item)
+      notify(`✅ Đã duyệt & tạo ${item.box_count} thùng vào Pallet ${item.pallet_stt}! (Đã gắn ảnh Google Drive)`)
       await loadQueue()
       if (onApproved) {
         onApproved()
@@ -386,6 +456,43 @@ export function StampQueueAiTab({
       alert(`Lỗi duyệt tạo thùng: ${e.message}`)
     } finally {
       setApprovingId(null)
+    }
+  }
+
+  const handleApproveAllDecoded = async () => {
+    const decodedItems = items.filter(
+      it => (it.status === 'decoded' || (it.stamp_line1 && it.stamp_line2)) && it.status !== 'approved'
+    )
+    if (decodedItems.length === 0) {
+      alert('Không có Pallet nào đã giải mã xong để duyệt!')
+      return
+    }
+
+    const ok = confirm(`Duyệt & Tạo thùng tự động cho TẤT CẢ ${decodedItems.length} Pallet đã đọc số?`)
+    if (!ok) return
+
+    setApprovingAll(true)
+    let okCount = 0
+    let errCount = 0
+
+    for (const item of decodedItems) {
+      try {
+        await approveSingleQueueItem(item)
+        okCount++
+      } catch (e) {
+        console.error('Approve error item:', item.pallet_stt, e)
+        errCount++
+      }
+    }
+
+    setApprovingAll(false)
+    await loadQueue()
+    if (onApproved) onApproved()
+
+    if (errCount === 0) {
+      notify(`🎉 Đã duyệt và tạo thùng thành công cho tất cả ${okCount} Pallet!`)
+    } else {
+      alert(`Đã duyệt: ${okCount} thành công, ${errCount} thất bại.`)
     }
   }
 
@@ -404,6 +511,7 @@ export function StampQueueAiTab({
   })
 
   const pendingOrErrorCount = items.filter(i => i.status === 'pending' || i.status === 'error').length
+  const decodedCount = items.filter(i => (i.status === 'decoded' || (i.stamp_line1 && i.stamp_line2)) && i.status !== 'approved').length
 
   return (
     <div className="space-y-5">
@@ -462,12 +570,32 @@ export function StampQueueAiTab({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Cột 1: Google Gemini API Key */}
+          {/* Cột 1: Google Gemini API Key (Hỗ trợ nhiều Key dự phòng xoay vòng) */}
           <div className="space-y-1.5 p-3 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-indigo-100 dark:border-indigo-900/50">
             <div className="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200">
               <span className="flex items-center gap-1.5">
                 <KeyRound size={13} className="text-indigo-600" />
                 <span>1. Google Gemini API Key (Đọc 2 dòng số)</span>
+                {(() => {
+                  const detected = parseGeminiApiKeys(apiKey)
+                  if (detected.length > 1) {
+                    return (
+                      <span className="px-1.5 py-0.2 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 font-bold text-[10px]">
+                        🟢 {detected.length} Key dự phòng
+                      </span>
+                    )
+                  }
+                  if (detected.length === 1) {
+                    return (
+                      <span className="px-1.5 py-0.2 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 font-bold text-[10px]">
+                        1 Key chính
+                      </span>
+                    )
+                  }
+                  return (
+                    <span className="text-slate-400 font-normal text-[10px]">(Chưa có Key)</span>
+                  )
+                })()}
               </span>
               <label className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-400 cursor-pointer">
                 <input
@@ -480,23 +608,43 @@ export function StampQueueAiTab({
               </label>
             </div>
             <div className="relative">
-              <input
-                type={showKey ? 'text' : 'password'}
+              <textarea
                 value={apiKey}
                 onChange={e => setApiKey(e.target.value)}
-                placeholder="Dán Gemini API Key (AIzaSy...)"
-                className="w-full px-3 py-1.5 pr-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                placeholder="Dán 1 hoặc nhiều Gemini API Key (AIzaSy...)\nMỗi tài khoản 1 dòng để tự động xoay vòng khi hết 250 lượt/ngày"
+                rows={showKey ? Math.max(2, Math.min(parseGeminiApiKeys(apiKey).length + 1, 5)) : 2}
+                style={!showKey ? ({ WebkitTextSecurity: 'disc' } as any) : undefined}
+                className="w-full px-3 py-1.5 pr-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-indigo-500 outline-none resize-y"
               />
               <button
                 type="button"
                 onClick={() => setShowKey(!showKey)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                title={showKey ? 'Ẩn mã Key' : 'Hiện mã Key'}
+                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
-              <span>Model: <b className="text-indigo-600 dark:text-indigo-400 font-mono">{modelName}</b> (Miễn phí 250 req/ngày)</span>
+            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5 flex-wrap gap-2">
+              <div className="flex items-center gap-1.5">
+                <span>Mô hình:</span>
+                <select
+                  value={modelName}
+                  onChange={e => setModelName(e.target.value)}
+                  className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-mono font-bold text-indigo-700 dark:text-indigo-300 outline-none cursor-pointer"
+                >
+                  <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Khuyên dùng: Siêu nhanh, 200 OK)</option>
+                  <option value="gemini-3.5-flash">gemini-3.5-flash (Chuẩn xác cao)</option>
+                  <option value="gemini-flash-latest">gemini-flash-latest (Bản mới nhất)</option>
+                  <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+                  <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+                </select>
+              </div>
+              {parseGeminiApiKeys(apiKey).length > 1 && (
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                  Tự động chuyển key khi lỗi 429
+                </span>
+              )}
             </div>
           </div>
 
@@ -582,7 +730,44 @@ export function StampQueueAiTab({
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Nút bật/tắt TỰ ĐỘNG DUYỆT */}
+          <label
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition select-none ${
+              autoApproveOnDecode
+                ? 'bg-amber-500/15 border-amber-500/50 text-amber-600 dark:text-amber-400 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+            }`}
+            title="Khi bật: Gemini AI giải mã xong sẽ TỰ ĐỘNG Duyệt & Tạo Thùng vào kho luôn mà không cần bấm tay!"
+          >
+            <input
+              type="checkbox"
+              checked={autoApproveOnDecode}
+              onChange={e => handleToggleAutoApprove(e.target.checked)}
+              className="w-4 h-4 rounded text-amber-600 accent-amber-600 cursor-pointer"
+            />
+            <Zap size={14} className={autoApproveOnDecode ? 'text-amber-500 fill-amber-500 animate-pulse' : 'text-slate-400'} />
+            <span>Tự động duyệt khi AI đọc</span>
+          </label>
+
+          {/* Nút DUYỆT TẤT CẢ ĐÃ ĐỌC */}
+          {decodedCount > 0 && (
+            <button
+              type="button"
+              onClick={handleApproveAllDecoded}
+              disabled={approvingAll}
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/25 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+              title="Duyệt và tạo thùng cho toàn bộ các Pallet đã được giải mã"
+            >
+              {approvingAll ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <PackageCheck size={14} />
+              )}
+              <span>Duyệt tất cả đã đọc ({decodedCount})</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => loadQueue()}
@@ -649,8 +834,24 @@ export function StampQueueAiTab({
                     {item.image_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={item.image_url}
+                        src={
+                          item.cropped_image_url && !item.cropped_image_url.includes('drive.google.com/file/d/')
+                            ? item.cropped_image_url
+                            : item.drive_file_id
+                            ? `https://lh3.googleusercontent.com/d/${item.drive_file_id}`
+                            : item.image_url
+                        }
                         alt="Con dấu"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          if (item.drive_file_id) {
+                            const target = e.target as HTMLImageElement
+                            if (!target.dataset.tried) {
+                              target.dataset.tried = '1'
+                              target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w600`
+                            }
+                          }
+                        }}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                       />
                     ) : (
@@ -665,6 +866,18 @@ export function StampQueueAiTab({
                       <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-md bg-blue-600/90 text-white text-[9px] font-bold flex items-center gap-0.5">
                         <Cloud size={10} />
                         <span>Drive</span>
+                      </div>
+                    )}
+                    {item.cropped_image_url && (
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setZoomImageUrl(item.cropped_image_url!)
+                        }}
+                        className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md bg-emerald-600/90 hover:bg-emerald-700 text-white text-[9px] font-bold flex items-center gap-0.5 cursor-pointer shadow-xs z-10"
+                        title="Bấm để xem ảnh cắt khung ngắm (vùng AI đọc)"
+                      >
+                        <span>✂️ Crop AI</span>
                       </div>
                     )}
                   </div>
@@ -917,8 +1130,20 @@ export function StampQueueAiTab({
             <div className="p-2 overflow-auto flex items-center justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={zoomImageUrl}
+                src={
+                  zoomImageUrl?.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1]
+                    ? `https://lh3.googleusercontent.com/d/${zoomImageUrl.match(/\/d\/([a-zA-Z0-9_-]+)/)![1]}`
+                    : zoomImageUrl
+                }
                 alt="Phóng to"
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  const target = e.currentTarget
+                  if (!target.dataset.tried && zoomImageUrl) {
+                    target.dataset.tried = '1'
+                    target.src = zoomImageUrl
+                  }
+                }}
                 className="max-h-[75vh] w-auto object-contain rounded-lg"
               />
             </div>

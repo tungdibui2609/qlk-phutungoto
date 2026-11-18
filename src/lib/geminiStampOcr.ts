@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { getServerSupabaseUrl } from '@/lib/supabaseUrl'
-import { DEFAULT_STAMP_DICT, decodeStampBox } from '@/lib/stampDecoder'
+import { DEFAULT_STAMP_DICT, decodeStampBox, parseGeminiApiKeys } from '@/lib/stampDecoder'
 import { cleanStampNumericString } from '@/lib/ocrParser'
 
 export function createAdminSupabaseClient() {
@@ -11,8 +11,11 @@ export function createAdminSupabaseClient() {
   })
 }
 
+export { parseGeminiApiKeys }
+
 export interface GeminiConfig {
   apiKey: string
+  apiKeys: string[]
   model: string
 }
 
@@ -31,9 +34,13 @@ export async function resolveGeminiConfig(companyId?: string | null): Promise<Ge
 
     const { data } = await query.limit(1).maybeSingle()
     if (data && data.gemini_api_key && String(data.gemini_api_key).trim()) {
-      return {
-        apiKey: String(data.gemini_api_key).trim(),
-        model: String(data.gemini_model || 'gemini-2.5-flash').trim(),
+      const keys = parseGeminiApiKeys(String(data.gemini_api_key))
+      if (keys.length > 0) {
+        return {
+          apiKey: keys[0],
+          apiKeys: keys,
+          model: String(data.gemini_model || 'gemini-2.0-flash').trim(),
+        }
       }
     }
   } catch (err) {
@@ -43,9 +50,13 @@ export async function resolveGeminiConfig(companyId?: string | null): Promise<Ge
   // 2. Fallback sang biến môi trường server (.env.local)
   const envKey = (process.env.GEMINI_API_KEY || '').trim()
   if (envKey) {
-    return {
-      apiKey: envKey,
-      model: (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim(),
+    const keys = parseGeminiApiKeys(envKey)
+    if (keys.length > 0) {
+      return {
+        apiKey: keys[0],
+        apiKeys: keys,
+        model: (process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim(),
+      }
     }
   }
 
@@ -96,11 +107,32 @@ export async function fetchServerStampDictionary(
 export async function recognizeStampWithGemini(params: {
   imageBase64: string
   mimeType?: string
-  apiKey: string
+  apiKey?: string
+  apiKeys?: string[]
   model?: string
-}): Promise<{ line1: string; line2: string; rawText: string }> {
-  const { imageBase64, mimeType = 'image/jpeg', apiKey, model = 'gemini-2.5-flash' } = params
+}): Promise<{ line1: string; line2: string; rawText: string; usedKeyIndex: number; usedModel: string }> {
+  const { imageBase64, mimeType = 'image/jpeg', apiKey, apiKeys, model = 'gemini-3.5-flash' } = params
   const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '')
+
+  const candidateKeys: string[] = (apiKeys && apiKeys.length > 0)
+    ? apiKeys
+    : (apiKey ? [apiKey] : [])
+
+  if (candidateKeys.length === 0) {
+    throw new Error('Chưa cấu hình Gemini API Key hợp lệ.')
+  }
+
+  // Danh sách model ưu tiên (nếu model chỉ định bị 404 hoặc 503, tự động chuyển sang model kế tiếp)
+  const candidateModels = Array.from(new Set([
+    model,
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-latest',
+    'gemini-3.5-flash',
+    'gemini-3.8-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-pro-latest',
+  ])).filter(Boolean)
 
   const prompt = [
     'Bạn là hệ thống OCR công nghiệp chuyên đọc dấu mực đóng trên thùng carton.',
@@ -111,59 +143,104 @@ export async function recognizeStampWithGemini(params: {
     'Trả về JSON thuần theo đúng schema: {"line1": "...", "line2": "..."} (chỉ chứa chữ số 0-9 và dấu "-" ở line1, không giải thích thêm). Nếu không thấy dòng nào thì để chuỗi rỗng "".',
   ].join('\n')
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
+  let lastError: any = null
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: prompt },
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: cleanBase64,
+  for (let keyIdx = 0; keyIdx < candidateKeys.length; keyIdx++) {
+    const activeKey = candidateKeys[keyIdx]
+
+    for (let modIdx = 0; modIdx < candidateModels.length; modIdx++) {
+      const activeModel = candidateModels[modIdx]
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(activeModel)}:generateContent?key=${encodeURIComponent(activeKey)}`
+
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType,
+                      data: cleanBase64,
+                    },
+                  },
+                ],
               },
+            ],
+            generationConfig: {
+              temperature: 0,
+              responseMimeType: 'application/json',
             },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: 'application/json',
-      },
-    }),
-  })
+          }),
+        })
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    throw new Error(`Gemini API lỗi (${res.status}): ${errText.slice(0, 200)}`)
-  }
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '')
+          const is404 = res.status === 404
+          const is503 = res.status === 503
+          const isQuota =
+            res.status === 429 ||
+            res.status === 403 ||
+            /RESOURCE_EXHAUSTED|quota|rate\s*limit|overloaded/i.test(errText)
 
-  const json: any = await res.json()
-  const textOut: string =
-    json?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+          // Nếu model này bị 404 (không tồn tại) hoặc 503 (bận), thử model tiếp theo trong cùng key
+          if ((is404 || is503) && modIdx < candidateModels.length - 1) {
+            console.warn(`[GeminiOCR] Model ${activeModel} trả về ${res.status}. Tự động thử model dự phòng: ${candidateModels[modIdx + 1]}...`)
+            lastError = new Error(`Model ${activeModel} lỗi ${res.status}: ${errText.slice(0, 120)}`)
+            continue
+          }
 
-  let parsed: any = {}
-  try {
-    parsed = JSON.parse(textOut)
-  } catch {
-    const match = textOut.match(/\{[\s\S]*\}/)
-    if (match) {
-      parsed = JSON.parse(match[0])
+          // Nếu key này hết hạn mức (429/403), chuyển sang key tiếp theo
+          if (isQuota && keyIdx < candidateKeys.length - 1) {
+            console.warn(
+              `[GeminiOCR] Key thứ ${keyIdx + 1}/${candidateKeys.length} đạt hạn mức (${res.status}). Tự động thử key dự phòng tiếp theo...`
+            )
+            lastError = new Error(`Key ${keyIdx + 1} hết hạn mức (${res.status}): ${errText.slice(0, 150)}`)
+            break // nhảy sang key tiếp theo
+          }
+
+          throw new Error(
+            `Gemini API lỗi (${res.status}) với model ${activeModel}: ${errText.slice(0, 200)}`
+          )
+        }
+
+        const json: any = await res.json()
+        const textOut: string = json?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+
+        let parsed: any = {}
+        try {
+          parsed = JSON.parse(textOut)
+        } catch {
+          const match = textOut.match(/\{[\s\S]*\}/)
+          if (match) {
+            parsed = JSON.parse(match[0])
+          }
+        }
+
+        const line1 = cleanStampNumericString(String(parsed?.line1 || ''))
+        const line2 = cleanStampNumericString(String(parsed?.line2 || '')).replace(/-/g, '')
+
+        return {
+          line1,
+          line2,
+          rawText: `${line1}\n${line2}`.trim(),
+          usedKeyIndex: keyIdx,
+          usedModel: activeModel,
+        }
+      } catch (fetchErr: any) {
+        lastError = fetchErr
+        if (modIdx < candidateModels.length - 1) {
+          console.warn(`[GeminiOCR] Lỗi với ${activeModel}: ${fetchErr?.message}. Thử model tiếp theo...`)
+          continue
+        }
+      }
     }
   }
 
-  const line1 = cleanStampNumericString(String(parsed?.line1 || ''))
-  const line2 = cleanStampNumericString(String(parsed?.line2 || '')).replace(/-/g, '')
-
-  return {
-    line1,
-    line2,
-    rawText: `${line1}\n${line2}`.trim(),
-  }
+  throw lastError || new Error('Tất cả Gemini API Key và Model dự phòng đều gặp lỗi.')
 }
 
 export function buildDecodedStampPayload(

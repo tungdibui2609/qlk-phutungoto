@@ -338,21 +338,36 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
         if (newStampImages.length > 0) {
             const currentItemImages = lotMeta.item_images || {}
             const targetProdId = lotData.product_id || 'default'
-            const existingList = Array.isArray(currentItemImages[targetProdId]) ? currentItemImages[targetProdId] : []
-            const existingIds = new Set(existingList.map((img: any) => img.fileId))
-            const toAdd = newStampImages.filter(img => !existingIds.has(img.fileId))
 
-            if (toAdd.length > 0) {
-                lotMeta.item_images = {
-                    ...currentItemImages,
-                    [targetProdId]: [...existingList, ...toAdd]
+            // Lấy danh sách item.id trong lot_items để gán ảnh vào từng item
+            let lotItemIds: string[] = []
+            try {
+                const { data: lItems } = await (supabase.from('lot_items' as any) as any)
+                    .select('id')
+                    .eq('lot_id', targetLotId)
+                if (Array.isArray(lItems)) {
+                    lotItemIds = lItems.map((it: any) => String(it.id))
                 }
-                lotMeta.stamp_images = [
-                    ...(Array.isArray(lotMeta.stamp_images) ? lotMeta.stamp_images : []),
-                    ...toAdd
-                ]
-                lotUpdates.metadata = lotMeta
-            }
+            } catch {}
+
+            const updatedItemImages = { ...currentItemImages }
+            const keysToSync = Array.from(new Set([targetProdId, 'default', ...lotItemIds]))
+
+            keysToSync.forEach(k => {
+                const existing = Array.isArray(updatedItemImages[k]) ? updatedItemImages[k] : []
+                const existingIds = new Set(existing.map((img: any) => img.fileId))
+                const toAdd = newStampImages.filter(img => !existingIds.has(img.fileId))
+                if (toAdd.length > 0) {
+                    updatedItemImages[k] = [...existing, ...toAdd]
+                }
+            })
+
+            lotMeta.item_images = updatedItemImages
+            const currentStamp = Array.isArray(lotMeta.stamp_images) ? lotMeta.stamp_images : []
+            const currentStampIds = new Set(currentStamp.map((img: any) => img.fileId))
+            const newToStamp = newStampImages.filter(img => !currentStampIds.has(img.fileId))
+            lotMeta.stamp_images = [...currentStamp, ...newToStamp]
+            lotUpdates.metadata = lotMeta
         }
 
         if (Object.keys(lotUpdates).length > 0) {

@@ -67,15 +67,17 @@ export async function POST(req: NextRequest) {
       .select('*')
       .order('created_at', { ascending: true })
 
-    if (companyId) {
-      query = query.eq('company_id', companyId)
-    }
-    if (systemCode) {
-      query = query.eq('system_code', systemCode)
-    }
     if (ids && ids.length > 0) {
+      // Khi chọn cụ thể các bản ghi để giải mã, lọc trực tiếp theo danh sách id
       query = query.in('id', ids)
     } else {
+      // Quét lô hàng loạt: lấy các bản ghi của công ty hiện tại hoặc bản ghi cũ chưa gán company_id
+      if (companyId) {
+        query = query.or(`company_id.eq.${companyId},company_id.is.null`)
+      }
+      if (systemCode) {
+        query = query.eq('system_code', systemCode)
+      }
       query = query.in('status', ['pending', 'error']).limit(20)
     }
 
@@ -99,25 +101,52 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < queueItems.length; i++) {
       const item: any = queueItems[i]
       try {
-        const { base64, mimeType } = await imageUrlToBase64(item.image_url)
-        const gemRes = await recognizeStampWithGemini({
-          imageBase64: base64,
-          mimeType,
-          apiKey: geminiCfg.apiKey,
-          model: geminiCfg.model,
-        })
+        // Ưu tiên ảnh crop vùng con dấu để AI đọc siêu nhanh (~0.5s) và không bị nhiễu watermark ngày giờ
+        const targetUrl = item.cropped_image_url || item.image_url
+        let imgPayload = await imageUrlToBase64(targetUrl)
+
+        let gemRes: any
+        try {
+          gemRes = await recognizeStampWithGemini({
+            imageBase64: imgPayload.base64,
+            mimeType: imgPayload.mimeType,
+            apiKey: geminiCfg.apiKey,
+            apiKeys: geminiCfg.apiKeys,
+            model: geminiCfg.model,
+          })
+        } catch (firstErr) {
+          // Nếu ảnh crop lỗi mà có ảnh gốc thì fallback sang đọc ảnh gốc
+          if (item.cropped_image_url && item.image_url && targetUrl !== item.image_url) {
+            console.warn('[stamp-queue/decode] Đọc ảnh crop thất bại, fallback sang ảnh gốc:', firstErr)
+            imgPayload = await imageUrlToBase64(item.image_url)
+            gemRes = await recognizeStampWithGemini({
+              imageBase64: imgPayload.base64,
+              mimeType: imgPayload.mimeType,
+              apiKey: geminiCfg.apiKey,
+              apiKeys: geminiCfg.apiKeys,
+              model: geminiCfg.model,
+            })
+          } else {
+            throw firstErr
+          }
+        }
 
         const decoded = buildDecodedStampPayload(gemRes.line1, gemRes.line2, dict)
 
+        const updateData: any = {
+          stamp_line1: gemRes.line1,
+          stamp_line2: gemRes.line2,
+          decoded_json: decoded,
+          status: 'decoded',
+          error_message: null,
+        }
+        if (!item.company_id && companyId) {
+          updateData.company_id = companyId
+        }
+
         await admin
           .from('stamp_scan_queue')
-          .update({
-            stamp_line1: gemRes.line1,
-            stamp_line2: gemRes.line2,
-            decoded_json: decoded,
-            status: 'decoded',
-            error_message: null,
-          })
+          .update(updateData)
           .eq('id', item.id)
 
         decodedCount++

@@ -79,13 +79,14 @@ export async function proxy(request: NextRequest) {
     }
 
     // API Routes protection which requires user session
-    // Exception: /api/restore-admin, /api/auth/*, /api/notifications/* (Push Notifications), /api/public/*
+    // Exception: /api/restore-admin, /api/auth/*, /api/notifications/* (Push Notifications), /api/public/*, /api/stamp-queue/*
     if (!user && path.startsWith('/api/') && 
         !path.startsWith('/api/restore-admin') && 
         !path.startsWith('/api/auth/') && 
         !path.startsWith('/api/debug-perms') && 
         !path.startsWith('/api/notifications/') &&
         !path.startsWith('/api/ocr') &&
+        !path.startsWith('/api/stamp-queue/') &&
         !path.startsWith('/api/public/')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

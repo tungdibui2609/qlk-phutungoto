@@ -132,7 +132,7 @@ export default function WebScannerPage() {
     warehouse_map: false,
     pallets: false,
   })
-  const [palletListSubTab, setPalletListSubTab] = useState<'pending' | 'cloud'>('pending')
+  const [palletListSubTab, setPalletListSubTab] = useState<'pending' | 'stamp_pending' | 'stamp_decoded' | 'cloud'>('pending')
 
   const setActiveTab = useCallback((next: React.SetStateAction<any>) => {
     setActiveTabState((prev) => {
@@ -206,6 +206,7 @@ export default function WebScannerPage() {
     stamp_line1: string
     stamp_line2: string
     decoded?: any
+    imageBase64?: string
   } | null>(null)
   const [stampWeight, setStampWeight] = useState<string>('20')
   const [stampCount, setStampCount] = useState<string>('1')
@@ -214,6 +215,7 @@ export default function WebScannerPage() {
   const [manualStampLine2, setManualStampLine2] = useState<string>('')
   // Chụp gửi ảnh con dấu lên Web Mẹ (Server Gemini AI)
   const [pendingStampPhoto, setPendingStampPhoto] = useState<string | null>(null)
+  const [pendingStampCrop, setPendingStampCrop] = useState<string | null>(null)
   const [queueBoxCount, setQueueBoxCount] = useState<string>('30')
   const [queueBoxWeight, setQueueBoxWeight] = useState<string>('20')
   const [uploadingStampPhoto, setUploadingStampPhoto] = useState<boolean>(false)
@@ -973,7 +975,8 @@ export default function WebScannerPage() {
         setPendingStamp({
           stamp_line1: l1,
           stamp_line2: l2,
-          decoded: localDecoded || stampData.decoded
+          decoded: localDecoded || stampData.decoded,
+          imageBase64: base64,
         })
         setStampWeight('20')
         setStampCount('1')
@@ -1100,13 +1103,12 @@ export default function WebScannerPage() {
             supplier: dec.supplierCode,
             is_special_12: dec.isSpecial12,
             special_12_code: dec.special12Code,
-            special_12_name: dec.special12Name
+            special_12_name: dec.special12Name,
           }
         })
       }
 
-      // Local-First (giống App Android): luôn lưu vào Hàng chờ (IndexedDB) trước,
-      // sau khi chốt Pallet người dùng qua menu Pallet Kho -> Chờ đẩy lên để đồng bộ lên Web mẹ.
+      // 1. Local-First: lưu vào Hàng chờ (IndexedDB) ngay tức thì (0ms lag)
       await saveBoxesOffline(
         rowsToInsert,
         cleanStt,
@@ -1117,8 +1119,24 @@ export default function WebScannerPage() {
         'stamp'
       )
 
+      const capturedPhoto = pendingStamp.imageBase64
       setPendingStamp(null)
       checkTargetReached(currentBoxes.length + count)
+
+      // 2. Tải ảnh con dấu lên Google Drive CON_DAU chạy ngầm trong nền (không làm chậm tiến độ)
+      if (capturedPhoto) {
+        fetch('/api/stamp-queue/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'upload_only',
+            imageBase64: capturedPhoto,
+            palletStt: cleanStt,
+            systemCode: 'KHO_DONG_LANH',
+          }),
+        })
+          .catch(e => console.warn('[ScannerStamp] Tải ảnh lên Google Drive CON_DAU ngầm:', e))
+      }
     } catch (err: any) {
       console.warn('Exception khi lưu thùng con dấu:', err)
     }
@@ -1135,69 +1153,70 @@ export default function WebScannerPage() {
       setIsSwitchPalletModal(true)
       return
     }
-    const base64 = captureFrame('label')
-    if (!base64) {
+    const fullBase64 = captureFrame('label')
+    if (!fullBase64) {
       triggerToast('Không thể lấy khung hình Camera')
       return
     }
+    const cropBase64 = captureFrame('stamp')
     playScanSound()
     triggerHaptic()
     setQueueBoxCount(String(targetQty || 30))
     setQueueBoxWeight('20')
-    setPendingStampPhoto(base64)
+    setPendingStampPhoto(fullBase64)
+    setPendingStampCrop(cropBase64)
   }
 
   const handleSubmitStampPhotoToQueue = async () => {
     if (!pendingStampPhoto || !activePalletStt) return
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      await scannerAlert({
-        title: 'Thiết bị đang ngoại tuyến',
-        message: 'Cần có kết nối Wifi/4G để tải ảnh con dấu lên Web Mẹ.',
-        variant: 'warning',
+
+    // 1. Phản hồi TỨC THỜI (0ms): Đóng modal ngay lập tức, phát âm thanh & rung thành công
+    const targetPhoto = pendingStampPhoto
+    const targetCrop = pendingStampCrop
+    const targetStt = activePalletStt.trim().toUpperCase()
+    const targetTag = activePalletTag || null
+    const targetNotes = activePalletNotes || null
+    const targetCount = Math.max(1, parseInt(queueBoxCount, 10) || 30)
+    const targetWeight = parseFloat(queueBoxWeight) || 20
+
+    setPendingStampPhoto(null)
+    setPendingStampCrop(null)
+    playScanSound()
+    triggerHaptic()
+    triggerToast(`🚀 Đã nhận Pallet ${targetStt}! Ảnh đang được đồng bộ ngầm lên Web Mẹ.`)
+
+    // 2. Tải ảnh lên Google Drive & Supabase chạy HOÀN TOÀN TRONG NỀN (không làm chậm tiến độ quét)
+    fetch('/api/stamp-queue/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageBase64: targetPhoto,
+        croppedBase64: targetCrop,
+        palletStt: targetStt,
+        palletTag: targetTag,
+        palletNotes: targetNotes,
+        boxCount: targetCount,
+        boxWeight: targetWeight,
+        systemCode: systemCode || 'KHO_DONG_LANH',
+        createdBy: userProfile?.id || null,
+        createdByName: userProfile?.fullName || 'Nhân viên kho',
+      }),
+    })
+      .then(async res => {
+        const data = await res.json()
+        if (data.success) {
+          triggerToast(
+            data.isGoogleDrive
+              ? `🎉 Đã lưu Google Drive (CON_DAU) & gửi Pallet ${targetStt} lên Web Mẹ!`
+              : `🎉 Đã gửi ảnh Pallet ${targetStt} lên Web Mẹ thành công!`
+          )
+        } else {
+          console.warn('[ScannerStamp] Đồng bộ ảnh con dấu ngầm thất bại nhẹ:', data.error)
+        }
       })
-      return
-    }
-
-    setUploadingStampPhoto(true)
-    try {
-      const cleanStt = activePalletStt.trim().toUpperCase()
-
-      const res = await fetch('/api/stamp-queue/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: pendingStampPhoto,
-          palletStt: cleanStt,
-          palletTag: activePalletTag || null,
-          palletNotes: activePalletNotes || null,
-          boxCount: Math.max(1, parseInt(queueBoxCount, 10) || 30),
-          boxWeight: parseFloat(queueBoxWeight) || 20,
-          systemCode: systemCode || 'KHO_DONG_LANH',
-          createdBy: userProfile?.id || null,
-          createdByName: userProfile?.fullName || 'Nhân viên kho',
-        }),
+      .catch(err => {
+        console.warn('[ScannerStamp] Lỗi mạng khi đồng bộ ảnh con dấu ngầm:', err?.message)
       })
-
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Không thể tải ảnh con dấu lên máy chủ')
-      }
-
-      setPendingStampPhoto(null)
-      triggerToast(
-        data.isGoogleDrive
-          ? `✅ Đã lưu Google Drive (CON_DAU) & gửi Pallet ${cleanStt} lên Web Mẹ!`
-          : `✅ Đã gửi ảnh dấu Pallet ${cleanStt} lên Web Mẹ (Gemini AI)!`
-      )
-    } catch (err: any) {
-      await scannerAlert({
-        title: 'Lỗi gửi ảnh lên Web Mẹ',
-        message: err?.message || 'Không thể tải ảnh lên máy chủ',
-        variant: 'danger',
-      })
-    } finally {
-      setUploadingStampPhoto(false)
-    }
   }
 
   // ── Save Label Box (Local-First matching Android) ──────────────

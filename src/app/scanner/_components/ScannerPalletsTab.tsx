@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   Scan,
   Boxes,
@@ -20,6 +20,9 @@ import {
   Plus,
   Check,
   Loader2,
+  Sparkles,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react'
 import type {
   PalletItem,
@@ -49,11 +52,32 @@ import { supabase } from '@/lib/supabaseClient'
 
 const PAGE_SIZE = 50
 
+function formatStampThumbnail(
+  imgSrc?: string | null,
+  cropSrc?: string | null,
+  fileId?: string | null
+): string {
+  if (cropSrc && !cropSrc.includes('drive.google.com/file/d/')) {
+    return cropSrc
+  }
+  if (fileId) {
+    return `https://lh3.googleusercontent.com/d/${fileId}`
+  }
+  if (imgSrc) {
+    const m = imgSrc.match(/\/d\/([a-zA-Z0-9_-]+)/) || imgSrc.match(/id=([a-zA-Z0-9_-]+)/)
+    if (m && m[1]) {
+      return `https://lh3.googleusercontent.com/d/${m[1]}`
+    }
+    return imgSrc
+  }
+  return ''
+}
+
 interface ScannerPalletsTabProps {
   activeTab: ScannerTab | string
   setActiveTab: (tab: any) => void
-  palletListSubTab: 'pending' | 'cloud'
-  setPalletListSubTab: React.Dispatch<React.SetStateAction<'pending' | 'cloud'>>
+  palletListSubTab: 'pending' | 'stamp_pending' | 'stamp_decoded' | 'cloud'
+  setPalletListSubTab: React.Dispatch<React.SetStateAction<'pending' | 'stamp_pending' | 'stamp_decoded' | 'cloud'>>
   isOnline: boolean
   pendingPallets: OfflinePendingPallet[]
   setPendingPallets: React.Dispatch<React.SetStateAction<OfflinePendingPallet[]>>
@@ -138,6 +162,100 @@ export function ScannerPalletsTab({
   const [selectedPendingPallet, setSelectedPendingPallet] = useState<OfflinePendingPallet | null>(null)
   const [pendingCloneBoxIdx, setPendingCloneBoxIdx] = useState<number | null>(null)
   const [pendingCloneCount, setPendingCloneCount] = useState<string>('1')
+
+  // Hàng đợi con dấu AI (Chờ giải mã & Đã giải mã)
+  const [stampQueueItems, setStampQueueItems] = useState<any[]>([])
+  const [loadingStampQueue, setLoadingStampQueue] = useState(false)
+  const [decodingQueueId, setDecodingQueueId] = useState<string | null>(null)
+  const [isDecodingAllQueue, setIsDecodingAllQueue] = useState(false)
+
+  const loadStampQueue = useCallback(async () => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('stamp_scan_queue')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(60)
+      if (!error && data) {
+        setStampQueueItems(data)
+      }
+    } catch (err) {
+      console.warn('Lỗi loadStampQueue:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'pallets') {
+      loadStampQueue()
+    }
+  }, [activeTab, loadStampQueue])
+
+  // Lắng nghe Realtime bảng stamp_scan_queue
+  useEffect(() => {
+    const channel = supabase
+      .channel('web_scanner_stamp_queue_tab')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'stamp_scan_queue' },
+        () => {
+          loadStampQueue()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [loadStampQueue])
+
+  const handleDecodeItem = async (id: string) => {
+    setDecodingQueueId(id)
+    try {
+      const res = await fetch('/api/stamp-queue/decode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        triggerToast('✅ Đã giải mã xong con dấu bằng AI!')
+        await loadStampQueue()
+      } else {
+        alert(json.error || 'Lỗi khi giải mã con dấu')
+      }
+    } catch (e: any) {
+      alert(e.message)
+    } finally {
+      setDecodingQueueId(null)
+    }
+  }
+
+  const handleDecodeAllPending = async () => {
+    const pendingIds = stampQueueItems
+      .filter(i => i.status === 'pending' || i.status === 'error')
+      .map(i => i.id)
+    if (pendingIds.length === 0) return
+
+    setIsDecodingAllQueue(true)
+    try {
+      const res = await fetch('/api/stamp-queue/decode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: pendingIds }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        triggerToast(`✅ Đã giải mã xong ${json.decodedCount || pendingIds.length} pallet!`)
+        await loadStampQueue()
+      } else {
+        alert(json.error || 'Lỗi khi giải mã')
+      }
+    } catch (e: any) {
+      alert(e.message)
+    } finally {
+      setIsDecodingAllQueue(false)
+    }
+  }
 
   useEffect(() => {
     if (activeTab === 'pallets') {
@@ -350,6 +468,14 @@ export function ScannerPalletsTab({
     return finalFilteredPallets.slice(start, start + PAGE_SIZE)
   }, [finalFilteredPallets, safePage])
 
+  const stampPendingList = useMemo(() => {
+    return stampQueueItems.filter(i => i.status === 'pending' || i.status === 'error')
+  }, [stampQueueItems])
+
+  const stampDecodedList = useMemo(() => {
+    return stampQueueItems.filter(i => i.status === 'decoded')
+  }, [stampQueueItems])
+
   // Hỗ trợ Lịch chọn ngày
   const openDatePicker = (field: 'packaging' | 'production') => {
     setCalendarTargetField(field)
@@ -491,22 +617,23 @@ export function ScannerPalletsTab({
         </button>
       </div>
 
-      {/* Top Sub-tabs Bar: Chờ đẩy lên (Local) vs Đã lên Web mẹ (Cloud) */}
+      {/* Top Sub-tabs Bar: Chờ đẩy, Chờ giải mã, Đã giải mã, Đã duyệt */}
       <div className="p-2 border-b border-slate-800 bg-[#0f172a] space-y-2 shrink-0">
-        <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-800 gap-1">
+        <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-800 gap-1 overflow-x-auto no-scrollbar">
+          {/* 1. Chờ đẩy */}
           <button
             type="button"
             onClick={() => setPalletListSubTab('pending')}
-            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
+            className={`flex-1 min-w-[76px] py-1.5 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1 ${
               palletListSubTab === 'pending'
                 ? 'bg-amber-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <HardDrive size={13} />
-            <span>Chờ đẩy lên</span>
+            <HardDrive size={12} />
+            <span>Chờ đẩy</span>
             <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+              className={`px-1 py-0.2 rounded-full text-[9px] ${
                 palletListSubTab === 'pending'
                   ? 'bg-black/30 text-white font-mono'
                   : 'bg-slate-800 text-slate-400'
@@ -516,19 +643,72 @@ export function ScannerPalletsTab({
             </span>
           </button>
 
+          {/* 2. Chờ giải mã */}
           <button
             type="button"
-            onClick={() => setPalletListSubTab('cloud')}
-            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 ${
-              palletListSubTab === 'cloud'
-                ? 'bg-sky-600 text-white shadow-sm'
+            onClick={() => {
+              setPalletListSubTab('stamp_pending')
+              loadStampQueue()
+            }}
+            className={`flex-1 min-w-[85px] py-1.5 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1 ${
+              palletListSubTab === 'stamp_pending'
+                ? 'bg-orange-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Database size={13} />
-            <span>Đã lên Web mẹ</span>
+            <Clock size={12} />
+            <span>Chờ giải mã</span>
             <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+              className={`px-1 py-0.2 rounded-full text-[9px] ${
+                palletListSubTab === 'stamp_pending'
+                  ? 'bg-black/30 text-white font-mono'
+                  : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              {stampPendingList.length}
+            </span>
+          </button>
+
+          {/* 3. Đã giải mã */}
+          <button
+            type="button"
+            onClick={() => {
+              setPalletListSubTab('stamp_decoded')
+              loadStampQueue()
+            }}
+            className={`flex-1 min-w-[80px] py-1.5 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1 ${
+              palletListSubTab === 'stamp_decoded'
+                ? 'bg-purple-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Sparkles size={12} />
+            <span>Đã giải mã</span>
+            <span
+              className={`px-1 py-0.2 rounded-full text-[9px] ${
+                palletListSubTab === 'stamp_decoded'
+                  ? 'bg-black/30 text-white font-mono'
+                  : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              {stampDecodedList.length}
+            </span>
+          </button>
+
+          {/* 4. Đã duyệt */}
+          <button
+            type="button"
+            onClick={() => setPalletListSubTab('cloud')}
+            className={`flex-1 min-w-[76px] py-1.5 text-[11px] font-bold rounded-lg transition flex items-center justify-center gap-1 ${
+              palletListSubTab === 'cloud'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <CheckCircle2 size={12} />
+            <span>Đã duyệt</span>
+            <span
+              className={`px-1 py-0.2 rounded-full text-[9px] ${
                 palletListSubTab === 'cloud'
                   ? 'bg-black/30 text-white font-mono'
                   : 'bg-slate-800 text-slate-400'
@@ -557,6 +737,38 @@ export function ScannerPalletsTab({
                 <span>{isSyncingPending ? 'Đang gửi...' : 'Đồng bộ tất cả'}</span>
               </button>
             )}
+          </div>
+        )}
+
+        {/* Sub-tab 2 Controls: Chờ giải mã toolbar */}
+        {palletListSubTab === 'stamp_pending' && (
+          <div className="flex items-center justify-between text-xs px-1">
+            <span className="text-slate-400 text-[11px]">
+              Ảnh chờ AI đọc:{' '}
+              <strong className="text-orange-400">{stampPendingList.length}</strong>
+            </span>
+            {stampPendingList.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDecodeAllPending}
+                disabled={isDecodingAllQueue || !isOnline}
+                className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs"
+              >
+                <Sparkles size={12} className={isDecodingAllQueue ? 'animate-spin' : ''} />
+                <span>{isDecodingAllQueue ? 'Đang giải mã...' : 'Giải mã tất cả'}</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Sub-tab 3 Controls: Đã giải mã toolbar */}
+        {palletListSubTab === 'stamp_decoded' && (
+          <div className="flex items-center justify-between text-xs px-1">
+            <span className="text-purple-300 text-[11px] font-bold flex items-center gap-1">
+              <Sparkles size={12} />
+              <span>AI đã nhận diện xong: {stampDecodedList.length} Pallet</span>
+            </span>
+            <span className="text-slate-500 text-[10px]">Chờ Web Mẹ duyệt tạo Lot</span>
           </div>
         )}
 
@@ -940,7 +1152,258 @@ export function ScannerPalletsTab({
           </>
         )}
 
-        {/* SUB-VIEW 2: CLOUD PALLETS LIST */}
+        {/* SUB-VIEW 2: STAMP PENDING LIST (Chờ giải mã) */}
+        {palletListSubTab === 'stamp_pending' && (
+          <>
+            {stampPendingList.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 space-y-2">
+                <CheckCircle2 size={36} className="mx-auto text-emerald-500 stroke-[1.5]" />
+                <p className="text-xs font-bold text-slate-300">
+                  Không có Pallet nào chờ giải mã
+                </p>
+                <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                  Tất cả ảnh con dấu gửi lên đã được AI giải mã xong hoặc chưa có lượt gửi mới.
+                </p>
+                {stampDecodedList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPalletListSubTab('stamp_decoded')}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600/30 border border-purple-500/40 text-purple-300 text-xs font-bold transition hover:bg-purple-600/40 inline-flex items-center gap-1.5 mt-2"
+                  >
+                    <Sparkles size={13} />
+                    <span>Xem danh sách Đã giải mã ({stampDecodedList.length})</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              stampPendingList.map(item => {
+                const isDecoding = decodingQueueId === item.id
+                const isErr = item.status === 'error'
+                const imgSrc = formatStampThumbnail(item.image_url, item.cropped_image_url, item.drive_file_id)
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-3 rounded-xl bg-slate-900 border ${
+                      isErr ? 'border-rose-500/60' : 'border-slate-800'
+                    } space-y-2 shadow-xs`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <span className="font-mono font-black text-xs text-orange-400">
+                          STT: {item.pallet_stt}
+                        </span>
+                        {item.pallet_tag && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                            🏷️ {item.pallet_tag}
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          isErr
+                            ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                            : 'bg-orange-950 text-orange-300 border border-orange-800'
+                        }`}
+                      >
+                        {isErr ? '❌ Lỗi đọc AI' : '⏳ Đã gửi (Chờ AI đọc)'}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-3">
+                      {imgSrc ? (
+                        <img
+                          src={imgSrc}
+                          alt="Con dấu"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            const target = e.currentTarget
+                            if (item.drive_file_id && !target.dataset.tried) {
+                              target.dataset.tried = '1'
+                              target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w400`
+                            }
+                          }}
+                          className="w-16 h-16 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-600 shrink-0">
+                          <Clock size={20} />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0 flex flex-col justify-between text-xs">
+                        <div>
+                          <div className="text-slate-300 font-semibold">
+                            Số lượng:{' '}
+                            <span className="text-emerald-400 font-bold">
+                              {item.box_count}
+                            </span>{' '}
+                            thùng • {item.box_weight} Kg
+                          </div>
+                          {isErr && item.error_message ? (
+                            <p className="text-rose-400 text-[11px] mt-0.5 line-clamp-2">
+                              ⚠️ {item.error_message}
+                            </p>
+                          ) : (
+                            <p className="text-slate-500 text-[11px] mt-0.5">
+                              Đã lưu ảnh an toàn trên Google Drive
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          Gửi lúc: {item.created_at?.slice(0, 16).replace('T', ' ')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-500">
+                        Người gửi: {item.created_by_name || 'Kho'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDecodeItem(item.id)}
+                        disabled={isDecoding || !isOnline}
+                        className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                      >
+                        {isDecoding ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <Sparkles size={12} />
+                        )}
+                        <span>{isDecoding ? 'Đang giải mã...' : 'Giải mã AI'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </>
+        )}
+
+        {/* SUB-VIEW 3: STAMP DECODED LIST (Đã giải mã) */}
+        {palletListSubTab === 'stamp_decoded' && (
+          <>
+            {stampDecodedList.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 space-y-2">
+                <Sparkles size={36} className="mx-auto text-purple-400 stroke-[1.5]" />
+                <p className="text-xs font-bold text-slate-300">
+                  Chưa có Pallet nào được giải mã
+                </p>
+                <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                  Khi AI giải mã xong ảnh con dấu, kết quả nhận diện sẽ xuất hiện ngay tại đây.
+                </p>
+              </div>
+            ) : (
+              stampDecodedList.map(item => {
+                const dec = item.decoded_json || {}
+                const prodTitle = dec.productTitle || dec.special12Name || 'Sản phẩm con dấu'
+                const imgSrc = formatStampThumbnail(item.image_url, item.cropped_image_url, item.drive_file_id)
+
+                return (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-xl bg-slate-900 border border-purple-500/40 space-y-2.5 shadow-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <Sparkles size={14} className="text-purple-400 shrink-0" />
+                        <span className="font-mono font-black text-xs text-purple-200">
+                          STT: {item.pallet_stt}
+                        </span>
+                        {item.pallet_tag && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                            🏷️ {item.pallet_tag}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800">
+                        ✨ Đã giải mã AI
+                      </span>
+                    </div>
+
+                    <div className="flex gap-2.5">
+                      {imgSrc && (
+                        <img
+                          src={imgSrc}
+                          alt="Con dấu"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            const target = e.currentTarget
+                            if (item.drive_file_id && !target.dataset.tried) {
+                              target.dataset.tried = '1'
+                              target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w400`
+                            }
+                          }}
+                          className="w-16 h-16 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-white text-xs font-bold leading-snug line-clamp-2">
+                          {prodTitle}
+                        </div>
+                        <div className="text-sky-400 text-[11px] font-bold mt-1">
+                          {item.box_count} thùng • {item.box_weight} Kg
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2 Dòng số đọc được */}
+                    <div className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono space-y-1">
+                      <div>
+                        <span className="text-slate-500">Dòng 1: </span>
+                        <span className="text-sky-300 font-bold">
+                          {item.stamp_line1 || '---'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Dòng 2: </span>
+                        <span className="text-purple-300 font-bold">
+                          {item.stamp_line2 || '---'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Thông tin giải mã chi tiết */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
+                      {dec.spec && (
+                        <span>
+                          Quy cách: <strong className="text-slate-200">{dec.spec}</strong>
+                        </span>
+                      )}
+                      {dec.packagingDateStr && (
+                        <span>
+                          Đóng gói: <strong className="text-slate-200">{dec.packagingDateStr}</strong>
+                        </span>
+                      )}
+                      {dec.rawMaterialDateStr && (
+                        <span>
+                          Nhập NL: <strong className="text-slate-200">{dec.rawMaterialDateStr}</strong>
+                        </span>
+                      )}
+                      {dec.provinceName && (
+                        <span>
+                          Vùng: <strong className="text-slate-200">{dec.provinceName}</strong>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-purple-900/40 flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-1 text-purple-400 font-bold">
+                        <Clock size={12} />
+                        <span>Chờ Web Mẹ duyệt tạo Lot</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500">
+                        {item.created_at?.slice(0, 16).replace('T', ' ')}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </>
+        )}
+
+        {/* SUB-VIEW 4: CLOUD PALLETS LIST (Đã duyệt) */}
         {palletListSubTab === 'cloud' && (
           <>
             {finalFilteredPallets.length === 0 ? (

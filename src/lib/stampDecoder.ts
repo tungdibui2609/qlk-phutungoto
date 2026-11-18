@@ -595,3 +595,15 @@ export function matchBoxDeepCriteria(
 
     return true
 }
+
+/**
+ * Tách và lọc danh sách Gemini API Key từ chuỗi cấu hình (hỗ trợ phân tách bằng dòng mới, dấu phẩy, khoảng trắng).
+ * Mỗi Key hợp lệ thường có độ dài >= 20 ký tự (chuẩn AIzaSy...).
+ */
+export function parseGeminiApiKeys(raw?: string | null): string[] {
+    if (!raw) return []
+    return raw
+        .split(/[\n,;\s]+/)
+        .map(k => k.trim())
+        .filter(k => k.length >= 20)
+}

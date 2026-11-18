@@ -6,11 +6,35 @@ import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import DocumentViewerModal from '@/components/ui/DocumentViewerModal'
 
-interface ImageDoc {
+export interface ImageDoc {
     name: string
     link: string
     fileId: string
     uploadedAt: string
+}
+
+export function resolveLotItemImages(lot: any, itemId?: string | null): ImageDoc[] {
+    const meta = lot?.metadata || {}
+    const map = meta?.item_images || {}
+    
+    // 1. Theo itemId nếu có
+    if (itemId && Array.isArray(map[itemId]) && map[itemId].length > 0) {
+        return map[itemId]
+    }
+    // 2. Fallback theo 'default'
+    if (Array.isArray(map.default) && map.default.length > 0) {
+        return map.default
+    }
+    // 3. Fallback theo stamp_images
+    if (Array.isArray(meta.stamp_images) && meta.stamp_images.length > 0) {
+        return meta.stamp_images
+    }
+    // 4. Nếu có bất kỳ key nào trong item_images
+    if (map && typeof map === 'object') {
+        const all = Object.values(map).flat() as ImageDoc[]
+        if (all.length > 0) return all
+    }
+    return []
 }
 
 export function LotItemImageManager({ lot, item, triggerOpen = false, onCloseTrigger, compact = false }: { lot: any, item: any, triggerOpen?: boolean, onCloseTrigger?: () => void, compact?: boolean }) {
@@ -20,8 +44,12 @@ export function LotItemImageManager({ lot, item, triggerOpen = false, onCloseTri
     const [viewDocUrl, setViewDocUrl] = useState<{url: string, title?: string} | null>(null)
     
     const [itemImages, setItemImages] = useState<ImageDoc[]>(() => {
-        return (lot.metadata as any)?.item_images?.[item.id] || []
+        return resolveLotItemImages(lot, item?.id)
     })
+
+    useEffect(() => {
+        setItemImages(resolveLotItemImages(lot, item?.id))
+    }, [lot, item?.id])
 
     useEffect(() => {
         if (triggerOpen) setIsGalleryOpen(true)
