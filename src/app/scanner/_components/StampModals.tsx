@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { CheckCircle2, X, Copy, Save, RotateCcw, Sparkles, Fingerprint } from 'lucide-react'
+import { CheckCircle2, X, Copy, Save, RotateCcw, Scan, Fingerprint } from 'lucide-react'
 import type { PendingStampData } from './types'
 import { decodeStampBox } from '@/lib/stampDecoder'
 import { scannerAlert } from './ScannerDialog'
@@ -470,7 +470,7 @@ export function StampModals({
                   <div className="p-3 rounded-xl bg-[#1e1b4b]/90 border border-indigo-500/50 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-extrabold text-indigo-300 flex items-center gap-1">
-                        <Sparkles size={11} />
+                        <Scan size={11} />
                         XEM TRƯỚC GIẢI MÃ:
                       </span>
                       {dec.isSpecial12 && (

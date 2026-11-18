@@ -70,7 +70,7 @@ const DICT_CATEGORIES: { key: string; altKey?: string; label: string; badge: str
   { key: 'product_grade', altKey: 'grade', label: '🏅 Phân loại (Số 7-8 Dòng 1)', badge: 'D1: 7-8' },
   { key: 'package_spec', altKey: 'spec', label: '📦 Quy cách (Số 9-10 Dòng 1)', badge: 'D1: 9-10' },
   { key: 'freeze_method', altKey: 'method', label: '⚙️ Phương pháp (Số 11-12 Dòng 1)', badge: 'D1: 11-12' },
-  { key: 'customer_quality', altKey: 'quality', label: '✨ Chất lượng (Số 13-14 Dòng 1)', badge: 'D1: 13-14' },
+  { key: 'customer_quality', altKey: 'quality', label: 'Chất lượng (Số 13-14 Dòng 1)', badge: 'D1: 13-14' },
   { key: 'factory', label: '🏭 Nhà máy / Nơi SX (Số 1-2 Dòng 2)', badge: 'D2: 1-2' },
   { key: 'province', label: '📍 Tỉnh / Vùng NL (Số 3-4 Dòng 2)', badge: 'D2: 3-4' },
 ]

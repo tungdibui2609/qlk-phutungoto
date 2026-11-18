@@ -522,7 +522,7 @@ export default function ScannerLoginView({ onLoginSuccess, onOpenSettings }: Sca
               Bảo Mật Phân Quyền Công Ty
             </div>
             <div className="text-[#94a3b8] text-[11px] leading-[16px]">
-              Khi đăng nhập, mọi Pallet và tem thùng bạn quét sẽ tự động gắn kết với công ty của bạn, đảm bảo tính bảo mật và quản lý tập trung trên web mẹ.
+              Khi đăng nhập, mọi Pallet và tem thùng bạn quét sẽ tự động gắn kết với công ty của bạn, đảm bảo tính bảo mật và quản lý tập trung trên Server.
             </div>
           </div>
         </div>

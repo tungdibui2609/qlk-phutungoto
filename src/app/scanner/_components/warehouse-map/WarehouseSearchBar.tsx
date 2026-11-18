@@ -7,7 +7,6 @@ import {
   Calendar,
   X,
   ArrowRight,
-  Sparkles,
   Filter,
   Layers,
   Package,
@@ -314,7 +313,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
     <div ref={containerRef} className="p-2.5 bg-[#0e1626] border-b border-slate-800/80 shrink-0 relative z-30">
       <div className="relative flex items-center gap-1.5">
         <div className="relative flex-1 flex items-center bg-slate-900 border border-slate-700 rounded-xl focus-within:border-cyan-500 transition p-0.5 min-w-0">
-          {/* Nút Chọn Chế Độ Tìm Kiếm (Chuẩn Web Mẹ - Hình 1) */}
+          {/* Nút Chọn Chế Độ Tìm Kiếm (Chuẩn Server - Hình 1) */}
           <div className="relative shrink-0">
             <button
               type="button"
@@ -686,7 +685,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
         <div className="absolute top-full left-2.5 right-2.5 mt-1 bg-[#0b1324] border border-cyan-500/40 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150 backdrop-blur-md">
           <div className="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-[11px] font-bold text-cyan-400">
             <span className="flex items-center gap-1.5">
-              <Sparkles size={13} className="text-amber-400" />
+              <Search size={13} className="text-cyan-400" />
               <span>
                 {searchMode === 'name'
                   ? 'GỢI Ý TÊN & TÊN VIẾT TẮT'

@@ -21,7 +21,7 @@ import {
   Smartphone,
   ExternalLink,
   Layers,
-  Sparkles,
+  CloudUpload,
   RefreshCw,
   Calendar,
   Building2,
@@ -54,6 +54,8 @@ import {
   Calculator,
   Map as MapIcon,
   ArrowLeft,
+  Save,
+  RotateCcw,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { decodeStampBox, DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
@@ -73,7 +75,11 @@ import {
   getOfflineMeta,
   setOfflineMeta,
   OfflinePendingPallet,
-  OfflineLot
+  OfflineLot,
+  saveOfflineStampQueueItem,
+  syncAllOfflineStampQueue,
+  syncSingleOfflineStampQueueItem,
+  OfflineStampQueueItem,
 } from '@/lib/scanner-db'
 import { matchPalletSearch, calculateSearchScore, normalizeSearchString } from '@/lib/searchUtils'
 import WarehouseMapTab from './_components/WarehouseMapTab'
@@ -222,12 +228,21 @@ export default function WebScannerPage() {
   const [isManualStampModal, setIsManualStampModal] = useState<boolean>(false)
   const [manualStampLine1, setManualStampLine1] = useState<string>('')
   const [manualStampLine2, setManualStampLine2] = useState<string>('')
-  // Chụp gửi ảnh con dấu lên Web Mẹ (Server Gemini AI)
+  // Chụp gửi ảnh con dấu lên Server (Server Gemini AI)
   const [pendingStampPhoto, setPendingStampPhoto] = useState<string | null>(null)
   const [pendingStampCrop, setPendingStampCrop] = useState<string | null>(null)
-  const [queueBoxCount, setQueueBoxCount] = useState<string>('30')
+  const [queueBoxCount, setQueueBoxCount] = useState<string>('1')
   const [queueBoxWeight, setQueueBoxWeight] = useState<string>('20')
   const [uploadingStampPhoto, setUploadingStampPhoto] = useState<boolean>(false)
+  const aiBatchesRef = useRef<Record<string, {
+    batchId: string
+    palletStt: string
+    palletTag: string | null
+    palletNotes: string | null
+    photoBase64: string
+    cropBase64: string | null
+    boxWeight: number
+  }>>({})
 
   // Pallet list tab (Tab 3)
   const [palletsList, setPalletsList] = useState<PalletItem[]>([])
@@ -360,6 +375,12 @@ export default function WebScannerPage() {
         setPendingPallets(pending)
         if (pending.length > 0) {
           triggerToast(`⚡ Có ${pending.length} pallet ngoại tuyến sẵn sàng đồng bộ`)
+        }
+      }).catch(() => {})
+
+      syncAllOfflineStampQueue().then(({ synced }) => {
+        if (synced > 0) {
+          triggerToast(`⚡ Đã tự động đẩy ${synced} đợt ảnh con dấu lên Server!`)
         }
       }).catch(() => {})
     }
@@ -646,6 +667,29 @@ export default function WebScannerPage() {
           })
         })
       })
+
+      // 1.5. Đọc thêm các thùng ảnh con dấu đang chờ đủ Pallet để gửi giải mã AI (nếu có)
+      try {
+        const savedAiBoxesRaw = localStorage.getItem(`scanner_ai_boxes_${cleanStt}`)
+        if (savedAiBoxesRaw) {
+          const parsedAiBoxes: BoxItem[] = JSON.parse(savedAiBoxesRaw)
+          if (Array.isArray(parsedAiBoxes)) {
+            parsedAiBoxes.forEach(ab => {
+              if (!seenCodes.has(ab.code)) {
+                seenCodes.add(ab.code)
+                localBoxes.push(ab)
+              }
+            })
+          }
+        }
+        const savedAiBatchesRaw = localStorage.getItem(`scanner_ai_batches_${cleanStt}`)
+        if (savedAiBatchesRaw) {
+          const parsedBatches = JSON.parse(savedAiBatchesRaw)
+          if (parsedBatches && typeof parsedBatches === 'object') {
+            aiBatchesRef.current = { ...aiBatchesRef.current, ...parsedBatches }
+          }
+        }
+      } catch {}
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         localBoxes.sort((a, b) => (parseInt(a.box_index, 10) || 0) - (parseInt(b.box_index, 10) || 0))
@@ -1042,7 +1086,7 @@ export default function WebScannerPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [activeTab, handleCaptureAndRecognize])
 
-  // ── Lắng nghe Realtime Web Mẹ duyệt Pallet con dấu ───────────
+  // ── Lắng nghe Realtime Server duyệt Pallet con dấu ───────────
   useEffect(() => {
     if (!systemCode) return
     const channel = supabase
@@ -1062,7 +1106,7 @@ export default function WebScannerPage() {
               playScanSound()
               triggerHaptic()
             } catch {}
-            triggerToast(`🎉 Web Mẹ đã duyệt Pallet STT ${updated.pallet_stt} (${updated.box_count} thùng)!`)
+            triggerToast(`🎉 Server đã duyệt Pallet STT ${updated.pallet_stt} (${updated.box_count} thùng)!`)
           }
         }
       )
@@ -1165,7 +1209,7 @@ export default function WebScannerPage() {
     }
   }
 
-  // ── Chụp ảnh con dấu gửi lên Web Mẹ (Server Gemini AI xử lý) ──
+  // ── Chụp ảnh con dấu gửi lên Server (Server Gemini AI xử lý) ──
   const handleCaptureStampPhotoForServer = async () => {
     if (!activePalletStt) {
       await scannerAlert({
@@ -1184,7 +1228,7 @@ export default function WebScannerPage() {
     const cropBase64 = captureFrame('stamp')
     playScanSound()
     triggerHaptic()
-    setQueueBoxCount(String(targetQty || 30))
+    setQueueBoxCount('1')
     setQueueBoxWeight('20')
     setPendingStampPhoto(fullBase64)
     setPendingStampCrop(cropBase64)
@@ -1193,53 +1237,82 @@ export default function WebScannerPage() {
   const handleSubmitStampPhotoToQueue = async () => {
     if (!pendingStampPhoto || !activePalletStt) return
 
-    // 1. Phản hồi TỨC THỜI (0ms): Đóng modal ngay lập tức, phát âm thanh & rung thành công
     const targetPhoto = pendingStampPhoto
     const targetCrop = pendingStampCrop
     const targetStt = activePalletStt.trim().toUpperCase()
     const targetTag = activePalletTag || null
     const targetNotes = activePalletNotes || null
-    const targetCount = Math.max(1, parseInt(queueBoxCount, 10) || 30)
+    const targetCount = Math.max(1, parseInt(queueBoxCount, 10) || 1)
     const targetWeight = parseFloat(queueBoxWeight) || 20
 
     setPendingStampPhoto(null)
     setPendingStampCrop(null)
     playScanSound()
     triggerHaptic()
-    triggerToast(`🚀 Đã nhận Pallet ${targetStt}! Ảnh đang được đồng bộ ngầm lên Web Mẹ.`)
 
-    // 2. Tải ảnh lên Google Drive & Supabase chạy HOÀN TOÀN TRONG NỀN (không làm chậm tiến độ quét)
-    fetch('/api/stamp-queue/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        imageBase64: targetPhoto,
-        croppedBase64: targetCrop,
-        palletStt: targetStt,
-        palletTag: targetTag,
-        palletNotes: targetNotes,
-        boxCount: targetCount,
-        boxWeight: targetWeight,
-        systemCode: systemCode || 'KHO_DONG_LANH',
-        createdBy: userProfile?.id || null,
-        createdByName: userProfile?.fullName || 'Nhân viên kho',
-      }),
-    })
-      .then(async res => {
-        const data = await res.json()
-        if (data.success) {
-          triggerToast(
-            data.isGoogleDrive
-              ? `🎉 Đã lưu Google Drive (CON_DAU) & gửi Pallet ${targetStt} lên Web Mẹ!`
-              : `🎉 Đã gửi ảnh Pallet ${targetStt} lên Web Mẹ thành công!`
-          )
-        } else {
-          console.warn('[ScannerStamp] Đồng bộ ảnh con dấu ngầm thất bại nhẹ:', data.error)
+    // 1. Tạo batch ảnh con dấu chờ gửi giải mã và thêm thùng vào Pallet hiện tại (giống quét dấu thường)
+    const batchId = `aibatch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+    const batchRecord = {
+      batchId,
+      palletStt: targetStt,
+      palletTag: targetTag,
+      palletNotes: targetNotes,
+      photoBase64: targetPhoto,
+      cropBase64: targetCrop,
+      boxWeight: targetWeight,
+    }
+    aiBatchesRef.current[batchId] = batchRecord
+
+    let startIdx = 1
+    if (currentBoxes.length > 0) {
+      const maxIdx = Math.max(...currentBoxes.map(b => parseInt(b.box_index, 10) || 0))
+      startIdx = maxIdx + 1
+    }
+
+    const newAiBoxes: BoxItem[] = []
+    for (let i = 0; i < targetCount; i++) {
+      const idx = startIdx + i
+      newAiBoxes.push({
+        id: `aibox_${batchId}_${idx}`,
+        code: `AI-STAMP-${targetStt}-${String(idx).padStart(3, '0')}`,
+        box_index: String(idx),
+        quantity: targetWeight,
+        unit: 'Kg',
+        sku: 'CHỜ GIẢI MÃ AI',
+        product_name: '📦 Đã chụp dấu (Chờ chốt gửi giải mã)',
+        lot_code: targetStt,
+        spec: `${targetWeight}Kg`,
+        shift_group: 'AI đọc từ ảnh',
+        region: 'AI đọc từ ảnh',
+        production_date: '---',
+        packaging_date: '---',
+        scan_type: 'stamp',
+        stamp_line1: batchId,
+        stamp_line2: targetCrop || targetPhoto,
+        created_at: new Date().toISOString(),
+      })
+    }
+
+    const nextBoxes = [...currentBoxes, ...newAiBoxes]
+    setCurrentBoxes(nextBoxes)
+
+    try {
+      const allAiBoxes = nextBoxes.filter(b => b.id.startsWith('aibox_'))
+      localStorage.setItem(`scanner_ai_boxes_${targetStt}`, JSON.stringify(allAiBoxes))
+      const sttBatches: Record<string, any> = {}
+      allAiBoxes.forEach(b => {
+        const bId = b.stamp_line1
+        if (bId && aiBatchesRef.current[bId]) {
+          sttBatches[bId] = aiBatchesRef.current[bId]
         }
       })
-      .catch(err => {
-        console.warn('[ScannerStamp] Lỗi mạng khi đồng bộ ảnh con dấu ngầm:', err?.message)
-      })
+      localStorage.setItem(`scanner_ai_batches_${targetStt}`, JSON.stringify(sttBatches))
+    } catch {}
+
+    if (nextBoxes.length < targetQty) {
+      triggerToast(`✅ Đã lưu ${targetCount} thùng vào Pallet ${targetStt} (${nextBoxes.length}/${targetQty} thùng). Đủ ${targetQty} thùng sẽ gửi giải mã!`)
+    }
+    checkTargetReached(nextBoxes.length, nextBoxes)
   }
 
   // ── Save Label Box (Local-First matching Android) ──────────────
@@ -1301,39 +1374,103 @@ export default function WebScannerPage() {
   }
 
   // ── Target Reached Check ──────────────────────────────────────
-  const checkTargetReached = (totalCount: number) => {
+  const checkTargetReached = (totalCount: number, boxesSnapshot?: BoxItem[]) => {
     if (totalCount >= targetQty) {
       if (autoCompleteOnFull) {
         setTimeout(() => {
           triggerToast(`🎉 Pallet ${activePalletStt} đã đủ ${totalCount}/${targetQty} thùng và được TỰ ĐỘNG CHỐT!`)
-          handleCompletePallet()
+          handleCompletePallet(boxesSnapshot)
         }, 300)
       } else {
         setTimeout(async () => {
           const ok = await scannerConfirm({
             title: '🎉 ĐÃ ĐỦ PALLET!',
-            message: `Pallet ${activePalletStt} đã đạt chỉ tiêu ${totalCount}/${targetQty} thùng.\n\nBạn có muốn CHỐT PALLET này ngay không?`,
+            message: `Pallet ${activePalletStt} đã đạt chỉ tiêu ${totalCount}/${targetQty} thùng.\n\nBạn có muốn CHỐT PALLET & GỬI GIẢI MÃ ngay không?`,
             confirmText: 'Chốt Pallet Ngay',
             cancelText: 'Để sau',
             variant: 'celebrate',
           })
           if (ok) {
-            handleCompletePallet()
+            handleCompletePallet(boxesSnapshot)
           }
         }, 400)
       }
     }
   }
 
-  // ── Complete Pallet (Chốt Pallet -> Đưa vào Hàng chờ Pallet Kho) ──
-  const handleCompletePallet = async () => {
-    const completedStt = activePalletStt
+  // ── Complete Pallet (Chốt Pallet -> Đưa vào Hàng chờ Pallet Kho & Gửi Giải Mã AI) ──
+  const handleCompletePallet = async (boxesSnapshot?: BoxItem[] | React.MouseEvent<HTMLButtonElement>) => {
+    const completedStt = activePalletStt.trim().toUpperCase()
+    const targetTag = activePalletTag || null
+    const targetNotes = activePalletNotes || null
+    const boxesToProcess = Array.isArray(boxesSnapshot) ? boxesSnapshot : currentBoxes
+
+    // Kiểm tra và gửi toàn bộ các đợt chụp ảnh con dấu AI của Pallet này đi giải mã
+    const aiBoxes = boxesToProcess.filter(b => b.id.startsWith('aibox_'))
+    if (aiBoxes.length > 0 && completedStt) {
+      const groupedByBatch = new Map<string, BoxItem[]>()
+      aiBoxes.forEach(b => {
+        const bId = b.stamp_line1 || 'default'
+        if (!groupedByBatch.has(bId)) groupedByBatch.set(bId, [])
+        groupedByBatch.get(bId)!.push(b)
+      })
+
+      for (const [bId, bList] of groupedByBatch.entries()) {
+        const batchMeta = aiBatchesRef.current[bId]
+        const photoBase64 = batchMeta?.photoBase64 || bList[0]?.stamp_line2 || ''
+        const cropBase64 = batchMeta?.cropBase64 || bList[0]?.stamp_line2 || null
+        const weight = batchMeta?.boxWeight || bList[0]?.quantity || 20
+        const count = bList.length
+
+        if (photoBase64) {
+          const queueId = `offline_stamp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+          // 1. Luôn lưu an toàn vào IndexedDB offline trước để không bao giờ bị mất
+          try {
+            await saveOfflineStampQueueItem({
+              id: queueId,
+              pallet_stt: completedStt,
+              pallet_tag: targetTag,
+              pallet_notes: targetNotes,
+              box_count: count,
+              box_weight: weight,
+              photo_base64: photoBase64,
+              crop_base64: cropBase64,
+              system_code: systemCode || 'KHO_DONG_LANH',
+              created_at: new Date().toISOString(),
+              status: 'pending',
+            })
+          } catch (e) {
+            console.warn('[ScannerStamp] Lỗi lưu IndexedDB stamp_queue:', e)
+          }
+
+          // 2. Nếu đang online -> Thử đẩy lên Server ngay
+          if (navigator.onLine) {
+            syncSingleOfflineStampQueueItem(queueId).then(ok => {
+              if (ok) {
+                triggerToast(`🎉 Đã gửi đợt ${count} thùng của Pallet ${completedStt} đi giải mã AI!`)
+              }
+            }).catch(() => {})
+          }
+        }
+        delete aiBatchesRef.current[bId]
+      }
+
+      try {
+        localStorage.removeItem(`scanner_ai_boxes_${completedStt}`)
+        localStorage.removeItem(`scanner_ai_batches_${completedStt}`)
+      } catch {}
+    }
+
     try {
       const updatedPending = await getPendingPallets()
       setPendingPallets(updatedPending)
     } catch {}
 
-    triggerToast(`🎉 ĐÃ CHỐT PALLET ${completedStt}! Đã chuyển vào Hàng chờ (Pallet Kho).`)
+    triggerToast(
+      aiBoxes.length > 0
+        ? `🎉 ĐÃ CHỐT PALLET ${completedStt} & GỬI ${aiBoxes.length} THÙNG ĐI GIẢI MÃ AI!`
+        : `🎉 ĐÃ CHỐT PALLET ${completedStt}! Đã chuyển vào Hàng chờ (Pallet Kho).`
+    )
     // Reset session
     setActivePalletStt('')
     setActivePalletTag('')
@@ -1365,7 +1502,35 @@ export default function WebScannerPage() {
 
     setIsCloning(true)
     try {
-      if (cloneSampleBox.scan_type === 'stamp') {
+      if (cloneSampleBox.id.startsWith('aibox_')) {
+        const cleanStt = activePalletStt.trim().toUpperCase()
+        const batchId = cloneSampleBox.stamp_line1 || `aibatch_${Date.now()}`
+        let startIdx = 1
+        if (currentBoxes.length > 0) {
+          const maxIdx = Math.max(...currentBoxes.map(b => parseInt(b.box_index, 10) || 0))
+          startIdx = maxIdx + 1
+        }
+        const clonedAiBoxes: BoxItem[] = []
+        for (let i = 0; i < count; i++) {
+          const idx = startIdx + i
+          clonedAiBoxes.push({
+            ...cloneSampleBox,
+            id: `aibox_${batchId}_${idx}`,
+            code: `AI-STAMP-${cleanStt}-${String(idx).padStart(3, '0')}`,
+            box_index: String(idx),
+            created_at: new Date().toISOString(),
+          })
+        }
+        const nextBoxes = [...currentBoxes, ...clonedAiBoxes]
+        setCurrentBoxes(nextBoxes)
+        try {
+          const allAiBoxes = nextBoxes.filter(b => b.id.startsWith('aibox_'))
+          localStorage.setItem(`scanner_ai_boxes_${cleanStt}`, JSON.stringify(allAiBoxes))
+        } catch {}
+        setCloneModalVisible(false)
+        triggerToast(`✅ Đã nhân bản thêm ${count} thùng vào Pallet ${cleanStt}!`)
+        checkTargetReached(nextBoxes.length, nextBoxes)
+      } else if (cloneSampleBox.scan_type === 'stamp') {
         setPendingStamp({
           stamp_line1: cloneSampleBox.stamp_line1 || cloneSampleBox.sku || '',
           stamp_line2: cloneSampleBox.stamp_line2 || cloneSampleBox.lot_code || '',
@@ -1416,6 +1581,17 @@ export default function WebScannerPage() {
     })
     if (!ok) return
     try {
+      if (boxId.startsWith('aibox_')) {
+        const cleanStt = activePalletStt.trim().toUpperCase()
+        const nextBoxes = currentBoxes.filter(b => b.id !== boxId)
+        setCurrentBoxes(nextBoxes)
+        try {
+          const allAiBoxes = nextBoxes.filter(b => b.id.startsWith('aibox_'))
+          localStorage.setItem(`scanner_ai_boxes_${cleanStt}`, JSON.stringify(allAiBoxes))
+        } catch {}
+        triggerToast('Đã xóa thùng khỏi Pallet')
+        return
+      }
       if (boxId.startsWith('offline_')) {
         const targetBox = currentBoxes.find(b => b.id === boxId)
         if (targetBox && activePalletStt) {
@@ -1456,6 +1632,12 @@ export default function WebScannerPage() {
     }
 
     try {
+      // 0. Xóa các thùng AI đang lưu tạm nếu có
+      try {
+        localStorage.removeItem(`scanner_ai_boxes_${stt}`)
+        localStorage.removeItem(`scanner_ai_batches_${stt}`)
+      } catch {}
+
       // 1. Xóa trên Cloud
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         const { error } = await supabase
@@ -1774,7 +1956,7 @@ export default function WebScannerPage() {
     try {
       const count = await fetchAndMergeStampDictionaries()
       if (count > 0) {
-        triggerToast(`✅ Đã tải về ${count} quy tắc con dấu từ Web mẹ!`)
+        triggerToast(`✅ Đã tải về ${count} quy tắc con dấu từ Server!`)
       } else {
         triggerToast('Không có dữ liệu quy tắc con dấu trên máy chủ.')
       }
@@ -1867,7 +2049,7 @@ export default function WebScannerPage() {
     if (!navigator.onLine) {
       await scannerAlert({
         title: 'Thiết bị đang ngoại tuyến',
-        message: 'Vui lòng kết nối Wifi hoặc 4G để đồng bộ Pallet lên Web mẹ!',
+        message: 'Vui lòng kết nối Wifi hoặc 4G để đồng bộ Pallet lên Server!',
         variant: 'warning',
       })
       return
@@ -1919,7 +2101,7 @@ export default function WebScannerPage() {
     setIsSyncingPending(false)
 
     if (failCount === 0) {
-      triggerToast(`🎉 Đã đồng bộ thành công tất cả ${successCount} Pallet lên Web mẹ!`)
+      triggerToast(`🎉 Đã đồng bộ thành công tất cả ${successCount} Pallet lên Server!`)
     } else {
       triggerToast(`⚠️ Đồng bộ xong: ${successCount} thành công, ${failCount} thất bại.`)
     }
@@ -1929,7 +2111,7 @@ export default function WebScannerPage() {
     if (!navigator.onLine) {
       await scannerAlert({
         title: 'Thiết bị đang ngoại tuyến',
-        message: 'Không có kết nối mạng để đẩy Pallet lên Web mẹ!',
+        message: 'Không có kết nối mạng để đẩy Pallet lên Server!',
         variant: 'warning',
       })
       return
@@ -1963,7 +2145,7 @@ export default function WebScannerPage() {
       await removePendingPallet(item.client_id)
       const updated = await getPendingPallets()
       setPendingPallets(updated)
-      triggerToast(`✅ Đã đồng bộ Pallet ${item.stt} lên Web mẹ thành công!`)
+      triggerToast(`✅ Đã đồng bộ Pallet ${item.stt} lên Server thành công!`)
     } catch (e: any) {
       await scannerAlert({ title: 'Lỗi đồng bộ', message: e.message, variant: 'danger' })
     }
@@ -2633,10 +2815,10 @@ export default function WebScannerPage() {
                 onClick={handleCaptureStampPhotoForServer}
                 disabled={isRecognizing || uploadingStampPhoto}
                 className="py-2 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1 shadow-md shadow-indigo-600/30 active:scale-[0.98] transition shrink-0"
-                title="Chụp ảnh gửi Web Mẹ để Gemini AI giải mã & tạo thùng"
+                title="Chụp ảnh gửi Server để giải mã & tạo thùng"
               >
-                <Sparkles size={14} />
-                <span>Gửi Web Mẹ</span>
+                <CloudUpload size={14} />
+                <span>Gửi Server</span>
               </button>
 
               <button
@@ -2743,7 +2925,7 @@ export default function WebScannerPage() {
                             #{b.box_index}
                           </span>
                           <span className="text-[11px] font-bold text-slate-300 font-mono">
-                            SKU: {b.sku}
+                            {b.id.startsWith('aibox_') ? '📷 ĐỢT CHỤP AI' : `SKU: ${b.sku}`}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -2767,24 +2949,44 @@ export default function WebScannerPage() {
                         </div>
                       </div>
 
-                      <p className="text-xs font-bold text-white leading-snug">
-                        {b.product_name}
-                      </p>
+                      {b.id.startsWith('aibox_') && b.stamp_line2 ? (
+                        <div className="flex items-center gap-2.5 pt-0.5">
+                          <img
+                            src={b.stamp_line2}
+                            alt="Ảnh dấu"
+                            className="w-11 h-11 rounded-lg object-cover border border-indigo-500/40 shrink-0 bg-black"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-indigo-300 leading-snug">
+                              {b.product_name}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              Khi đủ {targetQty} thùng (hoặc bấm Chốt Pallet) sẽ tự động gửi giải mã AI
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-xs font-bold text-white leading-snug">
+                            {b.product_name}
+                          </p>
 
-                      {b.is_special_12 && (
-                        <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-black">
-                          ⭐ 12 SỐ ĐẦU TRỌN GÓI
-                        </span>
+                          {b.is_special_12 && (
+                            <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-black">
+                              ⭐ 12 SỐ ĐẦU TRỌN GÓI
+                            </span>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-400 pt-1 border-t border-slate-800/80">
+                            <div>Mã LOT (D2): <strong className="text-slate-200 font-mono">{b.lot_code}</strong></div>
+                            <div>Quy cách: <strong className="text-slate-200">{b.spec || '20kg'}</strong></div>
+                            <div>Nhà máy: <strong className="text-slate-200">{b.shift_group || 'Đắk Lắk'}</strong></div>
+                            <div>Vùng NL: <strong className="text-slate-200">{b.region || 'Đắk Lắk'}</strong></div>
+                            <div>Ngày nhập NL: <strong className="text-amber-400 font-mono">{b.raw_material_date || b.production_date || '---'}</strong></div>
+                            <div>Ngày ĐG: <strong className="text-slate-200 font-mono">{b.packaging_date || '---'}</strong></div>
+                          </div>
+                        </>
                       )}
-
-                      <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-400 pt-1 border-t border-slate-800/80">
-                        <div>Mã LOT (D2): <strong className="text-slate-200 font-mono">{b.lot_code}</strong></div>
-                        <div>Quy cách: <strong className="text-slate-200">{b.spec || '20kg'}</strong></div>
-                        <div>Nhà máy: <strong className="text-slate-200">{b.shift_group || 'Đắk Lắk'}</strong></div>
-                        <div>Vùng NL: <strong className="text-slate-200">{b.region || 'Đắk Lắk'}</strong></div>
-                        <div>Ngày nhập NL: <strong className="text-amber-400 font-mono">{b.raw_material_date || b.production_date || '---'}</strong></div>
-                        <div>Ngày ĐG: <strong className="text-slate-200 font-mono">{b.packaging_date || '---'}</strong></div>
-                      </div>
                     </div>
                   ))
                 )}
@@ -3258,90 +3460,173 @@ export default function WebScannerPage() {
         handleSwitchToStt={handleSwitchToStt}
       />
 
-      {/* Modal gửi ảnh con dấu lên Web Mẹ (Server Gemini AI) */}
-      {pendingStampPhoto && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          <div className="w-full max-w-md bg-[#111827] border border-indigo-500/50 rounded-2xl p-4 space-y-3 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <div className="flex items-center gap-2">
-                <Sparkles size={18} className="text-indigo-400" />
-                <h3 className="text-xs font-black text-white uppercase tracking-wider">
-                  Gửi Ảnh Dấu Lên Web Mẹ (STT: {activePalletStt})
-                </h3>
+      {/* Modal chụp ảnh con dấu lưu vào Pallet & chờ gửi giải mã AI (Thiết kế giống Quét dấu thường) */}
+      {pendingStampPhoto && (() => {
+        const remainingQueueBoxes = Math.max(1, (targetQty || 30) - currentBoxes.length)
+        const queueCountNum = parseInt(queueBoxCount, 10) || 1
+        return (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] animate-in fade-in duration-200">
+            <div className="w-full max-w-md bg-[#111827] border border-amber-500/40 rounded-2xl p-4 space-y-3 shadow-2xl max-h-[90dvh] overflow-y-auto overscroll-contain scrollbar-none">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={18} className="text-emerald-400" />
+                  <h3 className="text-xs font-black text-emerald-400 uppercase tracking-wider">
+                    ĐÃ CHỤP CON DẤU (STT: {activePalletStt})
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingStampPhoto(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X size={18} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setPendingStampPhoto(null)}
-                className="p-1 text-slate-400 hover:text-white"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            <div className="rounded-xl overflow-hidden border border-slate-700 bg-black max-h-52 flex items-center justify-center">
-              <img
-                src={pendingStampPhoto}
-                alt="Ảnh dấu mực vừa chụp"
-                className="w-full max-h-52 object-contain"
-              />
-            </div>
+              {/* Khung ảnh con dấu vừa chụp (Thay thế phần giải mã offline) */}
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <div className="rounded-lg overflow-hidden border border-slate-700 bg-black max-h-44 flex items-center justify-center">
+                  <img
+                    src={pendingStampCrop || pendingStampPhoto}
+                    alt="Ảnh dấu mực vừa chụp"
+                    className="w-full max-h-44 object-contain"
+                  />
+                </div>
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[10px] font-bold text-indigo-300 flex items-center gap-1">
+                    <Tag size={12} className="text-indigo-400 shrink-0" />
+                    <span>Lưu vào Pallet {activePalletStt} ({currentBoxes.length}/{targetQty} thùng)</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    Đủ {targetQty} thùng sẽ gửi giải mã AI
+                  </span>
+                </div>
+              </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="text-[11px] font-bold text-slate-300 block mb-1">
-                  Số lượng thùng
-                </label>
+              {/* Khối lượng thùng (Kg) - Giống hệt Hình 2 */}
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-200">Khối lượng thùng (Kg):</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={queueBoxWeight}
+                    onChange={e => setQueueBoxWeight(e.target.value)}
+                    className="w-24 px-3 py-1.5 rounded-lg bg-[#1e293b] border border-slate-600 text-sm font-black text-white font-mono text-center"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {['10', '15', '18', '20', '25'].map(w => (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => setQueueBoxWeight(w)}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition ${
+                        queueBoxWeight === w
+                          ? 'bg-sky-500/20 border-sky-400 text-sky-300'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {w} Kg
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Số lượng thùng tạo (Nhân bản nhanh) - Giống hệt Hình 2 */}
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-200">Số lượng thùng tạo:</label>
+                  {queueCountNum > 1 && (
+                    <span className="text-[11px] font-bold text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded border border-amber-500/30">
+                      Nhân bản {queueCountNum} thùng
+                    </span>
+                  )}
+                </div>
+
                 <input
                   type="number"
                   inputMode="numeric"
                   value={queueBoxCount}
                   onChange={e => setQueueBoxCount(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-[#1e293b] border border-slate-600 font-mono text-sm font-black text-white"
+                  placeholder="1"
+                  className={`w-full px-3 py-2 rounded-lg bg-[#1e293b] border font-mono text-base font-black ${
+                    queueCountNum > 1
+                      ? 'border-amber-400 text-amber-400'
+                      : 'border-slate-700 text-white'
+                  }`}
                 />
-              </div>
-              <div>
-                <label className="text-[11px] font-bold text-slate-300 block mb-1">
-                  Khối lượng / thùng (Kg)
-                </label>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  value={queueBoxWeight}
-                  onChange={e => setQueueBoxWeight(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-[#1e293b] border border-slate-600 font-mono text-sm font-black text-white"
-                />
-              </div>
-            </div>
 
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Ảnh sẽ được gửi lên hàng đợi Server để Web Mẹ dùng Gemini AI giải mã chính xác và tạo thùng vào Pallet <strong className="text-amber-300">{activePalletStt}</strong>.
-            </p>
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setQueueBoxCount('1')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${
+                      queueBoxCount === '1'
+                        ? 'bg-amber-900/70 border-amber-400 text-amber-300'
+                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    1 thùng
+                  </button>
+                  {remainingQueueBoxes > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setQueueBoxCount(String(remainingQueueBoxes))}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${
+                        queueBoxCount === String(remainingQueueBoxes)
+                          ? 'bg-amber-900/70 border-amber-400 text-amber-300'
+                          : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      Điền đủ ({remainingQueueBoxes})
+                    </button>
+                  )}
+                  {['5', '10', '20'].map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setQueueBoxCount(c)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${
+                        queueBoxCount === c
+                          ? 'bg-amber-900/70 border-amber-400 text-amber-300'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      +{c}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setPendingStampPhoto(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold hover:bg-slate-700 transition"
-              >
-                Chụp lại
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmitStampPhotoToQueue}
-                disabled={uploadingStampPhoto}
-                className="flex-[1.5] py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30 disabled:opacity-60"
-              >
-                {uploadingStampPhoto ? (
-                  <Loader2 size={15} className="animate-spin" />
-                ) : (
-                  <Sparkles size={15} />
-                )}
-                <span>{uploadingStampPhoto ? 'Đang gửi...' : 'Gửi Lên Web Mẹ'}</span>
-              </button>
+              {/* Action Buttons - Giống hệt Hình 2 */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPendingStampPhoto(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold hover:bg-slate-700 transition flex items-center justify-center gap-1.5"
+                >
+                  <RotateCcw size={14} className="text-slate-400" />
+                  <span>Quét Lại</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitStampPhotoToQueue}
+                  disabled={uploadingStampPhoto}
+                  className="flex-[1.5] py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/30 disabled:opacity-60 active:scale-[0.98] transition"
+                >
+                  <Save size={15} />
+                  <span>
+                    {queueCountNum > 1
+                      ? `Lưu (${queueCountNum} Thùng) Vào ${activePalletStt}`
+                      : `Lưu Vào Pallet ${activePalletStt}`}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       <ScannerDialogHost />
     </div>

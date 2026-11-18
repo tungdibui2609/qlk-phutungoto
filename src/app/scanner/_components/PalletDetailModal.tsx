@@ -111,7 +111,7 @@ export function PalletDetailModal({
   // ── 1. Xóa 1 thùng khỏi Pallet ──────────────────────────────
   const handleDeleteSingleBox = async (box: BoxItem) => {
     if (isReadOnly) {
-      alert('Dữ liệu đã đồng bộ LOT trên Web mẹ không được phép xóa từ thiết bị quét.')
+      alert('Dữ liệu đã đồng bộ LOT trên Server không được phép xóa từ thiết bị quét.')
       return
     }
     if (
@@ -240,7 +240,7 @@ export function PalletDetailModal({
           : null
       )
       setCloningBox(null)
-      notifyDone(`✨ Đã nhân bản thêm ${count} thùng vào Pallet ${cleanStt}!`)
+      notifyDone(`✅ Đã nhân bản thêm ${count} thùng vào Pallet ${cleanStt}!`)
       if (onRefreshPallets) onRefreshPallets().catch(() => { })
     } catch (e: any) {
       alert(`Lỗi nhân bản thùng: ${e.message}`)
@@ -518,7 +518,7 @@ export function PalletDetailModal({
           {isReadOnly ? (
             <div className="p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-2">
               <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
-              <span>Dữ liệu đã lên Web mẹ an toàn (Không thể xóa/sửa từ app)</span>
+              <span>Dữ liệu đã lên Server an toàn (Không thể xóa/sửa từ app)</span>
             </div>
           ) : (
             <div className="space-y-2">

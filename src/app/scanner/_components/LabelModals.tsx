@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { CheckCircle2, X, Sparkles, Copy, Save, RotateCcw, Tag } from 'lucide-react'
+import { CheckCircle2, X, Search, Copy, Save, RotateCcw, Tag } from 'lucide-react'
 import type { ManualLabelFormState, ProductSuggestion } from './types'
 import { ensureProductsCatalogLoaded, getProductSuggestions } from './scannerUtils'
 import { searchLotsFromOfflineDb, type OfflineLot } from '@/lib/scanner-db'
@@ -132,7 +132,7 @@ export function LabelModals({
                 <div className="absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800 max-h-48 overflow-y-auto">
                   <div className="px-2.5 py-1.5 bg-slate-950 flex items-center justify-between text-[10px] text-emerald-400 font-bold">
                     <span className="flex items-center gap-1">
-                      <Sparkles size={11} /> Gợi ý sản phẩm ({pendingProdSuggestions.length})
+                      <Search size={11} /> Gợi ý sản phẩm ({pendingProdSuggestions.length})
                     </span>
                     <button
                       type="button"
@@ -473,7 +473,7 @@ export function LabelModals({
                   <div className="absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800 max-h-48 overflow-y-auto">
                     <div className="px-2.5 py-1.5 bg-slate-950 flex items-center justify-between text-[10px] text-emerald-400 font-bold">
                       <span className="flex items-center gap-1">
-                        <Sparkles size={11} /> Gợi ý sản phẩm ({manualProdSuggestions.length})
+                        <Search size={11} /> Gợi ý sản phẩm ({manualProdSuggestions.length})
                       </span>
                       <button
                         type="button"

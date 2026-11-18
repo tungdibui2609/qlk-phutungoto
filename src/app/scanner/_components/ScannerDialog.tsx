@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   HelpCircle,
   Info,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -150,7 +149,7 @@ const VARIANT_STYLES: Record<
 function VariantIcon({ variant, className }: { variant: ScannerDialogVariant; className?: string }) {
   switch (variant) {
     case 'celebrate':
-      return <Sparkles size={22} className={className} />
+      return <CheckCircle2 size={22} className={className} />
     case 'success':
       return <CheckCircle2 size={22} className={className} />
     case 'warning':

@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient } from '@/lib/geminiStampOcr'
+import {
+  createAdminSupabaseClient,
+  resolveGeminiConfig,
+  fetchServerStampDictionary,
+  recognizeStampWithGemini,
+  buildDecodedStampPayload,
+} from '@/lib/geminiStampOcr'
 import {
   uploadStampImageToGoogleDrive,
   getCompanyStampDriveWebhook,
@@ -206,6 +212,44 @@ export async function POST(req: NextRequest) {
 
     if (insertErr) {
       throw new Error(`Lỗi lưu hàng đợi CSDL: ${insertErr.message}`)
+    }
+
+    // 4. Tự động kích hoạt Gemini AI giải mã ngay lập tức trong nền
+    if (inserted?.id) {
+      void (async () => {
+        try {
+          const geminiCfg = await resolveGeminiConfig(resolvedCompanyId)
+          if (!geminiCfg) return
+          const dict = await fetchServerStampDictionary(resolvedCompanyId)
+          const base64ForOcr = (croppedBase64 || imageBase64).replace(/^data:image\/\w+;base64,/, '')
+          const gemRes = await recognizeStampWithGemini({
+            imageBase64: base64ForOcr,
+            mimeType: 'image/jpeg',
+            apiKey: geminiCfg.apiKey,
+            apiKeys: geminiCfg.apiKeys,
+            model: geminiCfg.model,
+          })
+          const decoded = buildDecodedStampPayload(gemRes.line1, gemRes.line2, dict)
+          await admin
+            .from('stamp_scan_queue')
+            .update({
+              stamp_line1: gemRes.line1,
+              stamp_line2: gemRes.line2,
+              decoded_json: decoded,
+              status: 'decoded',
+              error_message: null,
+            })
+            .eq('id', inserted.id)
+        } catch (autoErr: any) {
+          await admin
+            .from('stamp_scan_queue')
+            .update({
+              status: 'error',
+              error_message: autoErr?.message || 'Lỗi đọc ảnh con dấu',
+            })
+            .eq('id', inserted.id)
+        }
+      })()
     }
 
     return NextResponse.json({

@@ -128,11 +128,25 @@ export function PalletSwitchModal({
     }
   }
 
+  const handleSubmitPallet = () => {
+    if (!newSttInput.trim()) {
+      alert('Vui lòng nhập mã STT Pallet')
+      return
+    }
+    const clean = newSttInput.trim().toUpperCase()
+    handleSwitchToStt(
+      clean,
+      newTagInput.trim(),
+      newNotesInput.trim(),
+      newTargetQtyInput || 30
+    )
+  }
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-[#111827] border border-slate-800 rounded-2xl p-4 space-y-3 shadow-2xl max-h-[88vh] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-md bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl max-h-[85dvh] sm:max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 shrink-0">
+        <div className="flex items-center justify-between border-b border-slate-800 p-3.5 pb-2.5 shrink-0 bg-[#111827]">
           <div className="flex items-center gap-2">
             <RotateCw size={18} className="text-emerald-400" />
             <div>
@@ -155,7 +169,7 @@ export function PalletSwitchModal({
           </button>
         </div>
 
-        <div className="space-y-3 overflow-y-auto overscroll-contain pr-1 flex-1">
+        <div className="space-y-3 overflow-y-auto overscroll-contain p-3.5 pr-2 flex-1 scrollbar-none">
           {/* Form nhập Pallet mới / cập nhật */}
           <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
             {/* Hàng 1: STT PALLET & CHỈ TIÊU SỐ THÙNG (SONG SONG) */}
@@ -168,6 +182,12 @@ export function PalletSwitchModal({
                   type="text"
                   value={newSttInput}
                   onChange={e => setNewSttInput(e.target.value.toUpperCase())}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleSubmitPallet()
+                    }
+                  }}
                   placeholder="VD: G23, F100..."
                   className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 font-mono text-sm font-bold text-amber-400 uppercase focus:outline-hidden focus:border-amber-500"
                 />
@@ -181,6 +201,12 @@ export function PalletSwitchModal({
                   type="number"
                   value={newTargetQtyInput}
                   onChange={e => setNewTargetQtyInput(parseInt(e.target.value, 10) || defaultTargetQty || 30)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleSubmitPallet()
+                    }
+                  }}
                   placeholder={String(defaultTargetQty || 30)}
                   className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-sm text-center text-white font-mono font-bold"
                 />
@@ -214,6 +240,12 @@ export function PalletSwitchModal({
                 type="text"
                 value={newTagInput}
                 onChange={e => setNewTagInput(e.target.value.toUpperCase())}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleSubmitPallet()
+                  }
+                }}
                 placeholder="Ví dụ: OEM-A, XK-HQ, HÀNG LOẠI 1..."
                 className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 font-mono text-xs text-orange-300 uppercase placeholder-slate-600"
               />
@@ -231,35 +263,6 @@ export function PalletSwitchModal({
                 placeholder="Nhập ghi chú cho LOT hàng (nếu có)..."
                 className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-200 placeholder-slate-600 resize-none"
               />
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setIsSwitchPalletModal(false)}
-                className="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition"
-              >
-                Đóng
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!newSttInput.trim()) {
-                    alert('Vui lòng nhập mã STT Pallet')
-                    return
-                  }
-                  const clean = newSttInput.trim().toUpperCase()
-                  handleSwitchToStt(
-                    clean,
-                    newTagInput.trim(),
-                    newNotesInput.trim(),
-                    newTargetQtyInput || 30
-                  )
-                }}
-                className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition shadow-lg shadow-emerald-600/30"
-              >
-                Bắt Đầu Quét
-              </button>
             </div>
           </div>
 
@@ -428,6 +431,26 @@ export function PalletSwitchModal({
               </div>
             </div>
           )}
+        </div>
+
+        {/* Footer cố định luôn nhìn thấy ở đáy modal, không bị bàn phím che */}
+        <div className="p-3 border-t border-slate-800 bg-[#0d131f] flex gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsSwitchPalletModal(false)}
+            className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition active:scale-98 cursor-pointer"
+          >
+            Đóng
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmitPallet}
+            disabled={!newSttInput.trim()}
+            className="flex-1.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 text-white text-xs font-bold transition shadow-lg shadow-emerald-950/50 flex items-center justify-center gap-1.5 active:scale-98 cursor-pointer"
+          >
+            <Check size={15} />
+            <span>Xác Nhận Pallet</span>
+          </button>
         </div>
       </div>
     </div>

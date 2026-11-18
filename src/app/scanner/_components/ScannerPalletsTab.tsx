@@ -20,21 +20,26 @@ import {
   Plus,
   Check,
   Loader2,
-  Sparkles,
+  Box,
   Clock,
   CheckCircle2,
+  CloudUpload,
 } from 'lucide-react'
 import type {
   PalletItem,
   ProductSuggestion,
   ScannerTab,
 } from './types'
-import type { OfflinePendingPallet } from '@/lib/scanner-db'
+import type { OfflinePendingPallet, OfflineStampQueueItem } from '@/lib/scanner-db'
 import {
   removePendingPallet,
   getPendingPallets,
   getOfflineMeta,
   setOfflineMeta,
+  getOfflineStampQueue,
+  syncSingleOfflineStampQueueItem,
+  syncAllOfflineStampQueue,
+  removeOfflineStampQueueItem,
 } from '@/lib/scanner-db'
 import { scannerAlert, scannerConfirm } from './ScannerDialog'
 import {
@@ -174,18 +179,101 @@ export function ScannerPalletsTab({
 
   const loadStampQueue = useCallback(async () => {
     try {
-      const { data, error } = await (supabase as any)
-        .from('stamp_scan_queue')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(60)
-      if (!error && data) {
-        setStampQueueItems(data)
+      // 1. Nạp tức thì danh sách offline từ IndexedDB (0ms)
+      const offlineItems = await getOfflineStampQueue()
+      const mappedOffline = offlineItems.map(i => ({
+        id: i.id,
+        is_offline: true,
+        pallet_stt: i.pallet_stt,
+        pallet_tag: i.pallet_tag,
+        pallet_notes: i.pallet_notes,
+        box_count: i.box_count,
+        box_weight: i.box_weight,
+        image_url: i.photo_base64,
+        cropped_image_url: i.crop_base64,
+        created_at: i.created_at,
+        status: i.status === 'error' ? 'error' : 'pending',
+        error_message: i.error_message,
+      }))
+
+      if (mappedOffline.length > 0) {
+        setStampQueueItems(prev => {
+          const onlineExisting = prev.filter(p => !p.is_offline)
+          return [...mappedOffline, ...onlineExisting]
+        })
       }
+
+      // 2. Fetch danh sách online kèm timeout 2.5s (tránh bị treo khi offline)
+      let onlineItems: any[] = []
+      try {
+        const fetchOnlinePromise = (supabase as any)
+          .from('stamp_scan_queue')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(60)
+        const timeoutPromise = new Promise<{ data: any[]; error: any }>(resolve =>
+          setTimeout(() => resolve({ data: [], error: null }), 2500)
+        )
+        const { data, error } = await Promise.race([fetchOnlinePromise, timeoutPromise])
+        if (!error && data && data.length > 0) {
+          onlineItems = data
+        }
+      } catch (err) {
+        console.warn('Lỗi query supabase stamp_scan_queue:', err)
+      }
+
+      // Gộp offline lên đầu danh sách để người dùng thấy ngay
+      setStampQueueItems([...mappedOffline, ...onlineItems])
     } catch (err) {
       console.warn('Lỗi loadStampQueue:', err)
     }
   }, [])
+
+  const handleSyncOfflineItem = async (id: string) => {
+    try {
+      triggerToast('Đang tải ảnh con dấu lên Server...')
+      const ok = await syncSingleOfflineStampQueueItem(id)
+      if (ok) {
+        triggerToast('✅ Đã tải ảnh con dấu lên Server thành công!')
+        await loadStampQueue()
+      } else {
+        alert('Tải ảnh thất bại. Vui lòng kiểm tra lại kết nối mạng!')
+      }
+    } catch (e: any) {
+      alert(e.message)
+    }
+  }
+
+  const handleSyncAllOfflineStamps = async () => {
+    try {
+      triggerToast('Đang đẩy toàn bộ ảnh ngoại tuyến lên Server...')
+      const { synced, failed } = await syncAllOfflineStampQueue()
+      if (synced > 0) {
+        triggerToast(`🎉 Đã tải lên thành công ${synced} đợt con dấu!`)
+      }
+      if (failed > 0) {
+        triggerToast(`⚠️ Có ${failed} đợt lỗi mạng`)
+      }
+      await loadStampQueue()
+    } catch (e: any) {
+      alert(e.message)
+    }
+  }
+
+  const handleDeleteOfflineStampItem = async (id: string) => {
+    const ok = await scannerConfirm({
+      title: 'Xóa ảnh ngoại tuyến',
+      message: 'Bạn có chắc chắn muốn xóa đợt ảnh con dấu ngoại tuyến này không?',
+      confirmText: 'Xóa ngay',
+      cancelText: 'Hủy',
+      variant: 'danger',
+    })
+    if (ok) {
+      await removeOfflineStampQueueItem(id)
+      await loadStampQueue()
+      triggerToast('Đã xóa đợt ảnh ngoại tuyến')
+    }
+  }
 
   useEffect(() => {
     if (activeTab === 'pallets') {
@@ -221,7 +309,7 @@ export function ScannerPalletsTab({
       })
       const json = await res.json()
       if (json.success) {
-        triggerToast('✅ Đã giải mã xong con dấu bằng AI!')
+        triggerToast('✅ Đã giải mã xong con dấu!')
         await loadStampQueue()
       } else {
         alert(json.error || 'Lỗi khi giải mã con dấu')
@@ -479,6 +567,14 @@ export function ScannerPalletsTab({
     return stampQueueItems.filter(i => i.status === 'decoded')
   }, [stampQueueItems])
 
+  const offlineStampCount = useMemo(() => {
+    return stampPendingList.filter(i => Boolean((i as any).is_offline)).length
+  }, [stampPendingList])
+
+  const onlinePendingCount = useMemo(() => {
+    return stampPendingList.filter(i => !Boolean((i as any).is_offline)).length
+  }, [stampPendingList])
+
   // Gom nhóm các con dấu chờ giải mã theo cùng STT Pallet
   const groupedStampPendingList = useMemo(() => {
     const map = new Map<string, {
@@ -490,7 +586,7 @@ export function ScannerPalletsTab({
       total_weight: number
       created_by_name?: string | null
       created_at: string
-      items: StampQueueItem[]
+      items: any[]
     }>()
 
     for (const item of stampPendingList) {
@@ -529,7 +625,7 @@ export function ScannerPalletsTab({
       total_weight: number
       created_by_name?: string | null
       created_at: string
-      items: StampQueueItem[]
+      items: any[]
     }>()
 
     for (const item of stampDecodedList) {
@@ -684,7 +780,7 @@ export function ScannerPalletsTab({
               ? 'Chế độ Ngoại tuyến (Bộ nhớ máy)'
               : serverStatus === 'error'
                 ? 'Máy chủ phản hồi chậm • Đang dùng bản lưu máy'
-                : `Máy chủ Web mẹ (Đã kết nối${serverPingMs ? ` • ${serverPingMs}ms` : ''})`}
+                : `Máy chủ Server (Đã kết nối${serverPingMs ? ` • ${serverPingMs}ms` : ''})`}
           </span>
         </div>
         <button
@@ -763,7 +859,7 @@ export function ScannerPalletsTab({
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Sparkles size={12} />
+            <CheckCircle2 size={12} />
             <span>Đã giải mã</span>
             <span
               className={`px-1 py-0.2 rounded-full text-[9px] ${
@@ -825,20 +921,41 @@ export function ScannerPalletsTab({
         {palletListSubTab === 'stamp_pending' && (
           <div className="flex items-center justify-between text-xs px-1">
             <span className="text-slate-400 text-[11px]">
-              Chờ AI đọc:{' '}
-              <strong className="text-orange-400">{stampPendingList.length} ảnh ({groupedStampPendingList.length} Pallet)</strong>
+              {offlineStampCount > 0 && (
+                <strong className="text-amber-400 mr-1.5">
+                  📡 {offlineStampCount} offline •
+                </strong>
+              )}
+              Chờ giải mã:{' '}
+              <strong className="text-orange-400">
+                {onlinePendingCount} ảnh ({groupedStampPendingList.length} Pallet)
+              </strong>
             </span>
-            {stampPendingList.length > 0 && (
-              <button
-                type="button"
-                onClick={handleDecodeAllPending}
-                disabled={isDecodingAllQueue || !isOnline}
-                className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs"
-              >
-                <Sparkles size={12} className={isDecodingAllQueue ? 'animate-spin' : ''} />
-                <span>{isDecodingAllQueue ? 'Đang giải mã...' : 'Giải mã tất cả'}</span>
-              </button>
-            )}
+            <div className="flex items-center gap-1.5">
+              {offlineStampCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSyncAllOfflineStamps}
+                  disabled={!isOnline}
+                  className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs"
+                  title="Tải toàn bộ ảnh con dấu ngoại tuyến lên Server"
+                >
+                  <CloudUpload size={12} />
+                  <span>Đẩy Server ({offlineStampCount})</span>
+                </button>
+              )}
+              {onlinePendingCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDecodeAllPending}
+                  disabled={isDecodingAllQueue || !isOnline}
+                  className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs"
+                >
+                  <Scan size={12} className={isDecodingAllQueue ? 'animate-spin' : ''} />
+                  <span>{isDecodingAllQueue ? 'Đang giải mã...' : 'Giải mã tất cả'}</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -846,8 +963,8 @@ export function ScannerPalletsTab({
         {palletListSubTab === 'stamp_decoded' && (
           <div className="flex items-center justify-between text-xs px-1">
             <span className="text-purple-300 text-[11px] font-bold flex items-center gap-1">
-              <Sparkles size={12} />
-              <span>AI đã nhận diện xong: {groupedStampDecodedList.length} Pallet ({stampDecodedList.length} đợt con dấu)</span>
+              <CheckCircle2 size={12} />
+              <span>Đã nhận diện xong: {groupedStampDecodedList.length} Pallet ({stampDecodedList.length} đợt con dấu)</span>
             </span>
             <span className="text-slate-500 text-[10px]">Chờ server duyệt tạo Lot</span>
           </div>
@@ -1102,7 +1219,7 @@ export function ScannerPalletsTab({
                   Không có Pallet nào đang chờ đẩy lên
                 </p>
                 <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-                  Tất cả các pallet bạn quét đều đã được đồng bộ an toàn lên máy chủ Web mẹ.
+                  Tất cả các pallet bạn quét đều đã được đồng bộ an toàn lên Server.
                 </p>
               </div>
             ) : (
@@ -1296,7 +1413,7 @@ export function ScannerPalletsTab({
                   Không có Pallet nào chờ giải mã
                 </p>
                 <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-                  Tất cả ảnh con dấu gửi lên đã được AI giải mã xong hoặc chưa có lượt gửi mới.
+                  Tất cả ảnh con dấu gửi lên đã được giải mã xong hoặc chưa có lượt gửi mới.
                 </p>
                 {groupedStampDecodedList.length > 0 && (
                   <button
@@ -1304,7 +1421,7 @@ export function ScannerPalletsTab({
                     onClick={() => setPalletListSubTab('stamp_decoded')}
                     className="px-3 py-1.5 rounded-lg bg-purple-600/30 border border-purple-500/40 text-purple-300 text-xs font-bold transition hover:bg-purple-600/40 inline-flex items-center gap-1.5 mt-2"
                   >
-                    <Sparkles size={13} />
+                    <CheckCircle2 size={13} />
                     <span>Xem danh sách Đã giải mã ({groupedStampDecodedList.length})</span>
                   </button>
                 )}
@@ -1337,12 +1454,18 @@ export function ScannerPalletsTab({
                         </div>
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            isErr
+                            item.is_offline
+                              ? 'bg-amber-950 text-amber-300 border border-amber-600'
+                              : isErr
                               ? 'bg-rose-950 text-rose-300 border border-rose-800'
                               : 'bg-orange-950 text-orange-300 border border-orange-800'
                           }`}
                         >
-                          {isErr ? '❌ Lỗi đọc AI' : '⏳ Đã gửi (Chờ AI đọc)'}
+                          {item.is_offline
+                            ? '📡 Chưa gửi (Offline)'
+                            : isErr
+                            ? '❌ Lỗi giải mã'
+                            : '⏳ Đã gửi (Chờ Server xử lý)'}
                         </span>
                       </div>
 
@@ -1377,13 +1500,17 @@ export function ScannerPalletsTab({
                               </span>{' '}
                               thùng • {item.box_weight} Kg
                             </div>
-                            {isErr && item.error_message ? (
+                            {item.is_offline ? (
+                              <p className="text-amber-400 text-[11px] mt-0.5">
+                                📡 Đang lưu an toàn trên máy (Ngoại tuyến)
+                              </p>
+                            ) : isErr && item.error_message ? (
                               <p className="text-rose-400 text-[11px] mt-0.5 line-clamp-2">
                                 ⚠️ {item.error_message}
                               </p>
                             ) : (
                               <p className="text-slate-500 text-[11px] mt-0.5">
-                                Đã lưu ảnh an toàn trên Google Drive
+                                Đã lưu ảnh an toàn trên Server
                               </p>
                             )}
                           </div>
@@ -1397,19 +1524,41 @@ export function ScannerPalletsTab({
                         <span className="text-[11px] text-slate-500">
                           Người gửi: {item.created_by_name || 'Kho'}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => handleDecodeItem(item.id)}
-                          disabled={isDecoding || !isOnline}
-                          className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
-                        >
-                          {isDecoding ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            <Sparkles size={12} />
-                          )}
-                          <span>{isDecoding ? 'Đang giải mã...' : 'Giải mã AI'}</span>
-                        </button>
+                        {item.is_offline ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteOfflineStampItem(item.id)}
+                              className="p-1 rounded-md text-slate-400 hover:text-rose-400 transition"
+                              title="Xóa đợt ảnh ngoại tuyến này"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSyncOfflineItem(item.id)}
+                              disabled={!isOnline}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                            >
+                              <CloudUpload size={12} />
+                              <span>Tải lên Server</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleDecodeItem(item.id)}
+                            disabled={isDecoding || !isOnline}
+                            className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                          >
+                            {isDecoding ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Scan size={12} />
+                            )}
+                            <span>{isDecoding ? 'Đang giải mã...' : 'Giải mã'}</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   )
@@ -1489,23 +1638,55 @@ export function ScannerPalletsTab({
                       <span className="text-[11px] text-slate-500">
                         Người gửi: {group.created_by_name || 'Kho'}
                       </span>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          for (const it of group.items) {
-                            await handleDecodeItem(it.id)
-                          }
-                        }}
-                        disabled={isGroupDecoding || !isOnline}
-                        className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
-                      >
-                        {isGroupDecoding ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : (
-                          <Sparkles size={12} />
-                        )}
-                        <span>{isGroupDecoding ? 'Đang giải mã...' : `Giải mã AI (${group.items.length})`}</span>
-                      </button>
+                      {group.items.some(it => it.is_offline) ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              for (const it of group.items) {
+                                if (it.is_offline) await removeOfflineStampQueueItem(it.id)
+                              }
+                              await loadStampQueue()
+                              triggerToast('Đã xóa các đợt ảnh ngoại tuyến')
+                            }}
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-400 transition"
+                            title="Xóa các đợt ngoại tuyến của Pallet này"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              for (const it of group.items) {
+                                if (it.is_offline) await handleSyncOfflineItem(it.id)
+                              }
+                            }}
+                            disabled={!isOnline}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                          >
+                            <CloudUpload size={12} />
+                            <span>Tải lên Server</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            for (const it of group.items) {
+                              await handleDecodeItem(it.id)
+                            }
+                          }}
+                          disabled={isGroupDecoding || !isOnline}
+                          className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                        >
+                          {isGroupDecoding ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Scan size={12} />
+                          )}
+                          <span>{isGroupDecoding ? 'Đang giải mã...' : `Giải mã (${group.items.length})`}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 )
@@ -1519,12 +1700,12 @@ export function ScannerPalletsTab({
           <>
             {groupedStampDecodedList.length === 0 ? (
               <div className="p-8 text-center text-slate-500 space-y-2">
-                <Sparkles size={36} className="mx-auto text-purple-400 stroke-[1.5]" />
+                <CheckCircle2 size={36} className="mx-auto text-purple-400 stroke-[1.5]" />
                 <p className="text-xs font-bold text-slate-300">
                   Chưa có Pallet nào được giải mã
                 </p>
                 <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-                  Khi AI giải mã xong ảnh con dấu, kết quả nhận diện sẽ xuất hiện ngay tại đây.
+                  Khi giải mã xong ảnh con dấu, kết quả nhận diện sẽ xuất hiện ngay tại đây.
                 </p>
               </div>
             ) : (
@@ -1542,7 +1723,7 @@ export function ScannerPalletsTab({
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                          <Sparkles size={14} className="text-purple-400 shrink-0" />
+                          <Box size={14} className="text-purple-400 shrink-0" />
                           <span className="font-mono font-black text-xs text-purple-200">
                             STT: {item.pallet_stt}
                           </span>
@@ -1653,7 +1834,7 @@ export function ScannerPalletsTab({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                        <Sparkles size={14} className="text-purple-400 shrink-0" />
+                        <Box size={14} className="text-purple-400 shrink-0" />
                         <span className="font-mono font-black text-xs text-purple-200">
                           STT: {group.pallet_stt}
                         </span>

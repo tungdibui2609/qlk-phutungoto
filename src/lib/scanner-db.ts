@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'chanhthu_scanner_db'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 export interface OfflinePallet {
     id: string
@@ -66,6 +66,22 @@ export interface OfflineLot {
     updated_at?: string
 }
 
+export interface OfflineStampQueueItem {
+    id: string
+    pallet_stt: string
+    pallet_tag?: string | null
+    pallet_notes?: string | null
+    box_count: number
+    box_weight: number
+    photo_base64: string
+    crop_base64?: string | null
+    system_code?: string
+    created_at: string
+    status: 'pending' | 'uploading' | 'error'
+    error_message?: string | null
+    retry_count?: number
+}
+
 function openDatabase(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
         if (typeof window === 'undefined' || !window.indexedDB) {
@@ -107,6 +123,13 @@ function openDatabase(): Promise<IDBDatabase> {
             // Store 5: Cached Warehouse Map (zones + positions) — tránh giới hạn 5MB của localStorage
             if (!db.objectStoreNames.contains('warehouse_map')) {
                 db.createObjectStore('warehouse_map', { keyPath: 'key' })
+            }
+
+            // Store 6: Stamp Queue Offline (đợt chụp ảnh con dấu chờ gửi AI)
+            if (!db.objectStoreNames.contains('stamp_queue')) {
+                const store = db.createObjectStore('stamp_queue', { keyPath: 'id' })
+                store.createIndex('pallet_stt', 'pallet_stt', { unique: false })
+                store.createIndex('created_at', 'created_at', { unique: false })
             }
         }
 
@@ -433,4 +456,96 @@ export async function getWarehouseMapFromOfflineDb(
     } catch {
         return null
     }
+}
+
+// ── STAMP QUEUE OFFLINE (Web PWA matching Android Stamp Queue) ─────────────
+
+export async function saveOfflineStampQueueItem(item: OfflineStampQueueItem): Promise<void> {
+    const db = await openDatabase()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('stamp_queue', 'readwrite')
+        tx.objectStore('stamp_queue').put(item)
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+    })
+}
+
+export async function getOfflineStampQueue(): Promise<OfflineStampQueueItem[]> {
+    try {
+        const db = await openDatabase()
+        return new Promise((resolve) => {
+            const tx = db.transaction('stamp_queue', 'readonly')
+            const req = tx.objectStore('stamp_queue').getAll()
+            req.onsuccess = () => resolve((req.result || []) as OfflineStampQueueItem[])
+            req.onerror = () => resolve([])
+        })
+    } catch {
+        return []
+    }
+}
+
+export async function removeOfflineStampQueueItem(id: string): Promise<void> {
+    try {
+        const db = await openDatabase()
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('stamp_queue', 'readwrite')
+            tx.objectStore('stamp_queue').delete(id)
+            tx.oncomplete = () => resolve()
+            tx.onerror = () => reject(tx.error)
+        })
+    } catch {}
+}
+
+export async function syncSingleOfflineStampQueueItem(id: string): Promise<boolean> {
+    const list = await getOfflineStampQueue()
+    const target = list.find(i => i.id === id)
+    if (!target) return false
+
+    try {
+        const res = await fetch('/api/stamp-queue/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                imageBase64: target.photo_base64,
+                croppedBase64: target.crop_base64 || target.photo_base64,
+                palletStt: target.pallet_stt,
+                palletTag: target.pallet_tag || null,
+                palletNotes: target.pallet_notes || null,
+                boxCount: target.box_count || 1,
+                boxWeight: target.box_weight || 20,
+                systemCode: target.system_code || 'KHO_DONG_LANH',
+            }),
+        })
+        const data = await res.json()
+        if (data.success) {
+            await removeOfflineStampQueueItem(id)
+            return true
+        } else {
+            target.status = 'error'
+            target.error_message = data.error || 'Server từ chối'
+            target.retry_count = (target.retry_count || 0) + 1
+            await saveOfflineStampQueueItem(target)
+            return false
+        }
+    } catch (err: any) {
+        target.status = 'error'
+        target.error_message = err.message || 'Mất kết nối mạng'
+        target.retry_count = (target.retry_count || 0) + 1
+        await saveOfflineStampQueueItem(target)
+        return false
+    }
+}
+
+export async function syncAllOfflineStampQueue(): Promise<{ synced: number; failed: number }> {
+    const list = await getOfflineStampQueue()
+    if (list.length === 0) return { synced: 0, failed: 0 }
+
+    let synced = 0
+    let failed = 0
+    for (const item of list) {
+        const ok = await syncSingleOfflineStampQueueItem(item.id)
+        if (ok) synced++
+        else failed++
+    }
+    return { synced, failed }
 }

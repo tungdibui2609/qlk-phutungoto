@@ -34,18 +34,16 @@ export async function POST(req: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser()
 
-    if (!user) {
-      return NextResponse.json({ success: false, error: 'Chưa đăng nhập' }, { status: 401 })
-    }
-
     const admin = createAdminSupabaseClient()
-    const { data: profile } = await admin
-      .from('user_profiles')
-      .select('company_id')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    const companyId: string | null = (profile as any)?.company_id || null
+    let companyId: string | null = null
+    if (user?.id) {
+      const { data: profile } = await admin
+        .from('user_profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .maybeSingle()
+      companyId = (profile as any)?.company_id || null
+    }
     const geminiCfg = await resolveGeminiConfig(companyId)
 
     if (!geminiCfg) {
