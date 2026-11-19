@@ -577,7 +577,7 @@ async function applyProposalItemUpdate(supabase: SupabaseClient, it: ProposalIte
                             system_code: sysCode,
                             company_id: companyId,
                             warehouse_name: defaultBranchName || null,
-                            notes: it.note || 'Tạo Lot mới từ đề xuất điều chỉnh vị trí'
+                            notes: it.note?.trim() || null
                         })
                         .select('id')
                         .single()
