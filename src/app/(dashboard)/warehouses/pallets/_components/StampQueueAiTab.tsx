@@ -22,6 +22,7 @@ import {
   FileCode2,
   Copy,
   FolderSync,
+  Calendar,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
@@ -84,6 +85,7 @@ export function StampQueueAiTab({
   const [items, setItems] = useState<StampQueueItem[]>([])
   const [loading, setLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'decoded' | 'approved'>('all')
+  const [dateFilter, setDateFilter] = useState<string>('') // '' = tất cả, hoặc 'YYYY-MM-DD'
   const [decodingAll, setDecodingAll] = useState(false)
   const [decodingId, setDecodingId] = useState<string | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
@@ -139,15 +141,42 @@ export function StampQueueAiTab({
     }
   }, [])
 
-  const loadQueue = useCallback(async () => {
+  const getTodayStr = () => {
+    const d = new Date()
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  const getYesterdayStr = () => {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  const loadQueue = useCallback(async (targetDate?: string) => {
     setLoading(true)
     try {
-      const { data, error } = await (supabase as any)
+      const activeDate = targetDate !== undefined ? targetDate : dateFilter
+      let query = (supabase as any)
         .from('stamp_scan_queue')
         .select('*')
         .eq('system_code', systemCode)
         .order('created_at', { ascending: false })
-        .limit(100)
+
+      if (activeDate) {
+        const start = new Date(`${activeDate}T00:00:00`)
+        const end = new Date(`${activeDate}T23:59:59.999`)
+        query = query.gte('created_at', start.toISOString()).lte('created_at', end.toISOString())
+      } else {
+        query = query.limit(150)
+      }
+
+      const { data, error } = await query
 
       if (error) throw error
       const list: StampQueueItem[] = data || []
@@ -160,7 +189,7 @@ export function StampQueueAiTab({
     } finally {
       setLoading(false)
     }
-  }, [systemCode, onPendingCountChange])
+  }, [systemCode, onPendingCountChange, dateFilter])
 
   useEffect(() => {
     loadAiConfig()
@@ -543,6 +572,14 @@ export function StampQueueAiTab({
   if (!visible) return null
 
   const filteredItems = items.filter(it => {
+    if (dateFilter) {
+      const itemDate = new Date(it.created_at)
+      const y = itemDate.getFullYear()
+      const m = String(itemDate.getMonth() + 1).padStart(2, '0')
+      const d = String(itemDate.getDate()).padStart(2, '0')
+      const itemDateStr = `${y}-${m}-${d}`
+      if (itemDateStr !== dateFilter) return false
+    }
     if (statusFilter === 'all') return true
     if (statusFilter === 'pending') return it.status === 'pending' || it.status === 'error'
     return it.status === statusFilter
@@ -599,8 +636,18 @@ export function StampQueueAiTab({
     return Array.from(map.values())
   })()
 
-  const pendingOrErrorCount = items.filter(i => i.status === 'pending' || i.status === 'error').length
-  const decodedCount = items.filter(i => (i.status === 'decoded' || (i.stamp_line1 && i.stamp_line2)) && i.status !== 'approved').length
+  const isSameDate = (isoStr?: string | null, targetYmd?: string) => {
+    if (!isoStr || !targetYmd) return false
+    const d = new Date(isoStr)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}` === targetYmd
+  }
+
+  const filteredByDateItems = items.filter(i => !dateFilter || isSameDate(i.created_at, dateFilter))
+  const pendingOrErrorCount = filteredByDateItems.filter(i => i.status === 'pending' || i.status === 'error').length
+  const decodedCount = filteredByDateItems.filter(i => (i.status === 'decoded' || (i.stamp_line1 && i.stamp_line2)) && i.status !== 'approved').length
 
   return (
     <div className="space-y-5">
@@ -771,106 +818,193 @@ export function StampQueueAiTab({
       </div>
 
       {/* 2. Thanh công cụ & Bộ lọc hàng đợi */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setStatusFilter('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              statusFilter === 'all'
-                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-            }`}
-          >
-            Tất cả ({items.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('pending')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              statusFilter === 'pending'
-                ? 'bg-amber-600 text-white'
-                : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60'
-            }`}
-          >
-            Chờ giải mã ({pendingOrErrorCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('decoded')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              statusFilter === 'decoded'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60'
-            }`}
-          >
-            Đã đọc số ({items.filter(i => i.status === 'decoded').length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setStatusFilter('approved')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              statusFilter === 'approved'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60'
-            }`}
-          >
-            Đã duyệt thùng ({items.filter(i => i.status === 'approved').length})
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Nút bật/tắt TỰ ĐỘNG DUYỆT */}
-          <label
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition select-none ${
-              autoApproveOnDecode
-                ? 'bg-amber-500/15 border-amber-500/50 text-amber-600 dark:text-amber-400 shadow-xs'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
-            }`}
-            title="Khi bật: Gemini AI giải mã xong sẽ TỰ ĐỘNG Duyệt & Tạo Thùng vào kho luôn mà không cần bấm tay!"
-          >
-            <input
-              type="checkbox"
-              checked={autoApproveOnDecode}
-              onChange={e => handleToggleAutoApprove(e.target.checked)}
-              className="w-4 h-4 rounded text-amber-600 accent-amber-600 cursor-pointer"
-            />
-            <Zap size={14} className={autoApproveOnDecode ? 'text-amber-500 fill-amber-500 animate-pulse' : 'text-slate-400'} />
-            <span>Tự động duyệt khi AI đọc</span>
-          </label>
-
-          {/* Nút DUYỆT TẤT CẢ ĐÃ ĐỌC */}
-          {decodedCount > 0 && (
+      <div className="flex flex-col gap-3 p-3.5 bg-slate-50/90 dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          {/* Nhóm Bộ lọc Trạng thái */}
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               type="button"
-              onClick={handleApproveAllDecoded}
-              disabled={approvingAll}
-              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/25 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
-              title="Duyệt và tạo thùng cho toàn bộ các Pallet đã được giải mã"
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === 'all'
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+              }`}
             >
-              {approvingAll ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <PackageCheck size={14} />
-              )}
-              <span>Duyệt tất cả đã đọc ({decodedCount})</span>
+              Tất cả ({filteredByDateItems.length})
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => setStatusFilter('pending')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === 'pending'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60'
+              }`}
+            >
+              Chờ giải mã ({pendingOrErrorCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('decoded')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === 'decoded'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60'
+              }`}
+            >
+              Đã đọc số ({filteredByDateItems.filter(i => i.status === 'decoded').length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('approved')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === 'approved'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60'
+              }`}
+            >
+              Đã duyệt thùng ({filteredByDateItems.filter(i => i.status === 'approved').length})
+            </button>
+          </div>
 
-          <button
-            type="button"
-            onClick={() => loadQueue()}
-            disabled={loading}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
-            title="Tải lại danh sách"
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleDecodeGemini()}
-            disabled={decodingAll || pendingOrErrorCount === 0}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/25 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          {/* Nhóm Bộ lọc Ngày */}
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-bold">
+              <Calendar size={14} className="text-indigo-600 dark:text-indigo-400" />
+              <span>Lọc ngày:</span>
+            </div>
+            <div className="flex items-center bg-white dark:bg-slate-800 rounded-xl p-0.5 border border-slate-200 dark:border-slate-700 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFilter('')
+                  loadQueue('')
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  !dateFilter
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Tất cả
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const today = getTodayStr()
+                  setDateFilter(today)
+                  loadQueue(today)
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  dateFilter === getTodayStr()
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Hôm nay
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const yest = getYesterdayStr()
+                  setDateFilter(yest)
+                  loadQueue(yest)
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  dateFilter === getYesterdayStr()
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Hôm qua
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={e => {
+                  const val = e.target.value
+                  setDateFilter(val)
+                  loadQueue(val)
+                }}
+                className="bg-transparent text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none cursor-pointer"
+              />
+              {dateFilter && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDateFilter('')
+                    loadQueue('')
+                  }}
+                  className="p-0.5 text-slate-400 hover:text-rose-500 rounded cursor-pointer"
+                  title="Xóa lọc ngày"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Hàng nút tác vụ (Tự động duyệt, Duyệt tất cả, Tải lại, Giải mã Gemini) */}
+        <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800/70">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Nút bật/tắt TỰ ĐỘNG DUYỆT */}
+            <label
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition select-none ${
+                autoApproveOnDecode
+                  ? 'bg-amber-500/15 border-amber-500/50 text-amber-600 dark:text-amber-400 shadow-xs'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+              }`}
+              title="Khi bật: Gemini AI giải mã xong sẽ TỰ ĐỘNG Duyệt & Tạo Thùng vào kho luôn mà không cần bấm tay!"
+            >
+              <input
+                type="checkbox"
+                checked={autoApproveOnDecode}
+                onChange={e => handleToggleAutoApprove(e.target.checked)}
+                className="w-4 h-4 rounded text-amber-600 accent-amber-600 cursor-pointer"
+              />
+              <Zap size={14} className={autoApproveOnDecode ? 'text-amber-500 fill-amber-500 animate-pulse' : 'text-slate-400'} />
+              <span>Tự động duyệt khi AI đọc</span>
+            </label>
+
+            {/* Nút DUYỆT TẤT CẢ ĐÃ ĐỌC */}
+            {decodedCount > 0 && (
+              <button
+                type="button"
+                onClick={handleApproveAllDecoded}
+                disabled={approvingAll}
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/25 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                title="Duyệt và tạo thùng cho toàn bộ các Pallet đã được giải mã"
+              >
+                {approvingAll ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <PackageCheck size={14} />
+                )}
+                <span>Duyệt tất cả đã đọc ({decodedCount})</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => loadQueue()}
+              disabled={loading}
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer disabled:opacity-50 transition"
+              title="Tải lại danh sách"
+            >
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDecodeGemini()}
+              disabled={decodingAll || pendingOrErrorCount === 0}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-500/25 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {decodingAll ? (
               <Loader2 size={15} className="animate-spin" />
@@ -881,6 +1015,7 @@ export function StampQueueAiTab({
           </button>
         </div>
       </div>
+    </div>
 
       {/* 3. Danh sách thẻ ảnh gửi lên từ kho (Gom nhóm theo STT Pallet) */}
       {groupedFilteredItems.length === 0 ? (
