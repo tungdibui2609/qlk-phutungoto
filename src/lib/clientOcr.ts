@@ -1,4 +1,5 @@
 import { parseStampLines, parseBoxLabelText } from './ocrParser';
+import { createWorker } from 'tesseract.js';
 
 let clientWorkerInstance: any = null;
 let clientWorkerPromise: Promise<any> | null = null;
@@ -9,7 +10,6 @@ export async function getClientOcrWorker() {
 
   clientWorkerPromise = (async () => {
     try {
-      const { createWorker } = await import('tesseract.js');
       // Tesseract client worker using static files cached locally in /public/tessdata
       const worker = await createWorker('eng', 1, {
         workerPath: '/tessdata/worker.min.js',
@@ -30,6 +30,21 @@ export async function getClientOcrWorker() {
   })();
 
   return clientWorkerPromise;
+}
+
+/**
+ * Preload Tesseract Offline Worker ngay khi trang tải xong (khi đang có mạng),
+ * đảm bảo toàn bộ tesseract.js, worker.min.js, wasm và eng.traineddata đều đã được
+ * nạp sẵn vào cache trình duyệt trước khi người dùng tắt mạng.
+ */
+export async function preloadClientOcr() {
+  if (typeof window === 'undefined') return;
+  try {
+    await getClientOcrWorker();
+    console.log('[Client OCR] Preload Tesseract offline worker thành công!');
+  } catch (err) {
+    console.warn('[Client OCR] Preload worker thất bại (sẽ tự động tải lại khi quét):', err);
+  }
 }
 
 export async function recognizeClientSide(

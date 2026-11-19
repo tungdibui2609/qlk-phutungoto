@@ -1,12 +1,18 @@
 // Chánh Thu PWA Service Worker for Web Push Notifications, App Badge & Offline Scanner
 
-const CACHE_NAME = 'chanhthu-scanner-cache-v3'
+const CACHE_NAME = 'chanhthu-scanner-cache-v4'
 const PRECACHE_URLS = [
     '/scanner',
     '/logoanywarehouse.png',
     '/manifest.webmanifest',
     '/tessdata/worker.min.js',
-    '/tessdata/eng.traineddata'
+    '/tessdata/eng.traineddata',
+    '/tessdata/tesseract-core-simd-lstm.wasm',
+    '/tessdata/tesseract-core-simd-lstm.wasm.js',
+    '/tessdata/tesseract-core-simd.wasm',
+    '/tessdata/tesseract-core-simd.wasm.js',
+    '/tessdata/tesseract-core.wasm',
+    '/tessdata/tesseract-core.wasm.js'
 ]
 
 self.addEventListener('install', (event) => {

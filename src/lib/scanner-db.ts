@@ -48,6 +48,8 @@ export interface OfflinePendingPallet {
     sku?: string
     tag?: string
     scan_type?: 'stamp' | 'label'
+    photo_base64?: string
+    crop_base64?: string
     notes?: string
     created_at: string
     status: 'pending_create' | 'pending_link' | 'syncing' | 'failed'
@@ -76,8 +78,10 @@ export interface OfflineStampQueueItem {
     photo_base64: string
     crop_base64?: string | null
     system_code?: string
+    stamp_line1?: string | null
+    stamp_line2?: string | null
     created_at: string
-    status: 'pending' | 'uploading' | 'error'
+    status: 'pending' | 'uploading' | 'error' | 'decoded'
     error_message?: string | null
     retry_count?: number
 }
@@ -281,6 +285,8 @@ export async function addPendingPallet(pallet: Omit<OfflinePendingPallet, 'clien
                 if (pallet.lot_code) existing.lot_code = pallet.lot_code
                 if (pallet.product_name) existing.product_name = pallet.product_name
                 if (pallet.sku) existing.sku = pallet.sku
+                if (pallet.photo_base64) existing.photo_base64 = pallet.photo_base64
+                if (pallet.crop_base64) existing.crop_base64 = pallet.crop_base64
                 existing.error_message = undefined
                 store.put(existing)
                 resultItem = existing
@@ -514,6 +520,8 @@ export async function syncSingleOfflineStampQueueItem(id: string): Promise<boole
                 boxCount: target.box_count || 1,
                 boxWeight: target.box_weight || 20,
                 systemCode: target.system_code || 'KHO_DONG_LANH',
+                stampLine1: target.stamp_line1 || null,
+                stampLine2: target.stamp_line2 || null,
             }),
         })
         const data = await res.json()

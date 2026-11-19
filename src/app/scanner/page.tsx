@@ -56,10 +56,16 @@ import {
   ArrowLeft,
   Save,
   RotateCcw,
+  Upload,
+  ZoomIn,
+  ZoomOut,
+  Crop,
+  Move,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { decodeStampBox, DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
 import { parseStampLines } from '@/lib/ocrParser'
+import { recognizeClientSide, preloadClientOcr } from '@/lib/clientOcr'
 import { decodeSTT } from '@/lib/numberUtils'
 import {
   savePalletsToOfflineDb,
@@ -244,6 +250,18 @@ export default function WebScannerPage() {
     boxWeight: number
   }>>({})
 
+  // Modal Căn chỉnh & Cắt con dấu từ ảnh Upload
+  const uploadStampInputRef = useRef<HTMLInputElement>(null)
+  const cropViewportRef = useRef<HTMLDivElement>(null)
+  const [isCropModalOpen, setIsCropModalOpen] = useState<boolean>(false)
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null)
+  const [cropImgNaturalSize, setCropImgNaturalSize] = useState<{ width: number; height: number } | null>(null)
+  const [cropZoom, setCropZoom] = useState<number>(1)
+  const [cropRotate, setCropRotate] = useState<number>(0)
+  const [cropPan, setCropPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [isDraggingCrop, setIsDraggingCrop] = useState<boolean>(false)
+  const dragStartRef = useRef<{ clientX: number; clientY: number; startPanX: number; startPanY: number }>({ clientX: 0, clientY: 0, startPanX: 0, startPanY: 0 })
+
   // Pallet list tab (Tab 3)
   const [palletsList, setPalletsList] = useState<PalletItem[]>([])
   const [palletFilter, setPalletFilter] = useState<'all' | 'linked' | 'unlinked'>('all')
@@ -398,6 +416,11 @@ export default function WebScannerPage() {
     getLotsCountFromOfflineDb().then(setOfflineLotsCount).catch(() => {})
     getOfflineMeta('lots_last_synced_at').then(setLastLotsSync).catch(() => {})
 
+    // Preload Tesseract Client OCR trong nền để sẵn sàng quét offline 100% không lo thiếu chunk
+    const ocrTimer = setTimeout(() => {
+      preloadClientOcr().catch(() => {})
+    }, 1500)
+
     // Load cached stamp rules & meta
     try {
       const savedDefTarget = localStorage.getItem('config_default_target_box_qty')
@@ -454,6 +477,7 @@ export default function WebScannerPage() {
     }
 
     return () => {
+      clearTimeout(ocrTimer)
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
@@ -467,7 +491,8 @@ export default function WebScannerPage() {
     productName?: string | null,
     sku?: string | null,
     count: number = 1,
-    scanType: 'label' | 'stamp' = 'label'
+    scanType: 'label' | 'stamp' = 'label',
+    photoBase64?: string
   ) => {
     try {
       await addPendingPallet({
@@ -482,7 +507,10 @@ export default function WebScannerPage() {
           time: new Date().toISOString()
         })),
         product_name: productName || undefined,
-        sku: sku || undefined
+        sku: sku || undefined,
+        scan_type: scanType,
+        photo_base64: photoBase64,
+        crop_base64: photoBase64
       })
 
       const newBoxes: BoxItem[] = rowsToInsert.map((r, idx) => ({
@@ -965,24 +993,7 @@ export default function WebScannerPage() {
     return canvas.toDataURL('image/jpeg', 0.85)
   }
 
-  const handleCaptureAndRecognize = useCallback(async () => {
-    if (!activePalletStt) {
-      await scannerAlert({
-        title: 'Chưa có Pallet',
-        message: 'Vui lòng bấm [Chọn / Nhập STT Pallet] trước khi quét tem thùng.',
-        variant: 'warning',
-      })
-      setIsSwitchPalletModal(true)
-      return
-    }
-
-    const mode = activeTab === 'stamp' ? 'stamp' : 'label'
-    const base64 = captureFrame(mode)
-    if (!base64) {
-      triggerToast('Không thể lấy khung hình Camera')
-      return
-    }
-
+  const runOcrOnBase64 = useCallback(async (base64: string, mode: 'stamp' | 'label') => {
     setIsRecognizing(true)
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 22000)
@@ -1011,7 +1022,6 @@ export default function WebScannerPage() {
       // Fallback sang Client-Side OCR chạy trực tiếp trên trình duyệt bằng Tesseract Web Worker offline
       if (!json || !json.success) {
         try {
-          const { recognizeClientSide } = await import('@/lib/clientOcr')
           json = await recognizeClientSide(base64, mode, stampDictMap)
         } catch (clientErr: any) {
           console.error('[OCR] Nhận diện offline client-side thất bại:', clientErr)
@@ -1065,7 +1075,96 @@ export default function WebScannerPage() {
     } finally {
       setIsRecognizing(false)
     }
-  }, [activePalletStt, activeTab, stampDictMap])
+  }, [stampDictMap])
+
+  const handleCaptureAndRecognize = useCallback(async () => {
+    if (!activePalletStt) {
+      await scannerAlert({
+        title: 'Chưa có Pallet',
+        message: 'Vui lòng bấm [Chọn / Nhập STT Pallet] trước khi quét tem thùng.',
+        variant: 'warning',
+      })
+      setIsSwitchPalletModal(true)
+      return
+    }
+
+    const mode = activeTab === 'stamp' ? 'stamp' : 'label'
+    const base64 = captureFrame(mode)
+    if (!base64) {
+      triggerToast('Không thể lấy khung hình Camera')
+      return
+    }
+
+    await runOcrOnBase64(base64, mode)
+  }, [activePalletStt, activeTab, captureFrame, runOcrOnBase64])
+
+  // Cắt ảnh từ vùng tâm khung ngắm của modal upload
+  const generateCroppedBase64 = useCallback((): Promise<string | null> => {
+    return new Promise((resolve) => {
+      if (!cropImageSrc) return resolve(null)
+      const img = new window.Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const viewportW = 320
+        const viewportH = 180
+        const canvasW = 960
+        const canvasH = 540
+        const canvas = document.createElement('canvas')
+        canvas.width = canvasW
+        canvas.height = canvasH
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return resolve(null)
+
+        const scaleMultiplier = canvasW / viewportW // 3
+
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, canvasW, canvasH)
+
+        const natW = img.naturalWidth || 1000
+        const natH = img.naturalHeight || 800
+        const baseDisplayW = viewportW
+        const baseDisplayH = (viewportW / natW) * natH
+
+        const destW = baseDisplayW * cropZoom * scaleMultiplier
+        const destH = baseDisplayH * cropZoom * scaleMultiplier
+
+        ctx.save()
+        ctx.translate(canvasW / 2 + cropPan.x * scaleMultiplier, canvasH / 2 + cropPan.y * scaleMultiplier)
+        ctx.rotate((cropRotate * Math.PI) / 180)
+        ctx.drawImage(img, -destW / 2, -destH / 2, destW, destH)
+        ctx.restore()
+
+        resolve(canvas.toDataURL('image/jpeg', 0.94))
+      }
+      img.onerror = () => resolve(null)
+      img.src = cropImageSrc
+    })
+  }, [cropImageSrc, cropPan, cropRotate, cropZoom])
+
+  const handleConfirmCropAndScan = useCallback(async () => {
+    const cropped = await generateCroppedBase64()
+    if (!cropped) {
+      triggerToast('Không thể cắt ảnh con dấu')
+      return
+    }
+    setIsCropModalOpen(false)
+    await runOcrOnBase64(cropped, 'stamp')
+  }, [generateCroppedBase64, runOcrOnBase64])
+
+  const handleConfirmCropAndSendServer = useCallback(async () => {
+    const cropped = await generateCroppedBase64()
+    if (!cropped) {
+      triggerToast('Không thể cắt ảnh con dấu')
+      return
+    }
+    setIsCropModalOpen(false)
+    playScanSound()
+    triggerHaptic()
+    setQueueBoxCount('1')
+    setQueueBoxWeight('20')
+    setPendingStampPhoto(cropImageSrc)
+    setPendingStampCrop(cropped)
+  }, [cropImageSrc, generateCroppedBase64])
 
   // ── Hardware / Keyboard Trigger (Space or Enter like Volume Down on Mobile)
   useEffect(() => {
@@ -1138,6 +1237,7 @@ export default function WebScannerPage() {
         startIdx = maxIdx + 1
       }
 
+      const capturedPhoto = pendingStamp.imageBase64
       const rowsToInsert = []
       for (let i = 0; i < count; i++) {
         const idx = startIdx + i
@@ -1158,6 +1258,8 @@ export default function WebScannerPage() {
             scan_type: 'stamp',
             stamp_line1: l1,
             stamp_line2: l2,
+            photo_base64: capturedPhoto || undefined,
+            crop_base64: capturedPhoto || undefined,
             box_index: idx,
             sku: dec.isSpecial12 ? dec.special12Code : (dec.code || 'SKU'),
             product_name: dec.productTitle || (dec.isSpecial12 ? dec.special12Name : 'Sản phẩm đóng dấu'),
@@ -1183,10 +1285,10 @@ export default function WebScannerPage() {
         dec.productTitle || (dec.isSpecial12 ? dec.special12Name : 'Sản phẩm đóng dấu'),
         dec.isSpecial12 ? dec.special12Code : (dec.code || 'SKU'),
         count,
-        'stamp'
+        'stamp',
+        capturedPhoto
       )
 
-      const capturedPhoto = pendingStamp.imageBase64
       setPendingStamp(null)
       checkTargetReached(currentBoxes.length + count)
 
@@ -2062,6 +2164,19 @@ export default function WebScannerPage() {
     for (const p of pendingPallets) {
       try {
         await updatePendingPalletStatus(p.client_id, 'syncing')
+        const cleanStt = (p.stt || '').trim().toUpperCase()
+
+        // Khớp chuẩn Android: Xóa thùng cũ chưa duyệt (lot_id IS NULL) của STT này để bảo vệ dữ liệu không bị nhân đôi
+        try {
+          await supabase
+            .from('box_labels')
+            .delete()
+            .is('lot_id', null)
+            .eq('system_code', p.boxes[0]?.system_code || 'KHO_DONG_LANH')
+            .eq('metadata->>pallet_stt', cleanStt)
+        } catch (delErr) {
+          console.warn('Lỗi dọn thùng unlinked cũ trước khi đồng bộ:', delErr)
+        }
 
         const rowsToInsert = p.boxes.map((b: any, idx: number) => {
           const bMeta = b.metadata || {}
@@ -2074,11 +2189,11 @@ export default function WebScannerPage() {
             system_code: b.system_code || 'KHO_DONG_LANH',
             status: 'printed',
             metadata: {
-              pallet_stt: p.stt,
-              scan_type: bMeta.scan_type || (p.stt.startsWith('G') || b.code.startsWith('STAMP') ? 'stamp' : 'label'),
+              pallet_stt: cleanStt,
+              scan_type: bMeta.scan_type || (cleanStt.startsWith('G') || b.code.startsWith('STAMP') ? 'stamp' : 'label'),
               box_index: bMeta.box_index || (idx + 1),
-              sku: bMeta.sku || p.sku || 'SKU',
-              product_name: bMeta.product_name || p.product_name || 'Hàng đông lạnh',
+              sku: (bMeta.sku || p.sku || 'SKU').trim(),
+              product_name: (bMeta.product_name || p.product_name || 'Hàng đông lạnh').trim(),
               ...bMeta
             }
           }
@@ -2118,6 +2233,20 @@ export default function WebScannerPage() {
     }
     try {
       await updatePendingPalletStatus(item.client_id, 'syncing')
+      const cleanStt = (item.stt || '').trim().toUpperCase()
+
+      // Khớp chuẩn Android: Xóa thùng cũ chưa duyệt (lot_id IS NULL) của STT này để bảo vệ dữ liệu không bị nhân đôi
+      try {
+        await supabase
+          .from('box_labels')
+          .delete()
+          .is('lot_id', null)
+          .eq('system_code', item.boxes[0]?.system_code || 'KHO_DONG_LANH')
+          .eq('metadata->>pallet_stt', cleanStt)
+      } catch (delErr) {
+        console.warn('Lỗi dọn thùng unlinked cũ trước khi đồng bộ:', delErr)
+      }
+
       const rowsToInsert = item.boxes.map((b: any, idx: number) => {
         const bMeta = b.metadata || {}
         return {
@@ -2129,11 +2258,11 @@ export default function WebScannerPage() {
           system_code: b.system_code || 'KHO_DONG_LANH',
           status: 'printed',
           metadata: {
-            pallet_stt: item.stt,
-            scan_type: bMeta.scan_type || (item.stt.startsWith('G') || b.code.startsWith('STAMP') ? 'stamp' : 'label'),
+            pallet_stt: cleanStt,
+            scan_type: bMeta.scan_type || (cleanStt.startsWith('G') || b.code.startsWith('STAMP') ? 'stamp' : 'label'),
             box_index: bMeta.box_index || (idx + 1),
-            sku: bMeta.sku || item.sku || 'SKU',
-            product_name: bMeta.product_name || item.product_name || 'Hàng đông lạnh',
+            sku: (bMeta.sku || item.sku || 'SKU').trim(),
+            product_name: (bMeta.product_name || item.product_name || 'Hàng đông lạnh').trim(),
             ...bMeta
           }
         }
@@ -2793,28 +2922,81 @@ export default function WebScannerPage() {
             </div>
 
             {/* 2. Action Controls Bar (Matching Mobile App) */}
-            <div className="shrink-0 bg-[#0f172a] border-b border-slate-800 px-3 py-2 flex items-center gap-2 justify-between z-10 shadow-sm">
+            <input
+              type="file"
+              ref={uploadStampInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onload = () => {
+                  const dataUrl = reader.result as string
+                  const tempImg = new window.Image()
+                  tempImg.onload = () => {
+                    const natW = tempImg.naturalWidth || 1000
+                    const natH = tempImg.naturalHeight || 800
+                    setCropImgNaturalSize({ width: natW, height: natH })
+                    setCropImageSrc(dataUrl)
+                    setCropZoom(1)
+                    setCropRotate(0)
+                    setCropPan({ x: 0, y: 0 })
+                    setIsCropModalOpen(true)
+                  }
+                  tempImg.onerror = () => {
+                    setCropImgNaturalSize({ width: 1000, height: 800 })
+                    setCropImageSrc(dataUrl)
+                    setCropZoom(1)
+                    setCropRotate(0)
+                    setCropPan({ x: 0, y: 0 })
+                    setIsCropModalOpen(true)
+                  }
+                  tempImg.src = dataUrl
+                }
+                reader.readAsDataURL(file)
+                e.target.value = ''
+              }}
+            />
+            <div className="shrink-0 bg-[#0f172a] border-b border-slate-800 px-2.5 py-2 flex items-center gap-1.5 justify-between z-10 shadow-sm overflow-x-auto scrollbar-none">
               <button
                 onClick={handleCaptureAndRecognize}
                 disabled={isRecognizing}
-                className={`flex-1 py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition ${
+                className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition shrink-0 ${
                   !activePalletStt
                     ? 'bg-amber-500/50 text-slate-900/60'
                     : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/30 active:scale-[0.98]'
                 }`}
+                title="Chụp con dấu mực"
               >
                 {isRecognizing ? (
                   <Loader2 size={16} className="animate-spin text-slate-950" />
                 ) : (
-                  <Camera size={16} />
+                  <Camera size={16} className="text-slate-950" />
                 )}
-                <span>Chụp Quét Dấu</span>
+                <span>Chụp</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!activePalletStt) {
+                    setIsSwitchPalletModal(true)
+                    return
+                  }
+                  uploadStampInputRef.current?.click()
+                }}
+                disabled={isRecognizing}
+                className="py-2 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap shadow-md shadow-purple-600/30 active:scale-[0.98] transition shrink-0"
+                title="Tải ảnh con dấu từ máy & căn chỉnh cắt tâm"
+              >
+                <Upload size={14} />
+                <span>Tải Ảnh</span>
               </button>
 
               <button
                 onClick={handleCaptureStampPhotoForServer}
                 disabled={isRecognizing || uploadingStampPhoto}
-                className="py-2 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1 shadow-md shadow-indigo-600/30 active:scale-[0.98] transition shrink-0"
+                className="py-2 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap shadow-md shadow-indigo-600/30 active:scale-[0.98] transition shrink-0"
                 title="Chụp ảnh gửi Server để giải mã & tạo thùng"
               >
                 <CloudUpload size={14} />
@@ -2831,7 +3013,7 @@ export default function WebScannerPage() {
                   setManualStampLine2('')
                   setIsManualStampModal(true)
                 }}
-                className="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1 active:scale-[0.98] transition shrink-0"
+                className="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap active:scale-[0.98] transition shrink-0"
               >
                 <Fingerprint size={14} className="text-amber-400" />
                 <span>Nhập số</span>
@@ -2840,11 +3022,11 @@ export default function WebScannerPage() {
               {activePalletStt && currentBoxes.length > 0 && (
                 <button
                   onClick={handleCompletePallet}
-                  className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/30 active:scale-[0.98] transition shrink-0"
+                  className="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap shadow-md shadow-emerald-600/30 active:scale-[0.98] transition shrink-0"
                   title="Chốt hoàn thành Pallet"
                 >
                   <CheckCheck size={14} />
-                  <span>Chốt Pallet</span>
+                  <span>Chốt</span>
                 </button>
               )}
             </div>
@@ -3627,6 +3809,202 @@ export default function WebScannerPage() {
           </div>
         )
       })()}
+
+      {/* ── MODAL CĂN CHỈNH & CẮT ẢNH CON DẤU (UPLOAD TỪ MÁY) ── */}
+      {isCropModalOpen && cropImageSrc && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-between p-3 select-none">
+          {/* Header */}
+          <div className="w-full max-w-md flex items-center justify-between py-2 border-b border-slate-800 text-white">
+            <div className="flex items-center gap-2">
+              <Crop size={18} className="text-amber-400" />
+              <span className="font-bold text-sm">Căn Chỉnh Con Dấu Vào Khung</span>
+            </div>
+            <button
+              onClick={() => {
+                setIsCropModalOpen(false)
+                setCropImageSrc(null)
+              }}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Vùng Viewport Crop (khung chữ nhật 320x180 px - tỉ lệ 16:9) */}
+          <div className="flex-1 flex flex-col items-center justify-center w-full my-2">
+            <p className="text-[11px] text-slate-400 mb-2 flex items-center gap-1.5 text-center">
+              <Move size={12} className="text-amber-400" />
+              <span>Chạm / Kéo rê để di chuyển con dấu vào đúng 2 dòng khung vàng</span>
+            </p>
+
+            <div
+              ref={cropViewportRef}
+              className="relative w-[320px] h-[180px] bg-black rounded-xl overflow-hidden border-2 border-amber-500 shadow-2xl cursor-grab active:cursor-grabbing touch-none select-none"
+              onMouseDown={(e) => {
+                setIsDraggingCrop(true)
+                dragStartRef.current = { clientX: e.clientX, clientY: e.clientY, startPanX: cropPan.x, startPanY: cropPan.y }
+              }}
+              onMouseMove={(e) => {
+                if (!isDraggingCrop) return
+                const dx = e.clientX - dragStartRef.current.clientX
+                const dy = e.clientY - dragStartRef.current.clientY
+                setCropPan({ x: dragStartRef.current.startPanX + dx, y: dragStartRef.current.startPanY + dy })
+              }}
+              onMouseUp={() => setIsDraggingCrop(false)}
+              onMouseLeave={() => setIsDraggingCrop(false)}
+              onTouchStart={(e) => {
+                if (e.touches.length === 1) {
+                  setIsDraggingCrop(true)
+                  dragStartRef.current = { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY, startPanX: cropPan.x, startPanY: cropPan.y }
+                }
+              }}
+              onTouchMove={(e) => {
+                if (!isDraggingCrop || e.touches.length !== 1) return
+                const dx = e.touches[0].clientX - dragStartRef.current.clientX
+                const dy = e.touches[0].clientY - dragStartRef.current.clientY
+                setCropPan({ x: dragStartRef.current.startPanX + dx, y: dragStartRef.current.startPanY + dy })
+              }}
+              onTouchEnd={() => setIsDraggingCrop(false)}
+            >
+              {/* Bức ảnh được scale chuẩn vừa khít bề ngang 320px và co giãn theo cropZoom */}
+              {cropImgNaturalSize ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={cropImageSrc}
+                  alt="Con dấu cần crop"
+                  draggable={false}
+                  className="absolute max-w-none pointer-events-none select-none"
+                  style={{
+                    width: `${320 * cropZoom}px`,
+                    height: `${(320 / cropImgNaturalSize.width) * cropImgNaturalSize.height * cropZoom}px`,
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(-50%, -50%) translate(${cropPan.x}px, ${cropPan.y}px) rotate(${cropRotate}deg)`,
+                    transformOrigin: 'center center',
+                    transition: isDraggingCrop ? 'none' : 'transform 0.08s ease-out'
+                  }}
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={cropImageSrc}
+                  alt="Con dấu cần crop"
+                  draggable={false}
+                  className="absolute max-w-none pointer-events-none select-none"
+                  style={{
+                    width: `${320 * cropZoom}px`,
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(-50%, -50%) translate(${cropPan.x}px, ${cropPan.y}px) rotate(${cropRotate}deg)`,
+                    transformOrigin: 'center center',
+                    transition: isDraggingCrop ? 'none' : 'transform 0.08s ease-out'
+                  }}
+                />
+              )}
+
+              {/* Lớp lưới căn chỉnh 2 dòng mờ trực quan */}
+              <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-2">
+                <div className="h-[44%] border border-amber-400/40 rounded bg-amber-500/5 flex items-center justify-between px-2">
+                  <span className="text-[10px] font-mono font-bold text-amber-300/80 bg-black/60 px-1 rounded">DÒNG 1 (14 SỐ)</span>
+                  <span className="text-[9px] text-amber-400/60 font-mono">102010402001-0</span>
+                </div>
+                <div className="h-[44%] border border-amber-400/40 rounded bg-amber-500/5 flex items-center justify-between px-2">
+                  <span className="text-[10px] font-mono font-bold text-amber-300/80 bg-black/60 px-1 rounded">DÒNG 2 (16 SỐ)</span>
+                  <span className="text-[9px] text-amber-400/60 font-mono">2031103112600066</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Điều khiển Zoom, Xoay, Đặt lại */}
+            <div className="w-full max-w-[340px] mt-3 p-2.5 bg-slate-900/90 rounded-xl border border-slate-800 space-y-2.5">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCropZoom((prev) => Math.max(0.2, parseFloat((prev - 0.1).toFixed(2))))}
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                  title="Thu nhỏ"
+                >
+                  <ZoomOut size={16} />
+                </button>
+                <input
+                  type="range"
+                  min="0.2"
+                  max="4.0"
+                  step="0.05"
+                  value={cropZoom}
+                  onChange={(e) => setCropZoom(parseFloat(e.target.value))}
+                  className="flex-1 accent-amber-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCropZoom((prev) => Math.min(4.0, parseFloat((prev + 0.1).toFixed(2))))}
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                  title="Phóng to"
+                >
+                  <ZoomIn size={16} />
+                </button>
+                <span className="text-xs font-mono font-bold text-amber-300 w-11 text-right">{Math.round(cropZoom * 100)}%</span>
+              </div>
+
+              <div className="flex items-center justify-between pt-1 border-t border-slate-800">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCropRotate((prev) => (prev + 90) % 360)}
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
+                  >
+                    <RotateCw size={13} className="text-amber-400" />
+                    <span>Xoay 90° ({cropRotate}°)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCropPan({ x: 0, y: 0 })
+                      setCropZoom(1)
+                      setCropRotate(0)
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-slate-700 transition"
+                  >
+                    <RotateCcw size={13} className="text-slate-400" />
+                    <span>Đặt lại</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Footer */}
+          <div className="w-full max-w-md pt-2 border-t border-slate-800 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsCropModalOpen(false)
+                setCropImageSrc(null)
+              }}
+              className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmCropAndSendServer}
+              className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-md shadow-indigo-600/30 transition shrink-0"
+              title="Cắt ảnh gửi Server giải mã"
+            >
+              <CloudUpload size={14} />
+              <span>Gửi Giải Mã</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmCropAndScan}
+              className="flex-[1.5] py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/30 transition"
+            >
+              <Crop size={15} />
+              <span>Cắt & Quét Dấu</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       <ScannerDialogHost />
     </div>

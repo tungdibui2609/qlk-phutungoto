@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
-import { RotateCw, X, Search, ArrowRightLeft, MapPin, Check, Loader2 } from 'lucide-react'
+import React, { useState, useMemo, useEffect } from 'react'
+import { RotateCw, X, Search, ArrowRightLeft, MapPin, Check, Loader2, ArrowRight } from 'lucide-react'
 import type { PalletItem } from './types'
 import { normalizeText } from './scannerUtils'
 import { supabase } from '@/lib/supabaseClient'
@@ -53,6 +53,34 @@ export function PalletSwitchModal({
   const [showMergeMode, setShowMergeMode] = useState(false)
   const [mergeTargetStt, setMergeTargetStt] = useState('')
   const [merging, setMerging] = useState(false)
+
+  // Xử lý chống che bàn phím ảo trên mobile theo Visual Viewport
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null)
+  const [viewportOffsetTop, setViewportOffsetTop] = useState<number>(0)
+  const [showExtraFields, setShowExtraFields] = useState<boolean>(() => !!(newTagInput.trim() || newNotesInput.trim()))
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const updateViewport = () => {
+      if (window.visualViewport) {
+        setViewportHeight(window.visualViewport.height)
+        setViewportOffsetTop(window.visualViewport.offsetTop)
+      } else {
+        setViewportHeight(window.innerHeight)
+      }
+    }
+
+    window.visualViewport?.addEventListener('resize', updateViewport)
+    window.visualViewport?.addEventListener('scroll', updateViewport)
+    window.addEventListener('resize', updateViewport)
+    updateViewport()
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateViewport)
+      window.visualViewport?.removeEventListener('scroll', updateViewport)
+      window.removeEventListener('resize', updateViewport)
+    }
+  }, [isSwitchPalletModal])
 
   const filteredExistingPallets = useMemo(() => {
     return palletsList.filter(p => {
@@ -143,8 +171,19 @@ export function PalletSwitchModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl max-h-[85dvh] sm:max-h-[85vh] flex flex-col overflow-hidden">
+    <div
+      className="fixed inset-x-0 z-50 bg-black/85 backdrop-blur-sm flex items-start sm:items-center justify-center p-2 sm:p-4 animate-in fade-in duration-150 overflow-hidden"
+      style={{
+        top: `${viewportOffsetTop}px`,
+        height: viewportHeight ? `${viewportHeight}px` : '100dvh',
+      }}
+    >
+      <div
+        className="w-full max-w-md bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden transition-all duration-100"
+        style={{
+          maxHeight: viewportHeight ? `${Math.min(viewportHeight - 12, 650)}px` : '85dvh',
+        }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 p-3.5 pb-2.5 shrink-0 bg-[#111827]">
           <div className="flex items-center gap-2">
@@ -172,30 +211,47 @@ export function PalletSwitchModal({
         <div className="space-y-3 overflow-y-auto overscroll-contain p-3.5 pr-2 flex-1 scrollbar-none">
           {/* Form nhập Pallet mới / cập nhật */}
           <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-            {/* Hàng 1: STT PALLET & CHỈ TIÊU SỐ THÙNG (SONG SONG) */}
-            <div className="grid grid-cols-5 gap-2">
-              <div className="col-span-3">
+            {/* Hàng 1: STT PALLET & CHỈ TIÊU SỐ THÙNG & NÚT VÀO QUÉT NHANH */}
+            <div className="flex gap-2 items-end">
+              <div className="flex-1 min-w-0">
                 <label className="text-[10px] text-slate-400 font-bold block mb-1">
                   MÃ STT PALLET *:
                 </label>
-                <input
-                  type="text"
-                  value={newSttInput}
-                  onChange={e => setNewSttInput(e.target.value.toUpperCase())}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      handleSubmitPallet()
-                    }
-                  }}
-                  placeholder="VD: G23, F100..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 font-mono text-sm font-bold text-amber-400 uppercase focus:outline-hidden focus:border-amber-500"
-                />
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    value={newSttInput}
+                    onChange={e => setNewSttInput(e.target.value.toUpperCase())}
+                    onFocus={e => {
+                      setTimeout(() => {
+                        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                      }, 250)
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleSubmitPallet()
+                      }
+                    }}
+                    placeholder="VD: G23, F100..."
+                    autoFocus
+                    className="w-full px-3 py-2 pr-7 rounded-lg bg-slate-950 border border-slate-700 font-mono text-base font-black text-amber-400 uppercase focus:outline-hidden focus:border-amber-500"
+                  />
+                  {newSttInput && (
+                    <button
+                      type="button"
+                      onClick={() => setNewSttInput('')}
+                      className="absolute right-2 p-1 text-slate-500 hover:text-slate-300"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="col-span-2">
-                <label className="text-[10px] text-slate-400 font-bold block mb-1">
-                  CHỈ TIÊU ({defaultTargetQty || 30}):
+              <div className="w-18 shrink-0">
+                <label className="text-[10px] text-slate-400 font-bold block mb-1 text-center">
+                  CHỈ TIÊU:
                 </label>
                 <input
                   type="number"
@@ -208,61 +264,84 @@ export function PalletSwitchModal({
                     }
                   }}
                   placeholder={String(defaultTargetQty || 30)}
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-sm text-center text-white font-mono font-bold"
+                  className="w-full px-1.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm text-center text-white font-mono font-bold"
                 />
               </div>
+
+              {/* Nút bấm nhanh Vào Quét ngay trên hàng STT */}
+              <button
+                type="button"
+                onClick={handleSubmitPallet}
+                disabled={!newSttInput.trim()}
+                className="py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-black text-xs flex items-center gap-1 shadow-md shadow-emerald-950/60 transition active:scale-95 shrink-0"
+                title="Vào quét ngay"
+              >
+                <span>Vào Quét</span>
+                <Check size={14} />
+              </button>
             </div>
 
             {/* Hàng 2: Dấu tích ghi nhớ tự động chốt */}
-            <label className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/20 border border-emerald-800/40 cursor-pointer hover:bg-emerald-950/40 transition select-none">
+            <label className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-950/20 border border-emerald-800/40 cursor-pointer hover:bg-emerald-950/40 transition select-none">
               <input
                 type="checkbox"
                 checked={autoCompleteOnFull}
                 onChange={e => setAutoCompleteOnFull?.(e.target.checked)}
-                className="rounded accent-emerald-500 w-4 h-4 cursor-pointer"
+                className="rounded accent-emerald-500 w-3.5 h-3.5 cursor-pointer shrink-0"
               />
-              <div className="flex-1">
-                <span className="text-xs font-bold text-emerald-300">
-                  Tự động chốt khi quét đủ {newTargetQtyInput || defaultTargetQty || 30} thùng
-                </span>
-                <span className="text-[10px] text-slate-400 block leading-tight">
-                  (Ghi nhớ lựa chọn này cho các lần quét sau)
+              <div className="flex-1 min-w-0">
+                <span className="text-[11px] font-bold text-emerald-300 block truncate">
+                  Tự động chốt khi đủ {newTargetQtyInput || defaultTargetQty || 30} thùng
                 </span>
               </div>
             </label>
 
-            {/* Hàng 3: Mã phụ (Tag) */}
-            <div>
-              <label className="text-[10px] text-orange-400 font-bold block mb-1">
-                MÃ PHỤ (TAG):
-              </label>
-              <input
-                type="text"
-                value={newTagInput}
-                onChange={e => setNewTagInput(e.target.value.toUpperCase())}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    handleSubmitPallet()
-                  }
-                }}
-                placeholder="Ví dụ: OEM-A, XK-HQ, HÀNG LOẠI 1..."
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 font-mono text-xs text-orange-300 uppercase placeholder-slate-600"
-              />
-            </div>
+            {/* Thu gọn / mở rộng Mã Phụ (Tag) & Ghi chú để form thoáng đãng */}
+            <div className="pt-0.5">
+              <button
+                type="button"
+                onClick={() => setShowExtraFields(!showExtraFields)}
+                className="text-[11px] font-bold text-slate-400 hover:text-amber-400 flex items-center gap-1 transition"
+              >
+                <span>{showExtraFields ? '▲ Thu gọn thông tin phụ' : '+ Thêm Mã Phụ (Tag) / Ghi Chú'}</span>
+                {(newTagInput || newNotesInput) && !showExtraFields && (
+                  <span className="text-[10px] text-amber-300 font-mono bg-amber-500/20 px-1 rounded">
+                    (Có dữ liệu)
+                  </span>
+                )}
+              </button>
 
-            {/* Hàng 4: Ghi chú Pallet / LOT hàng */}
-            <div>
-              <label className="text-[10px] text-blue-400 font-bold block mb-1">
-                GHI CHÚ PALLET / LOT HÀNG:
-              </label>
-              <textarea
-                rows={2}
-                value={newNotesInput}
-                onChange={e => setNewNotesInput(e.target.value)}
-                placeholder="Nhập ghi chú cho LOT hàng (nếu có)..."
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-200 placeholder-slate-600 resize-none"
-              />
+              {showExtraFields && (
+                <div className="space-y-2 pt-2 border-t border-slate-800/80 mt-1.5">
+                  {/* Mã phụ (Tag) */}
+                  <div>
+                    <label className="text-[10px] text-orange-400 font-bold block mb-1">
+                      MÃ PHỤ (TAG):
+                    </label>
+                    <input
+                      type="text"
+                      value={newTagInput}
+                      onChange={e => setNewTagInput(e.target.value.toUpperCase())}
+                      placeholder="Ví dụ: OEM-A, XK-HQ, HÀNG LOẠI 1..."
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 font-mono text-xs text-orange-300 uppercase placeholder-slate-600"
+                    />
+                  </div>
+
+                  {/* Ghi chú Pallet / LOT hàng */}
+                  <div>
+                    <label className="text-[10px] text-blue-400 font-bold block mb-1">
+                      GHI CHÚ PALLET / LOT HÀNG:
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={newNotesInput}
+                      onChange={e => setNewNotesInput(e.target.value)}
+                      placeholder="Nhập ghi chú cho LOT hàng (nếu có)..."
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-200 placeholder-slate-600 resize-none"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

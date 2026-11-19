@@ -10,7 +10,7 @@ export default function SwRegister() {
                 .then((registration) => {
                     // Pre-cache current scanner URL
                     if (window.caches) {
-                        window.caches.open('chanhthu-scanner-cache-v2').then((cache) => {
+                        window.caches.open('chanhthu-scanner-cache-v4').then((cache) => {
                             cache.add(window.location.href).catch(() => {})
                         })
                     }

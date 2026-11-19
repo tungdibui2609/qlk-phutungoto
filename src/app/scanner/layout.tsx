@@ -26,6 +26,7 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: 'cover',
   themeColor: '#0b1120',
+  interactiveWidget: 'resizes-content',
 }
 
 export default function ScannerLayout({ children }: { children: React.ReactNode }) {

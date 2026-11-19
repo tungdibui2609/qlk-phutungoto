@@ -422,9 +422,10 @@ export function findBestMatchingProduct(
         const spec12 = l1Digits.substring(0, 12)
         
         // 1. Tra cứu trực tiếp từ Cài đặt quy tắc con dấu (stamp-rules) hoặc bảng chuẩn sẵn có
-        const targetSku = configuredStampMap?.[spec12] || STAMP_CODE_TO_SKU_MAP[spec12]
+        const rawTargetSku = configuredStampMap?.[spec12] || STAMP_CODE_TO_SKU_MAP[spec12]
+        const targetSku = rawTargetSku ? rawTargetSku.trim() : ''
         if (targetSku) {
-            const exactProduct = products.find(p => p.sku === targetSku)
+            const exactProduct = products.find(p => (p.sku || '').trim() === targetSku)
             if (exactProduct) {
                 return {
                     product: exactProduct,

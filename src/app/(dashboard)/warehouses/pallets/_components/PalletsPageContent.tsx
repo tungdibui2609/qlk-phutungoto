@@ -1385,18 +1385,22 @@ export default function PalletsPageContent() {
             const assignedBoxIds = new Set<string>()
             for (const line of approveProductLines) {
                 if (line.box_ids && line.box_ids.length > 0) {
-                    line.box_ids.forEach(id => assignedBoxIds.add(id))
-                    const { error: lineBoxErr } = await (supabase
-                        .from('box_labels') as any)
-                        .update({
-                            lot_id: newLotId,
-                            product_id: line.product_id,
-                            status: 'linked'
-                        })
-                        .in('id', line.box_ids)
+                    const lineProdId = line.product_id || primaryProductId
+                    if (lineProdId) {
+                        line.box_ids.forEach(id => assignedBoxIds.add(id))
+                        const { error: lineBoxErr } = await (supabase
+                            .from('box_labels') as any)
+                            .update({
+                                lot_id: newLotId,
+                                product_id: lineProdId,
+                                status: 'linked'
+                            })
+                            .in('id', line.box_ids)
 
-                    if (lineBoxErr) {
-                        console.warn(`Lỗi cập nhật box_labels cho dòng sản phẩm ${line.product_id}:`, lineBoxErr)
+                        if (lineBoxErr) {
+                            console.error(`Lỗi cập nhật box_labels cho dòng sản phẩm ${lineProdId}:`, lineBoxErr)
+                            throw new Error(`Lỗi cập nhật liên kết thùng cho sản phẩm: ${lineBoxErr.message || lineBoxErr.details || 'Không rõ'}`)
+                        }
                     }
                 }
             }
