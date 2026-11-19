@@ -1,7 +1,10 @@
 import { supabase } from '@/lib/supabaseClient'
+import { encodeSTT, decodeSTT } from '@/lib/numberUtils'
 import type {
   DraftProposal,
+  ProposalActionType,
   ProposalItem,
+  ProposalSubItem,
   SubmittedProposal,
   LookedUpLot,
   ProductSuggestion,
@@ -10,7 +13,11 @@ import type {
 const DRAFT_PROPOSAL_KEY = 'WAREHOUSE_ADJUSTMENT_DRAFT_V1'
 const OFFLINE_PROPOSALS_QUEUE_KEY = 'WAREHOUSE_ADJUSTMENT_OFFLINE_QUEUE_V1'
 const SUBMITTED_PROPOSALS_CACHE_KEY = 'WAREHOUSE_ADJUSTMENT_SUBMITTED_CACHE_V1'
+const PRODUCT_SUGGESTIONS_CACHE_KEY = 'WAREHOUSE_PRODUCT_SUGGESTIONS_CACHE_V1'
 const HALL_LOT_UPDATES_OFFLINE_KEY = 'OFFLINE_HALL_LOT_UPDATES_QUEUE_V1'
+
+const TABLE_PRIMARY = 'warehouse_position_proposals'
+const TABLE_FALLBACK = 'shift_tasks'
 
 function safeGetLocalStorage<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
@@ -32,53 +39,192 @@ function safeSetLocalStorage(key: string, value: unknown): void {
   }
 }
 
+/**
+ * Chuẩn hóa 1 ProposalSubItem về đúng schema Android & Web mẹ
+ * (tương thích ngược với các bản nháp cũ dùng old_qty / new_qty)
+ */
+export function normalizeProposalSubItem(raw: any): ProposalSubItem {
+  const currentQty =
+    raw?.current_quantity != null
+      ? Number(raw.current_quantity)
+      : raw?.old_qty != null
+      ? Number(raw.old_qty)
+      : 0
+  const newQty =
+    raw?.new_quantity != null
+      ? Number(raw.new_quantity)
+      : raw?.new_qty != null
+      ? Number(raw.new_qty)
+      : currentQty
+
+  return {
+    product_id: raw?.product_id || null,
+    product_name: (raw?.product_name || raw?.sku || 'Sản phẩm').trim(),
+    sku: raw?.sku || null,
+    current_quantity: isNaN(currentQty) ? 0 : currentQty,
+    new_quantity: isNaN(newQty) ? 0 : newQty,
+    unit: (raw?.unit || 'Thùng').trim(),
+    ...(raw?.is_new ? { is_new: true } : {}),
+  }
+}
+
+/**
+ * Chuẩn hóa 1 ProposalItem về đúng schema Android & Web mẹ
+ * (tương thích ngược với các bản nháp cũ dùng action / old_* / new_* / reason)
+ */
+export function normalizeProposalItem(raw: any): ProposalItem {
+  const actionType: ProposalActionType = (raw?.action_type || raw?.action || 'NOTE') as ProposalActionType
+  const subItems: ProposalSubItem[] | undefined =
+    Array.isArray(raw?.sub_items) && raw.sub_items.length > 0
+      ? raw.sub_items.map(normalizeProposalSubItem)
+      : undefined
+
+  const currentQty =
+    raw?.current_quantity !== undefined
+      ? raw.current_quantity
+      : raw?.old_qty !== undefined
+      ? raw.old_qty
+      : null
+
+  const newQty =
+    raw?.new_quantity !== undefined
+      ? raw.new_quantity
+      : raw?.new_qty !== undefined
+      ? raw.new_qty
+      : null
+
+  const lotId = raw?.lot_id !== undefined ? raw.lot_id : raw?.old_lot_id ?? null
+  const lotCode =
+    raw?.lot_code !== undefined
+      ? raw.lot_code
+      : actionType === 'ASSIGN_LOT'
+      ? raw?.new_lot_code ?? null
+      : raw?.old_lot_code ?? null
+  const lotStt =
+    raw?.lot_stt !== undefined
+      ? raw.lot_stt
+      : actionType === 'ASSIGN_LOT'
+      ? raw?.new_stt ?? null
+      : raw?.old_stt ?? null
+
+  const productName =
+    raw?.product_name !== undefined
+      ? raw.product_name
+      : actionType === 'ASSIGN_LOT'
+      ? raw?.new_product_name || raw?.old_product_name || null
+      : raw?.old_product_name || raw?.new_product_name || (subItems ? subItems.map(s => s.product_name).join(', ') : null)
+
+  const sku =
+    raw?.sku !== undefined
+      ? raw.sku
+      : actionType === 'ASSIGN_LOT'
+      ? raw?.new_sku || raw?.old_sku || null
+      : raw?.old_sku || raw?.new_sku || null
+
+  const unit =
+    raw?.unit !== undefined
+      ? raw.unit
+      : raw?.new_unit || raw?.old_unit || subItems?.[0]?.unit || 'Thùng'
+
+  const note = raw?.note !== undefined ? raw.note : raw?.reason ?? null
+
+  return {
+    id: raw?.id || `${raw?.position_id || 'pos'}-${Date.now()}`,
+    position_id: raw?.position_id || '',
+    position_code: raw?.position_code || '',
+    warehouse_name: raw?.warehouse_name || raw?.zone_path || undefined,
+    action_type: actionType,
+    lot_id: lotId,
+    lot_code: lotCode,
+    lot_stt: lotStt,
+    ...(raw?.lot_found !== undefined ? { lot_found: raw.lot_found } : {}),
+    product_name: productName,
+    sku,
+    current_quantity: currentQty,
+    unit,
+    ...(subItems ? { sub_items: subItems } : {}),
+    new_quantity: newQty,
+    target_position_id: raw?.target_position_id ?? null,
+    target_position_code: raw?.target_position_code ?? null,
+    note,
+    updated_at: raw?.updated_at || new Date().toISOString(),
+  }
+}
+
 export async function getDraftProposal(): Promise<DraftProposal> {
-  const defaultTitle = `Phiếu điều chỉnh ngày ${new Date().toLocaleDateString('vi-VN')}`
-  const parsed = safeGetLocalStorage<DraftProposal | null>(DRAFT_PROPOSAL_KEY, null)
+  const parsed = safeGetLocalStorage<any>(DRAFT_PROPOSAL_KEY, null)
   if (parsed && Array.isArray(parsed.items)) {
-    return parsed
+    return {
+      title: parsed.title || '',
+      notes: parsed.notes ?? parsed.note ?? '',
+      items: parsed.items.map(normalizeProposalItem),
+      updated_at: parsed.updated_at || new Date().toISOString(),
+    }
   }
   return {
-    id: `DRAFT-${Date.now()}`,
-    title: defaultTitle,
-    created_by: 'Kiểm kho Mobile',
-    created_at: new Date().toISOString(),
+    title: '',
+    notes: '',
     items: [],
+    updated_at: new Date().toISOString(),
   }
 }
 
 export async function saveDraftProposal(draft: DraftProposal): Promise<void> {
-  safeSetLocalStorage(DRAFT_PROPOSAL_KEY, draft)
+  const payload: DraftProposal = {
+    title: draft.title || '',
+    notes: draft.notes || '',
+    items: Array.isArray(draft.items) ? draft.items.map(normalizeProposalItem) : [],
+    updated_at: new Date().toISOString(),
+  }
+  safeSetLocalStorage(DRAFT_PROPOSAL_KEY, payload)
 }
 
 export async function addOrUpdateDraftItem(item: ProposalItem): Promise<DraftProposal> {
   const draft = await getDraftProposal()
-  const idx = draft.items.findIndex(i => i.position_id === item.position_id)
+  const normalized = normalizeProposalItem({ ...item, updated_at: new Date().toISOString() })
+  const idx = draft.items.findIndex(
+    i => i.position_id === normalized.position_id || i.id === normalized.id
+  )
+  const nextItems = [...draft.items]
   if (idx >= 0) {
-    draft.items[idx] = { ...item, updated_at: new Date().toISOString() }
+    nextItems[idx] = normalized
   } else {
-    draft.items.unshift({ ...item, updated_at: new Date().toISOString() })
+    nextItems.unshift(normalized)
   }
-  await saveDraftProposal(draft)
-  return draft
+  const updated: DraftProposal = {
+    ...draft,
+    items: nextItems,
+    updated_at: new Date().toISOString(),
+  }
+  await saveDraftProposal(updated)
+  return updated
 }
 
 export async function removeDraftItem(positionId: string): Promise<DraftProposal> {
   const draft = await getDraftProposal()
-  draft.items = draft.items.filter(i => i.position_id !== positionId)
-  await saveDraftProposal(draft)
-  return draft
+  const updated: DraftProposal = {
+    ...draft,
+    items: draft.items.filter(i => i.position_id !== positionId && i.id !== positionId),
+    updated_at: new Date().toISOString(),
+  }
+  await saveDraftProposal(updated)
+  return updated
 }
 
 export async function clearDraftProposal(): Promise<DraftProposal> {
   const fresh: DraftProposal = {
-    id: `DRAFT-${Date.now()}`,
-    title: `Phiếu điều chỉnh ngày ${new Date().toLocaleDateString('vi-VN')}`,
-    created_by: 'Kiểm kho Mobile',
-    created_at: new Date().toISOString(),
+    title: '',
+    notes: '',
     items: [],
+    updated_at: new Date().toISOString(),
   }
-  await saveDraftProposal(fresh)
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem(DRAFT_PROPOSAL_KEY)
+    } catch {
+      // ignore
+    }
+  }
   return fresh
 }
 
@@ -90,7 +236,7 @@ async function resolveCurrentUserInfo(): Promise<{
   try {
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
-    if (!user) return { id: null, companyId: null, userName: 'Kiểm kho Mobile' }
+    if (!user) return { id: null, companyId: null, userName: 'Nhân viên kho' }
 
     const { data: profile } = await supabase
       .from('user_profiles')
@@ -101,27 +247,28 @@ async function resolveCurrentUserInfo(): Promise<{
     const companyId = (profile as any)?.company_id || null
     const userName =
       (profile as any)?.full_name ||
-      (user.email ? user.email.split('@')[0] : 'Kiểm kho Mobile')
+      (user.email ? user.email.split('@')[0] : 'Nhân viên kho')
 
     return { id: user.id, companyId, userName }
   } catch {
-    return { id: null, companyId: null, userName: 'Kiểm kho Mobile' }
+    return { id: null, companyId: null, userName: 'Nhân viên kho' }
   }
 }
 
 function buildPrimaryProposalPayload(raw: any, fallbackUserId?: string | null) {
-  const items = Array.isArray(raw.items) ? raw.items : []
+  const items: ProposalItem[] = Array.isArray(raw.items)
+    ? raw.items.map(normalizeProposalItem)
+    : []
   return {
-    title: raw.title || `Đề xuất điều chỉnh (${items.length} vị trí)`,
+    title: raw.title || `Đề xuất điều chỉnh vị trí (${items.length} vị trí)`,
     notes: raw.notes !== undefined ? raw.notes : (raw.note ?? null),
     status: raw.status || 'PENDING',
     system_code: raw.system_code || 'KHO_DONG_LANH',
     company_id: raw.company_id || null,
     created_by: raw.created_by || fallbackUserId || null,
-    created_by_name: raw.created_by_name || 'Kiểm kho Mobile',
-    total_positions: typeof raw.total_positions === 'number' ? raw.total_positions : items.length,
+    created_by_name: raw.created_by_name || 'Nhân viên kho',
+    total_positions: items.length,
     items,
-    created_at: raw.created_at || new Date().toISOString(),
   }
 }
 
@@ -141,14 +288,15 @@ function buildShiftTaskFallbackPayload(primary: ReturnType<typeof buildPrimaryPr
     status: 'pending',
     task_type: 'warehouse_adjustment',
     created_by: primary.created_by || null,
-    created_by_name: primary.created_by_name || 'Kiểm kho Mobile',
+    created_by_name: primary.created_by_name || 'Nhân viên kho',
     images: [],
   }
 }
 
 export async function submitAdjustmentProposalToServer(
   draft: DraftProposal,
-  customNote?: string
+  customNote?: string,
+  systemCode: string = 'KHO_DONG_LANH'
 ): Promise<{
   success: boolean
   message: string
@@ -159,46 +307,49 @@ export async function submitAdjustmentProposalToServer(
   }
 
   const { id: userId, companyId, userName } = await resolveCurrentUserInfo()
+  const normalizedItems = draft.items.map(normalizeProposalItem)
+  const finalNotes = customNote !== undefined ? customNote.trim() || null : draft.notes.trim() || null
 
   const payload = buildPrimaryProposalPayload(
     {
-      title: draft.title || `Đề xuất điều chỉnh (${draft.items.length} vị trí)`,
-      notes: customNote !== undefined ? customNote : draft.note || null,
+      title: draft.title || `Đề xuất điều chỉnh vị trí (${normalizedItems.length} vị trí)`,
+      notes: finalNotes,
       status: 'PENDING',
-      system_code: 'KHO_DONG_LANH',
+      system_code: systemCode,
       company_id: companyId,
       created_by: userId,
       created_by_name: userName,
-      total_positions: draft.items.length,
-      items: draft.items,
-      created_at: new Date().toISOString(),
+      total_positions: normalizedItems.length,
+      items: normalizedItems,
     },
     userId
   )
 
   try {
+    // 1. Thử ghi vào bảng chuyên dụng warehouse_position_proposals
     const { error } = await (supabase as any)
-      .from('warehouse_position_proposals')
+      .from(TABLE_PRIMARY)
       .insert(payload)
 
     if (!error) {
       await clearDraftProposal()
       return {
         success: true,
-        message: `Đã gửi đề xuất điều chỉnh (${draft.items.length} vị trí) lên Web để duyệt!`,
+        message: `Đã gửi đề xuất điều chỉnh (${normalizedItems.length} vị trí) lên Web để duyệt!`,
       }
     }
 
+    // 2. Fallback sang shift_tasks
     const fallbackPayload = buildShiftTaskFallbackPayload(payload)
     const { error: fallbackErr } = await (supabase as any)
-      .from('shift_tasks')
+      .from(TABLE_FALLBACK)
       .insert(fallbackPayload)
 
     if (!fallbackErr) {
       await clearDraftProposal()
       return {
         success: true,
-        message: `Đã gửi đề xuất điều chỉnh (${draft.items.length} vị trí) lên hệ thống!`,
+        message: `Đã gửi đề xuất điều chỉnh (${normalizedItems.length} vị trí) lên hệ thống!`,
       }
     }
 
@@ -206,13 +357,13 @@ export async function submitAdjustmentProposalToServer(
   } catch {
     try {
       const existingQueue = safeGetLocalStorage<any[]>(OFFLINE_PROPOSALS_QUEUE_KEY, [])
-      existingQueue.push(payload)
+      existingQueue.push({ ...payload, queued_at: new Date().toISOString() })
       safeSetLocalStorage(OFFLINE_PROPOSALS_QUEUE_KEY, existingQueue)
       await clearDraftProposal()
       return {
         success: true,
         savedOffline: true,
-        message: `Chưa gửi được trực tiếp lên Server. Phiếu (${draft.items.length} vị trí) đã được lưu an toàn trên máy để đồng bộ khi có mạng!`,
+        message: `Chưa gửi được trực tiếp lên Server. Phiếu (${normalizedItems.length} vị trí) đã được lưu an toàn trên máy để đồng bộ khi có mạng!`,
       }
     } catch {
       return {
@@ -233,7 +384,6 @@ export async function syncOfflineAdjustmentProposals(): Promise<number> {
     let synced = 0
 
     for (const rawItem of queue) {
-      // Chuẩn hóa lại các phiếu cũ trong hàng đợi (từng lưu field 'note' thay vì 'notes')
       const normalized = buildPrimaryProposalPayload(
         {
           ...rawItem,
@@ -242,7 +392,7 @@ export async function syncOfflineAdjustmentProposals(): Promise<number> {
         userId
       )
       const { error } = await (supabase as any)
-        .from('warehouse_position_proposals')
+        .from(TABLE_PRIMARY)
         .insert(normalized)
 
       if (!error) {
@@ -250,12 +400,12 @@ export async function syncOfflineAdjustmentProposals(): Promise<number> {
       } else {
         const fallbackPayload = buildShiftTaskFallbackPayload(normalized)
         const { error: fbErr } = await (supabase as any)
-          .from('shift_tasks')
+          .from(TABLE_FALLBACK)
           .insert(fallbackPayload)
         if (!fbErr) {
           synced++
         } else {
-          remaining.push(normalized)
+          remaining.push({ ...normalized, queued_at: rawItem.queued_at || new Date().toISOString() })
         }
       }
     }
@@ -267,36 +417,200 @@ export async function syncOfflineAdjustmentProposals(): Promise<number> {
   }
 }
 
-export async function getCachedSubmittedProposals(): Promise<SubmittedProposal[]> {
-  const parsed = safeGetLocalStorage<SubmittedProposal[]>(SUBMITTED_PROPOSALS_CACHE_KEY, [])
-  return Array.isArray(parsed) ? parsed : []
-}
+/**
+ * Tự động tra cứu thông tin Lot (tên SP, mã Lot, số lượng) từ STT (VD: G888)
+ * cho các item ASSIGN_LOT giống Android & Web mẹ
+ */
+async function enrichAssignLotItems(
+  proposals: SubmittedProposal[],
+  systemCode: string
+): Promise<void> {
+  const seqSet = new Set<number>()
+  const lotIdSet = new Set<string>()
+  let hasAssignLot = false
 
-export async function fetchSubmittedProposals(): Promise<SubmittedProposal[]> {
-  await syncOfflineAdjustmentProposals()
+  for (const p of proposals) {
+    for (const it of p.items) {
+      if (it.action_type !== 'ASSIGN_LOT') continue
+      hasAssignLot = true
+      if (it.lot_id) lotIdSet.add(it.lot_id)
+      const sttRaw = (it.lot_stt || '').replace(/^#/, '').trim().toUpperCase()
+      if (sttRaw) {
+        const seq = encodeSTT(sttRaw)
+        if (seq !== null) seqSet.add(seq)
+      }
+    }
+  }
 
-  const results: SubmittedProposal[] = []
-  let fetchedOnlineSuccessfully = false
+  if (!hasAssignLot || (seqSet.size === 0 && lotIdSet.size === 0)) {
+    return
+  }
+
+  const bySeq = new Map<number, any>()
+  const byId = new Map<string, any>()
 
   try {
+    if (seqSet.size > 0) {
+      const { data } = await (supabase as any)
+        .from('lots')
+        .select(
+          `id, code, production_code, daily_seq, quantity,
+           lot_items(id, quantity, unit, products(name, sku, unit))`
+        )
+        .eq('system_code', systemCode)
+        .in('daily_seq', Array.from(seqSet))
+
+      if (Array.isArray(data)) {
+        for (const lot of data) {
+          if (lot.daily_seq != null) bySeq.set(lot.daily_seq, lot)
+          if (lot.id) byId.set(lot.id, lot)
+        }
+      }
+    }
+
+    const missingIds = Array.from(lotIdSet).filter(id => !byId.has(id))
+    if (missingIds.length > 0) {
+      const { data } = await (supabase as any)
+        .from('lots')
+        .select(
+          `id, code, production_code, daily_seq, quantity,
+           lot_items(id, quantity, unit, products(name, sku, unit))`
+        )
+        .eq('system_code', systemCode)
+        .in('id', missingIds)
+
+      if (Array.isArray(data)) {
+        for (const lot of data) {
+          if (lot.daily_seq != null) bySeq.set(lot.daily_seq, lot)
+          if (lot.id) byId.set(lot.id, lot)
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Lỗi enrich thông tin Lot trên Scanner:', err)
+    return
+  }
+
+  for (const p of proposals) {
+    for (const it of p.items) {
+      if (it.action_type !== 'ASSIGN_LOT') continue
+      const sttRaw = (it.lot_stt || '').replace(/^#/, '').trim().toUpperCase()
+      const seq = sttRaw ? encodeSTT(sttRaw) : null
+      const lot =
+        (seq !== null ? bySeq.get(seq) : null) ||
+        (it.lot_id ? byId.get(it.lot_id) : null)
+
+      if (!lot) {
+        if (sttRaw) it.lot_found = false
+        continue
+      }
+
+      it.lot_found = true
+      it.lot_id = lot.id
+      it.lot_code = lot.code || lot.production_code || it.lot_code
+
+      const itemsArr: any[] = Array.isArray(lot.lot_items) ? lot.lot_items : []
+      if (itemsArr.length > 0) {
+        const names = itemsArr.map(li => li.products?.name).filter(Boolean)
+        const skus = itemsArr.map(li => li.products?.sku).filter(Boolean)
+        const totalQty = itemsArr.reduce((s, li) => s + (Number(li.quantity) || 0), 0)
+        const firstUnit = itemsArr[0]?.unit || itemsArr[0]?.products?.unit || it.unit || 'Thùng'
+
+        if (names.length > 0) it.product_name = Array.from(new Set(names)).join(', ')
+        if (skus.length > 0) it.sku = Array.from(new Set(skus)).join(', ')
+        it.new_quantity = totalQty || lot.quantity || it.new_quantity
+        it.unit = firstUnit
+      } else if (lot.quantity != null) {
+        it.new_quantity = lot.quantity
+      }
+    }
+  }
+}
+
+export async function getCachedSubmittedProposals(
+  systemCode: string = 'KHO_DONG_LANH'
+): Promise<SubmittedProposal[]> {
+  const results: SubmittedProposal[] = []
+
+  try {
+    const queue = safeGetLocalStorage<any[]>(OFFLINE_PROPOSALS_QUEUE_KEY, [])
+    if (Array.isArray(queue)) {
+      queue.forEach((qItem: any, idx: number) => {
+        const items = Array.isArray(qItem.items) ? qItem.items.map(normalizeProposalItem) : []
+        results.push({
+          id: `OFFLINE-${idx}-${qItem.queued_at || qItem.created_at || Date.now()}`,
+          code: 'CHỜ ĐỒNG BỘ',
+          system_code: qItem.system_code || systemCode,
+          title: qItem.title || `Đề xuất điều chỉnh (${items.length} vị trí)`,
+          notes: qItem.notes ?? qItem.note ?? '',
+          status: 'PENDING',
+          total_positions: items.length,
+          items,
+          created_by: qItem.created_by || null,
+          created_by_name: qItem.created_by_name || 'Bạn',
+          created_at: qItem.queued_at || qItem.created_at || new Date().toISOString(),
+          isOfflinePending: true,
+          source: 'local',
+        })
+      })
+    }
+  } catch {
+    // ignore
+  }
+
+  const parsed = safeGetLocalStorage<SubmittedProposal[]>(SUBMITTED_PROPOSALS_CACHE_KEY, [])
+  if (Array.isArray(parsed)) {
+    results.push(
+      ...parsed.map(p => ({
+        ...p,
+        notes: (p as any).notes ?? (p as any).note ?? '',
+        items: Array.isArray(p.items) ? p.items.map(normalizeProposalItem) : [],
+      }))
+    )
+  }
+
+  return results
+}
+
+export async function fetchSubmittedProposals(
+  systemCode: string = 'KHO_DONG_LANH'
+): Promise<SubmittedProposal[]> {
+  await syncOfflineAdjustmentProposals()
+
+  const serverResults: SubmittedProposal[] = []
+  let fetchedOnlineSuccessfully = false
+
+  // 1. Lấy từ bảng warehouse_position_proposals
+  try {
     const { data, error } = await (supabase as any)
-      .from('warehouse_position_proposals')
-      .select('id, title, status, notes, created_by_name, created_at, items')
-      .eq('system_code', 'KHO_DONG_LANH')
+      .from(TABLE_PRIMARY)
+      .select(
+        'id, code, system_code, title, status, notes, total_positions, created_by, created_by_name, approved_by_name, approved_at, review_notes, created_at, items'
+      )
+      .eq('system_code', systemCode)
       .order('created_at', { ascending: false })
       .limit(50)
 
     if (!error && Array.isArray(data)) {
       fetchedOnlineSuccessfully = true
       for (const row of data) {
-        results.push({
+        const items = Array.isArray(row.items) ? row.items.map(normalizeProposalItem) : []
+        serverResults.push({
           id: String(row.id),
-          title: row.title || 'Phiếu đề xuất điều chỉnh',
-          status: row.status || 'PENDING',
-          note: row.notes || null,
-          created_by: row.created_by_name || 'Kiểm kho Mobile',
+          code: row.code || undefined,
+          system_code: row.system_code || systemCode,
+          title: row.title || 'Đề xuất điều chỉnh vị trí kho',
+          notes: row.notes || '',
+          status: (row.status || 'PENDING').toUpperCase(),
+          total_positions: row.total_positions ?? items.length,
+          items,
+          created_by: row.created_by || null,
+          created_by_name: row.created_by_name || 'Nhân viên kho',
+          approved_by_name: row.approved_by_name || null,
+          approved_at: row.approved_at || null,
+          review_notes: row.review_notes || null,
           created_at: row.created_at || new Date().toISOString(),
-          items: Array.isArray(row.items) ? row.items : [],
+          isOfflinePending: false,
           source: 'table',
         })
       }
@@ -305,11 +619,14 @@ export async function fetchSubmittedProposals(): Promise<SubmittedProposal[]> {
     // ignore
   }
 
+  // 2. Lấy thêm từ shift_tasks (nếu có phiếu gửi qua fallback hoặc từ Android cũ)
   try {
     const { data: fallbackData, error: fbError } = await (supabase as any)
-      .from('shift_tasks')
-      .select('id, title, status, content, created_by_name, created_by, created_at')
-      .eq('system_code', 'KHO_DONG_LANH')
+      .from(TABLE_FALLBACK)
+      .select(
+        'id, code, system_code, title, status, content, created_by_name, created_by, completed_by_name, completed_at, completion_notes, created_at'
+      )
+      .eq('system_code', systemCode)
       .eq('task_type', 'warehouse_adjustment')
       .order('created_at', { ascending: false })
       .limit(30)
@@ -318,22 +635,36 @@ export async function fetchSubmittedProposals(): Promise<SubmittedProposal[]> {
       fetchedOnlineSuccessfully = true
       for (const row of fallbackData) {
         try {
-          const parsed = row.content ? JSON.parse(row.content) : {}
-          const rawSt = String(row.status || parsed.status || 'pending').toLowerCase()
+          const parsed =
+            row.content && typeof row.content === 'string' && row.content.startsWith('{')
+              ? JSON.parse(row.content)
+              : {}
+          const rawSt = String(row.status || parsed.status || 'pending').toUpperCase()
           const mappedStatus =
-            rawSt === 'completed' || rawSt === 'approved'
+            rawSt === 'COMPLETED' || rawSt === 'APPROVED'
               ? 'APPROVED'
-              : rawSt === 'cancelled' || rawSt === 'rejected'
-                ? 'REJECTED'
-                : 'PENDING'
-          results.push({
+              : rawSt === 'CANCELLED' || rawSt === 'REJECTED'
+              ? 'REJECTED'
+              : 'PENDING'
+          const items = Array.isArray(parsed.items)
+            ? parsed.items.map(normalizeProposalItem)
+            : []
+          serverResults.push({
             id: String(row.id),
-            title: row.title || parsed.title || 'Phiếu đề xuất điều chỉnh',
+            code: row.code || 'DC',
+            system_code: row.system_code || systemCode,
+            title: row.title || parsed.title || 'Đề xuất điều chỉnh vị trí kho',
+            notes: parsed.notes || parsed.note || '',
             status: mappedStatus,
-            note: parsed.notes || parsed.note || null,
-            created_by: row.created_by_name || parsed.created_by_name || row.created_by || 'Kiểm kho Mobile',
+            total_positions: items.length,
+            items,
+            created_by: row.created_by || null,
+            created_by_name: row.created_by_name || parsed.created_by_name || 'Nhân viên kho',
+            approved_by_name: row.completed_by_name || null,
+            approved_at: row.completed_at || null,
+            review_notes: row.completion_notes || null,
             created_at: row.created_at || parsed.created_at || new Date().toISOString(),
-            items: Array.isArray(parsed.items) ? parsed.items : [],
+            isOfflinePending: false,
             source: 'shift_tasks',
           })
         } catch {
@@ -345,25 +676,40 @@ export async function fetchSubmittedProposals(): Promise<SubmittedProposal[]> {
     // ignore
   }
 
-  if (fetchedOnlineSuccessfully) {
-    safeSetLocalStorage(SUBMITTED_PROPOSALS_CACHE_KEY, results)
-  } else if (results.length === 0) {
-    const cached = await getCachedSubmittedProposals()
-    results.push(...cached)
+  // Sắp xếp mới nhất lên đầu
+  serverResults.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+
+  if (serverResults.length > 0) {
+    await enrichAssignLotItems(serverResults, systemCode)
   }
 
+  if (fetchedOnlineSuccessfully) {
+    safeSetLocalStorage(SUBMITTED_PROPOSALS_CACHE_KEY, serverResults)
+  }
+
+  const results: SubmittedProposal[] = []
+
+  // Phiếu đang chờ đồng bộ mạng lên đầu
   try {
     const queue = safeGetLocalStorage<any[]>(OFFLINE_PROPOSALS_QUEUE_KEY, [])
     if (Array.isArray(queue)) {
       queue.forEach((qItem: any, idx: number) => {
-        results.unshift({
-          id: `OFFLINE-${idx}-${qItem.created_at || Date.now()}`,
+        const items = Array.isArray(qItem.items) ? qItem.items.map(normalizeProposalItem) : []
+        results.push({
+          id: `OFFLINE-${idx}-${qItem.queued_at || qItem.created_at || Date.now()}`,
+          code: 'CHỜ ĐỒNG BỘ',
+          system_code: qItem.system_code || systemCode,
           title: qItem.title || 'Phiếu chờ đồng bộ mạng',
+          notes: ((qItem.notes ?? qItem.note) ? `${qItem.notes ?? qItem.note} ` : '') + '(Chờ mạng gửi lên Server)',
           status: 'PENDING',
-          note: (qItem.note ? `${qItem.note} ` : '') + '(Chờ mạng gửi lên Server)',
-          created_by: qItem.created_by_name || 'Kiểm kho Mobile',
-          created_at: qItem.created_at || new Date().toISOString(),
-          items: Array.isArray(qItem.items) ? qItem.items : [],
+          total_positions: items.length,
+          items,
+          created_by: qItem.created_by || null,
+          created_by_name: qItem.created_by_name || 'Bạn',
+          created_at: qItem.queued_at || qItem.created_at || new Date().toISOString(),
+          isOfflinePending: true,
           source: 'local',
         })
       })
@@ -372,80 +718,131 @@ export async function fetchSubmittedProposals(): Promise<SubmittedProposal[]> {
     // ignore
   }
 
+  if (fetchedOnlineSuccessfully) {
+    results.push(...serverResults)
+  } else {
+    const cached = safeGetLocalStorage<SubmittedProposal[]>(SUBMITTED_PROPOSALS_CACHE_KEY, [])
+    if (Array.isArray(cached)) {
+      results.push(
+        ...cached.map(p => ({
+          ...p,
+          notes: (p as any).notes ?? (p as any).note ?? '',
+          items: Array.isArray(p.items) ? p.items.map(normalizeProposalItem) : [],
+        }))
+      )
+    }
+  }
+
   return results
 }
 
-export async function lookupLotBySttOrCode(sttOrCode: string): Promise<LookedUpLot | null> {
-  const clean = sttOrCode.replace(/^#/, '').trim()
+/**
+ * Tra cứu Lot theo STT (hỗ trợ cả dạng chữ+số như G57, G88, G949 bằng encodeSTT)
+ * hoặc theo mã Lot / mã sản xuất (code, production_code)
+ */
+export async function lookupLotBySttOrCode(
+  sttOrCode: string,
+  systemCode: string = 'KHO_DONG_LANH'
+): Promise<LookedUpLot | null> {
+  const clean = (sttOrCode || '').replace(/^#/, '').trim().toUpperCase()
   if (!clean) return null
 
   try {
-    const isNumeric = /^\d+$/.test(clean)
-    let query = supabase
-      .from('lots')
-      .select(`
-        id,
-        code,
-        daily_seq,
-        quantity,
-        metadata,
-        products ( name, sku, unit ),
-        lot_items ( quantity, unit, products ( name, sku, unit ) ),
-        positions!positions_lot_id_fkey ( code )
-      `)
-      .eq('system_code', 'KHO_DONG_LANH')
-      .neq('status', 'hidden')
-      .neq('status', 'deleted')
-      .neq('status', 'exported')
+    const encodedSeq = encodeSTT(clean)
+    let lotRow: any = null
 
-    if (isNumeric) {
-      query = query.eq('daily_seq', parseInt(clean, 10))
-    } else {
-      query = query.ilike('code', `%${clean}%`)
+    const selectFields = `
+      id,
+      code,
+      production_code,
+      daily_seq,
+      quantity,
+      status,
+      system_code,
+      lot_items (
+        id,
+        product_id,
+        quantity,
+        unit,
+        products ( id, name, sku, unit )
+      ),
+      positions!positions_lot_id_fkey ( id, code )
+    `
+
+    if (encodedSeq !== null) {
+      const { data } = await (supabase as any)
+        .from('lots')
+        .select(selectFields)
+        .eq('daily_seq', encodedSeq)
+        .eq('system_code', systemCode)
+        .neq('status', 'hidden')
+        .neq('status', 'deleted')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (data) lotRow = data
     }
 
-    const { data, error } = await query
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    if (!lotRow) {
+      const { data } = await (supabase as any)
+        .from('lots')
+        .select(selectFields)
+        .eq('system_code', systemCode)
+        .neq('status', 'hidden')
+        .neq('status', 'deleted')
+        .or(`code.ilike.%${clean}%,production_code.ilike.%${clean}%`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
 
-    if (error || !data) return null
+      if (data) lotRow = data
+    }
 
-    const d = data as any
-    const items = d.lot_items || []
-    const prod = d.products || items[0]?.products || {}
+    if (!lotRow) return null
 
-    const productNames = Array.from(
-      new Set(
-        [d.products?.name, ...items.map((i: any) => i.products?.name)].filter(Boolean)
-      )
-    )
-    const productSkus = Array.from(
-      new Set(
-        [d.products?.sku, ...items.map((i: any) => i.products?.sku)].filter(Boolean)
-      )
-    )
+    const items = Array.isArray(lotRow.lot_items)
+      ? lotRow.lot_items.map((it: any) => ({
+          product_id: it.product_id || it.products?.id || null,
+          product_name: it.products?.name || 'Sản phẩm',
+          sku: it.products?.sku || null,
+          quantity: Number(it.quantity) || 0,
+          unit: it.unit || it.products?.unit || 'Thùng',
+        }))
+      : []
 
     const totalQty =
       items.length > 0
-        ? items.reduce((sum: number, i: any) => sum + (Number(i.quantity) || 0), 0)
-        : d.quantity ?? 0
+        ? items.reduce((sum: number, it: any) => sum + (it.quantity || 0), 0)
+        : Number(lotRow.quantity) || 0
 
-    const posArr = Array.isArray(d.positions)
-      ? d.positions
-      : d.positions
-      ? [d.positions]
+    const posList = Array.isArray(lotRow.positions)
+      ? lotRow.positions
+      : lotRow.positions
+      ? [lotRow.positions]
       : []
 
+    const productNames = Array.from(
+      new Set(items.map((it: any) => it.product_name).filter(Boolean))
+    )
+    const productSkus = Array.from(
+      new Set(items.map((it: any) => it.sku).filter(Boolean))
+    )
+
     return {
-      id: d.id,
-      code: d.code || '',
-      stt: d.daily_seq ? String(d.daily_seq) : d.metadata?.stt ? String(d.metadata.stt) : clean,
-      product_name: productNames.length > 0 ? productNames.join(' + ') : 'Chưa rõ tên SP',
+      id: lotRow.id,
+      code: lotRow.code || lotRow.production_code || '',
+      stt: lotRow.daily_seq != null ? decodeSTT(lotRow.daily_seq) : clean,
+      product_name:
+        productNames.length > 0
+          ? productNames.join(', ')
+          : `Lot ${lotRow.code || lotRow.production_code || ''}`,
       sku: productSkus.length > 0 ? productSkus.join(', ') : null,
       quantity: totalQty,
-      unit: items[0]?.unit || prod.unit || 'Thùng',
-      current_position_code: posArr[0]?.code || null,
+      unit: items[0]?.unit || 'Thùng',
+      items,
+      current_position_id: posList[0]?.id || null,
+      current_position_code: posList[0]?.code || null,
     }
   } catch (e) {
     console.warn('lookupLotBySttOrCode error:', e)
@@ -455,38 +852,126 @@ export async function lookupLotBySttOrCode(sttOrCode: string): Promise<LookedUpL
 
 let cachedProductSuggestions: ProductSuggestion[] | null = null
 
-export async function fetchProductsForSuggestions(): Promise<ProductSuggestion[]> {
+/**
+ * Tải danh mục sản phẩm kèm tên viết tắt (aliases), mã nội bộ (internal_code/name)
+ * và danh sách đơn vị tính cài đặt trên Web mẹ (product_units + units) giống hệt Android
+ */
+export async function fetchProductsForSuggestions(
+  systemCode: string = 'KHO_DONG_LANH'
+): Promise<ProductSuggestion[]> {
   if (cachedProductSuggestions && cachedProductSuggestions.length > 0) {
     return cachedProductSuggestions
   }
+
   try {
-    const { data, error } = await supabase
-      .from('products')
-      .select('id, sku, name, unit, aliases')
-      .order('name', { ascending: true })
-      .limit(1000)
+    const [prodRes, pUnitRes, unitRes] = await Promise.all([
+      (supabase as any)
+        .from('products')
+        .select('id, sku, name, internal_code, internal_name, unit, aliases')
+        .eq('system_type', systemCode)
+        .order('name', { ascending: true })
+        .limit(1000),
+      (supabase as any)
+        .from('product_units')
+        .select('product_id, unit_id, conversion_rate')
+        .limit(2000),
+      (supabase as any)
+        .from('units')
+        .select('id, name')
+        .limit(500),
+    ])
 
-    if (error || !data) return []
+    let products: any[] = Array.isArray(prodRes.data) ? prodRes.data : []
+    if (prodRes.error || products.length === 0) {
+      const { data: allData } = await (supabase as any)
+        .from('products')
+        .select('id, sku, name, internal_code, internal_name, unit, aliases')
+        .order('name', { ascending: true })
+        .limit(1000)
+      products = Array.isArray(allData) ? allData : []
+    }
 
-    const list: ProductSuggestion[] = (data as any[]).map((p: any) => {
+    if (products.length === 0) {
+      const cached = safeGetLocalStorage<ProductSuggestion[]>(PRODUCT_SUGGESTIONS_CACHE_KEY, [])
+      if (cached.length > 0) {
+        cachedProductSuggestions = cached
+        return cached
+      }
+      return []
+    }
+
+    const pUnits: any[] = Array.isArray(pUnitRes.data) ? pUnitRes.data : []
+    const unitList: any[] = Array.isArray(unitRes.data) ? unitRes.data : []
+    const unitMap = new Map<string, string>()
+    unitList.forEach(u => {
+      if (u.id && u.name) unitMap.set(u.id, String(u.name).trim())
+    })
+
+    const pUnitsByProd = new Map<string, Array<{ unit_name: string; rate: number }>>()
+    pUnits.forEach(pu => {
+      const uName = unitMap.get(pu.unit_id)
+      if (pu.product_id && uName) {
+        if (!pUnitsByProd.has(pu.product_id)) {
+          pUnitsByProd.set(pu.product_id, [])
+        }
+        pUnitsByProd.get(pu.product_id)!.push({
+          unit_name: uName,
+          rate: Number(pu.conversion_rate) || 1,
+        })
+      }
+    })
+
+    const list: ProductSuggestion[] = products.map((p: any) => {
       let aliasArr: string[] = []
       if (Array.isArray(p.aliases)) {
         aliasArr = p.aliases.filter(Boolean).map(String)
       } else if (typeof p.aliases === 'string' && p.aliases.trim()) {
-        aliasArr = p.aliases.split(/[,;|]/).map((s: string) => s.trim()).filter(Boolean)
+        aliasArr = p.aliases
+          .split(/[,;|\n]/)
+          .map((s: string) => s.trim())
+          .filter(Boolean)
       }
+
+      const baseUnit = (p.unit || 'Thùng').trim()
+      const unitsList: string[] = []
+
+      // 1. Đơn vị quy đổi cài đặt trên Web mẹ (VD: Thùng (20kg))
+      const pus = pUnitsByProd.get(p.id) || []
+      pus.forEach(pu => {
+        const uName = pu.unit_name.split('(')[0].trim()
+        if (uName.toLowerCase() === baseUnit.toLowerCase()) return
+        const label = pu.rate > 0 ? `${uName} (${pu.rate}kg)` : uName
+        if (!unitsList.includes(label)) {
+          unitsList.push(label)
+        }
+      })
+
+      // 2. Đơn vị cơ sở cài đặt trên Web mẹ (VD: Kg)
+      if (!unitsList.includes(baseUnit)) {
+        unitsList.push(baseUnit)
+      }
+
       return {
         id: p.id,
         sku: p.sku || '',
         name: p.name || '',
-        unit: p.unit || 'Thùng',
+        internal_code: p.internal_code || null,
+        internal_name: p.internal_name || null,
+        unit: baseUnit,
         aliases: aliasArr,
+        available_units: unitsList,
       }
     })
 
     cachedProductSuggestions = list
+    safeSetLocalStorage(PRODUCT_SUGGESTIONS_CACHE_KEY, list)
     return list
   } catch {
+    const cached = safeGetLocalStorage<ProductSuggestion[]>(PRODUCT_SUGGESTIONS_CACHE_KEY, [])
+    if (cached.length > 0) {
+      cachedProductSuggestions = cached
+      return cached
+    }
     return []
   }
 }

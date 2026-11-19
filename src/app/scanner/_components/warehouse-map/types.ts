@@ -163,66 +163,78 @@ export type ProposalActionType = 'CLEAR' | 'SET_QTY' | 'ASSIGN_LOT' | 'MOVE' | '
 
 export interface ProposalSubItem {
   product_id?: string | null
+  product_name: string
   sku?: string | null
-  product_name?: string | null
-  old_qty?: number | null
-  new_qty?: number | null
-  unit?: string | null
+  current_quantity: number
+  new_quantity: number
+  unit: string
   is_new?: boolean
 }
 
 export interface ProposalItem {
+  id: string
   position_id: string
   position_code: string
-  zone_path: string
-  old_lot_id?: string | null
-  old_lot_code?: string | null
-  old_stt?: string | null
-  old_product_name?: string | null
-  old_sku?: string | null
-  old_qty?: number | null
-  old_unit?: string | null
-  action: ProposalActionType
-  new_qty?: number | null
-  new_stt?: string | null
-  new_lot_code?: string | null
-  new_product_name?: string | null
-  new_sku?: string | null
-  new_unit?: string | null
+  warehouse_name?: string
+  action_type: ProposalActionType
+  lot_id?: string | null
+  lot_code?: string | null
+  lot_stt?: string | null
+  lot_found?: boolean
+  product_name?: string | null
+  sku?: string | null
+  current_quantity?: number | null
+  unit?: string | null
+  sub_items?: ProposalSubItem[]
+  new_quantity?: number | null
+  target_position_id?: string | null
   target_position_code?: string | null
-  sub_items?: ProposalSubItem[] | null
-  reason?: string | null
+  note?: string | null
   updated_at: string
 }
 
 export interface DraftProposal {
-  id: string
   title: string
-  created_by: string
-  created_at: string
-  note?: string
+  notes: string
   items: ProposalItem[]
+  updated_at: string
 }
 
 export interface SubmittedProposal {
   id: string
+  code?: string
+  system_code?: string
   title: string
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | string
-  note?: string | null
-  created_by?: string | null
-  created_at: string
+  notes: string
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PARTIAL' | string
+  total_positions: number
   items: ProposalItem[]
+  created_by?: string | null
+  created_by_name?: string | null
+  approved_by_name?: string | null
+  approved_at?: string | null
+  review_notes?: string | null
+  created_at: string
+  isOfflinePending?: boolean
   source?: 'table' | 'shift_tasks' | 'local'
 }
 
 export interface LookedUpLot {
   id: string
   code: string
-  stt: string
+  stt: string | null
   product_name: string
   sku: string | null
   quantity: number
   unit: string
+  items?: Array<{
+    product_id?: string | null
+    product_name: string
+    sku?: string | null
+    quantity: number
+    unit: string
+  }>
+  current_position_id?: string | null
   current_position_code?: string | null
 }
 
@@ -230,6 +242,9 @@ export interface ProductSuggestion {
   id: string
   sku: string
   name: string
+  internal_code?: string | null
+  internal_name?: string | null
   unit: string
   aliases: string[]
+  available_units: string[]
 }

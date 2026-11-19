@@ -1,20 +1,23 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   X,
   Trash2,
-  Edit3,
-  PlusCircle,
+  Calculator,
+  Tag,
   ArrowRightLeft,
   Check,
   Search,
-  MapPin,
   Package,
   MessageSquare,
   Plus,
   Minus,
   Loader2,
+  PlusCircle,
+  ChevronUp,
+  Info,
+  CheckCircle2,
 } from 'lucide-react'
 import type {
   PositionItem,
@@ -26,7 +29,7 @@ import type {
 } from './types'
 import { extractSubItemsFromPosition } from './mapHelpers'
 import { lookupLotBySttOrCode, fetchProductsForSuggestions } from './warehouseAdjustmentService'
-import { normalizeSearchString } from '@/lib/searchUtils'
+import { matchSearch, calculateSearchScore } from '@/lib/searchUtils'
 
 interface Props {
   visible: boolean
@@ -40,7 +43,17 @@ interface Props {
 }
 
 const QUICK_QTY_DELTAS = [-10, -5, -1, +1, +5, +10, +20]
-const QUICK_UNITS = ['Thùng', 'Kg', 'Sọt', 'Bao', 'Cây', 'Bịch']
+
+function getProductAvailableUnits(prod?: ProductSuggestion | null, fallbackUnit = 'Thùng'): string[] {
+  if (!prod) return [fallbackUnit]
+  if (Array.isArray(prod.available_units) && prod.available_units.length > 0) {
+    return prod.available_units
+  }
+  if (prod.unit && prod.unit.trim()) {
+    return [prod.unit.trim()]
+  }
+  return [fallbackUnit]
+}
 
 export default function WarehouseAdjustmentDraftModal({
   visible,
@@ -52,655 +65,884 @@ export default function WarehouseAdjustmentDraftModal({
   onSaveItem,
   onRemoveItem,
 }: Props) {
-  const hasExistingLot = !!(position?.lot_id || position?.product_name || position?.stt)
+  const isCurrentlyOccupied = Boolean(position?.lot_id)
+  const currentQty = position?.quantity ?? 0
+  const currentUnit = position?.unit || 'Thùng'
 
-  const initialSubItems = useMemo(
-    () => (position ? extractSubItemsFromPosition(position) : []),
-    [position]
-  )
+  const noteInputRef = useRef<HTMLTextAreaElement | null>(null)
 
-  const [action, setAction] = useState<ProposalActionType>('NOTE')
-  const [newQtyText, setNewQtyText] = useState<string>('')
-  const [subItemsDraft, setSubItemsDraft] = useState<ProposalSubItem[]>([])
-
-  // Add new product into lot state
-  const [showAddProductForm, setShowAddProductForm] = useState(false)
-  const [allProducts, setAllProducts] = useState<ProductSuggestion[]>([])
-  const [loadingProducts, setLoadingProducts] = useState(false)
-  const [newProdSearch, setNewProdSearch] = useState('')
-  const [selectedNewProd, setSelectedNewProd] = useState<ProductSuggestion | null>(null)
-  const [newProdQtyText, setNewProdQtyText] = useState('1')
-  const [newProdUnit, setNewProdUnit] = useState('Thùng')
-
-  // Assign Lot state
-  const [newSttText, setNewSttText] = useState<string>('')
-  const [newProductNameText, setNewProductNameText] = useState<string>('')
-  const [newUnitText, setNewUnitText] = useState<string>('Thùng')
-  const [lookingUpLot, setLookingUpLot] = useState(false)
-  const [lookedUpLot, setLookedUpLot] = useState<LookedUpLot | null>(null)
-
-  // Move position state
+  const [actionType, setActionType] = useState<ProposalActionType>('NOTE')
+  const [newQtyStr, setNewQtyStr] = useState<string>('0')
   const [targetPosCode, setTargetPosCode] = useState<string>('')
-  const [onlyEmptyTarget, setOnlyEmptyTarget] = useState<boolean>(true)
-  const [reasonText, setReasonText] = useState<string>('')
+  const [targetPosId, setTargetPosId] = useState<string | null>(null)
+  const [onlyEmptySuggestions, setOnlyEmptySuggestions] = useState<boolean>(false)
+  const [note, setNote] = useState<string>('')
+  const [subItems, setSubItems] = useState<ProposalSubItem[]>([])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
+  // State thêm sản phẩm mới vào Lot (dùng cho cả Tạo Lot mới & Thêm SP vào Lot hiện có)
+  const [showAddProductPanel, setShowAddProductPanel] = useState<boolean>(false)
+  const [productCatalog, setProductCatalog] = useState<ProductSuggestion[]>([])
+  const [loadingCatalog, setLoadingCatalog] = useState<boolean>(false)
+  const [productQuery, setProductQuery] = useState<string>('')
+  const [selectedNewProduct, setSelectedNewProduct] = useState<ProductSuggestion | null>(null)
+  const [newProductQtyStr, setNewProductQtyStr] = useState<string>('1')
+  const [newProductUnit, setNewProductUnit] = useState<string>('Thùng')
+
+  // State gắn STT Lot vào vị trí
+  const [assignSttQuery, setAssignSttQuery] = useState<string>('')
+  const [searchingLot, setSearchingLot] = useState<boolean>(false)
+  const [foundAssignLot, setFoundAssignLot] = useState<LookedUpLot | null>(null)
+  const [assignLotError, setAssignLotError] = useState<string | null>(null)
+
+  const loadProductCatalogIfNeeded = useCallback(async () => {
+    if (productCatalog.length > 0 || loadingCatalog) return
+    setLoadingCatalog(true)
+    try {
+      const list = await fetchProductsForSuggestions()
+      setProductCatalog(list || [])
+    } finally {
+      setLoadingCatalog(false)
+    }
+  }, [productCatalog.length, loadingCatalog])
+
+  // Khởi tạo state khi mở modal hoặc đổi vị trí / existingDraftItem
   useEffect(() => {
-    if (!position || !visible) return
+    if (!visible || !position) return
     setErrorMsg(null)
 
     if (existingDraftItem) {
-      setAction(existingDraftItem.action)
-      setNewQtyText(
-        existingDraftItem.new_qty !== null && existingDraftItem.new_qty !== undefined
-          ? String(existingDraftItem.new_qty)
-          : position.quantity !== null && position.quantity !== undefined
-          ? String(position.quantity)
-          : ''
+      setActionType(existingDraftItem.action_type)
+      setNewQtyStr(
+        existingDraftItem.new_quantity != null
+          ? String(existingDraftItem.new_quantity)
+          : String(currentQty)
       )
-      setSubItemsDraft(
-        existingDraftItem.sub_items && existingDraftItem.sub_items.length > 0
-          ? existingDraftItem.sub_items.map(s => ({ ...s }))
-          : extractSubItemsFromPosition(position)
-      )
-      setNewSttText(existingDraftItem.new_stt || '')
-      setNewProductNameText(existingDraftItem.new_product_name || '')
-      setNewUnitText(existingDraftItem.new_unit || position.unit || 'Thùng')
       setTargetPosCode(existingDraftItem.target_position_code || '')
-      setReasonText(existingDraftItem.reason || '')
-      setLookedUpLot(null)
-      setShowAddProductForm(false)
-    } else {
-      setAction('NOTE')
-      setNewQtyText(
-        position.quantity !== null && position.quantity !== undefined
-          ? String(position.quantity)
-          : ''
-      )
-      setSubItemsDraft(extractSubItemsFromPosition(position))
-      setNewSttText('')
-      setNewProductNameText('')
-      setNewUnitText(position.unit || 'Thùng')
-      setTargetPosCode('')
-      setReasonText('')
-      setLookedUpLot(null)
-      setShowAddProductForm(false)
-    }
-  }, [position, existingDraftItem, visible])
+      setTargetPosId(existingDraftItem.target_position_id || null)
+      setNote(existingDraftItem.note || '')
 
-  // Auto lookup Lot when typing STT in ASSIGN_LOT mode
-  useEffect(() => {
-    if (action !== 'ASSIGN_LOT') return
-    const clean = newSttText.replace(/^#/, '').trim()
-    if (!clean) {
-      setLookedUpLot(null)
-      return
-    }
-
-    const localMatch = availablePositions.find(
-      p =>
-        (p.stt && p.stt.toUpperCase() === clean.toUpperCase()) ||
-        (p.lot_code && p.lot_code.toUpperCase() === clean.toUpperCase())
-    )
-
-    if (localMatch && localMatch.product_name) {
-      const found: LookedUpLot = {
-        id: localMatch.lot_id || localMatch.id,
-        code: localMatch.lot_code || '',
-        stt: localMatch.stt || clean,
-        product_name: localMatch.product_name,
-        sku: localMatch.sku || null,
-        quantity: localMatch.quantity ?? 0,
-        unit: localMatch.unit || 'Thùng',
-        current_position_code: localMatch.code,
+      if (existingDraftItem.sub_items && existingDraftItem.sub_items.length > 0) {
+        setSubItems(existingDraftItem.sub_items.map(s => ({ ...s })))
+      } else {
+        setSubItems(extractSubItemsFromPosition(position))
       }
-      setLookedUpLot(found)
-      setNewProductNameText(found.product_name)
-      setNewQtyText(String(found.quantity))
-      setNewUnitText(found.unit)
-      return
-    }
 
-    const timer = setTimeout(async () => {
-      setLookingUpLot(true)
-      try {
-        const res = await lookupLotBySttOrCode(clean)
-        setLookedUpLot(res)
-        if (res) {
-          setNewProductNameText(res.product_name)
-          setNewQtyText(String(res.quantity))
-          setNewUnitText(res.unit)
+      if (existingDraftItem.action_type === 'ASSIGN_LOT') {
+        setAssignSttQuery(existingDraftItem.lot_stt || existingDraftItem.lot_code || '')
+        if (existingDraftItem.lot_id) {
+          setFoundAssignLot({
+            id: existingDraftItem.lot_id,
+            code: existingDraftItem.lot_code || '',
+            stt: existingDraftItem.lot_stt || null,
+            quantity: existingDraftItem.new_quantity ?? 0,
+            unit: existingDraftItem.unit || 'Thùng',
+            product_name: existingDraftItem.product_name || '',
+            sku: existingDraftItem.sku || null,
+            current_position_id: existingDraftItem.target_position_id || null,
+            current_position_code: existingDraftItem.target_position_code || null,
+          })
+        } else {
+          setFoundAssignLot(null)
         }
-      } finally {
-        setLookingUpLot(false)
+        setAssignLotError(null)
+      } else {
+        setAssignSttQuery('')
+        setFoundAssignLot(null)
+        setAssignLotError(null)
       }
-    }, 320)
-
-    return () => clearTimeout(timer)
-  }, [newSttText, action, availablePositions])
-
-  useEffect(() => {
-    if (!showAddProductForm || allProducts.length > 0) return
-    let mounted = true
-    setLoadingProducts(true)
-    fetchProductsForSuggestions()
-      .then(list => {
-        if (mounted) setAllProducts(list)
-      })
-      .finally(() => {
-        if (mounted) setLoadingProducts(false)
-      })
-    return () => {
-      mounted = false
-    }
-  }, [showAddProductForm, allProducts.length])
-
-  const productSuggestions = useMemo(() => {
-    const q = normalizeSearchString(newProdSearch.trim(), true)
-    if (!q) return allProducts.slice(0, 8)
-    const tokens = q.split(/\s+/).filter(Boolean)
-
-    return allProducts
-      .filter(p => {
-        const hay = normalizeSearchString(`${p.sku} ${p.name} ${p.aliases.join(' ')}`, true)
-        return tokens.every((t: string) => hay.includes(t))
-      })
-      .slice(0, 8)
-  }, [newProdSearch, allProducts])
-
-  const movePositionSuggestions = useMemo(() => {
-    if (action !== 'MOVE' || !position) return []
-    const q = targetPosCode.trim().toUpperCase()
-    const currentPrefix = position.code.slice(0, 6).toUpperCase()
-
-    const getTierRank = (code: string): number => {
-      const m = code.toUpperCase().match(/T(\d+)/)
-      return m ? parseInt(m[1], 10) : 99
+    } else {
+      setActionType('NOTE')
+      setNewQtyStr(String(currentQty))
+      setTargetPosCode('')
+      setTargetPosId(null)
+      setNote('')
+      setAssignSttQuery('')
+      setFoundAssignLot(null)
+      setAssignLotError(null)
+      setSubItems(extractSubItemsFromPosition(position))
     }
 
-    const candidates = availablePositions.filter(p => {
-      if (p.id === position.id) return false
-      const isEmpty = !p.lot_id && !p.product_name && !p.stt
-      if (onlyEmptyTarget && !isEmpty) return false
-      if (!q) return p.code.toUpperCase().startsWith(currentPrefix)
-      return p.code.toUpperCase().includes(q)
-    })
+    const shouldAutoOpenAdd =
+      !isCurrentlyOccupied &&
+      (!existingDraftItem || existingDraftItem.action_type === 'SET_QTY') &&
+      !(existingDraftItem?.sub_items && existingDraftItem.sub_items.length > 0)
 
-    candidates.sort((a, b) => {
-      const codeA = a.code.toUpperCase()
-      const codeB = b.code.toUpperCase()
+    setShowAddProductPanel(shouldAutoOpenAdd)
+    if (shouldAutoOpenAdd) {
+      void loadProductCatalogIfNeeded()
+    }
+    setProductQuery('')
+    setSelectedNewProduct(null)
+    setNewProductQtyStr('1')
+    setNewProductUnit(position.unit || 'Thùng')
+  }, [visible, position, existingDraftItem, isCurrentlyOccupied, currentQty, loadProductCatalogIfNeeded])
 
-      if (q) {
-        const startsA = codeA.startsWith(q) ? 0 : 1
-        const startsB = codeB.startsWith(q) ? 0 : 1
-        if (startsA !== startsB) return startsA - startsB
+  const hasMultipleProducts = subItems.length > 1 || subItems.some(s => s.is_new)
+
+  const handleSelectAction = useCallback(
+    (type: ProposalActionType) => {
+      setErrorMsg(null)
+      setActionType(type)
+
+      if (type === 'CLEAR') {
+        setSubItems(prev => prev.map(s => ({ ...s, new_quantity: 0 })))
+        setNewQtyStr('0')
+      } else if (type === 'SET_QTY' && !isCurrentlyOccupied && subItems.length === 0) {
+        setShowAddProductPanel(true)
+        void loadProductCatalogIfNeeded()
+      } else if (type === 'NOTE') {
+        setTimeout(() => noteInputRef.current?.focus(), 60)
       }
+    },
+    [isCurrentlyOccupied, subItems.length, loadProductCatalogIfNeeded]
+  )
 
-      const sameAisleA = codeA.startsWith(currentPrefix) ? 0 : 1
-      const sameAisleB = codeB.startsWith(currentPrefix) ? 0 : 1
-      if (sameAisleA !== sameAisleB) return sameAisleA - sameAisleB
-
-      const tierA = getTierRank(codeA)
-      const tierB = getTierRank(codeB)
-      if (tierA !== tierB) return tierA - tierB
-
-      return codeA.localeCompare(codeB, undefined, { numeric: true })
-    })
-
-    return candidates.slice(0, 12)
-  }, [action, targetPosCode, onlyEmptyTarget, availablePositions, position])
-
-  if (!visible || !position) return null
-
-  const isMultiSubItems = subItemsDraft.length > 1
-
-  const handleQuickAdjustQty = (delta: number) => {
-    const cur = parseFloat(newQtyText.replace(',', '.'))
-    const base = isNaN(cur) ? position.quantity || 0 : cur
-    const next = Math.max(0, Number((base + delta).toFixed(2)))
-    setNewQtyText(String(next))
-  }
-
-  const handleUpdateSubItemQty = (idx: number, valStr: string) => {
-    const parsed = parseFloat(valStr.replace(',', '.'))
-    setSubItemsDraft(prev => {
-      const copy = [...prev]
-      copy[idx] = {
-        ...copy[idx],
-        new_qty: isNaN(parsed) ? 0 : Math.max(0, parsed),
-      }
-      return copy
-    })
-  }
-
-  const handleStepSubItemQty = (idx: number, delta: number) => {
-    setSubItemsDraft(prev => {
-      const copy = [...prev]
-      const cur = typeof copy[idx]?.new_qty === 'number' ? copy[idx].new_qty! : copy[idx]?.old_qty || 0
-      const next = Math.max(0, Number((cur + delta).toFixed(2)))
-      copy[idx] = { ...copy[idx], new_qty: next }
-      return copy
-    })
-  }
-
-  const handleConfirmAddSubItem = () => {
-    const prodName = selectedNewProd ? selectedNewProd.name : newProdSearch.trim()
-    if (!prodName) {
-      setErrorMsg('Vui lòng chọn hoặc nhập tên sản phẩm cần thêm vào Lot!')
-      return
+  const handleToggleAddProductPanel = useCallback(() => {
+    const nextOpen = !showAddProductPanel
+    setShowAddProductPanel(nextOpen)
+    if (nextOpen) {
+      void loadProductCatalogIfNeeded()
     }
-    const parsedQty = parseFloat(newProdQtyText.replace(',', '.'))
-    if (isNaN(parsedQty) || parsedQty <= 0) {
-      setErrorMsg('Vui lòng nhập số lượng hợp lệ (> 0) cho sản phẩm thêm mới!')
-      return
-    }
+  }, [showAddProductPanel, loadProductCatalogIfNeeded])
 
-    const unitToUse = (selectedNewProd?.unit || newProdUnit || 'Thùng').trim()
+  // Tìm kiếm sản phẩm hỗ trợ tên viết tắt (aliases), mã nội bộ, SKU, không dấu & sắp xếp theo điểm khớp
+  const filteredProductSuggestions = useMemo(() => {
+    if (!showAddProductPanel || productCatalog.length === 0) return []
+    const q = productQuery.trim()
+    if (!q) return productCatalog.slice(0, 15)
+    return productCatalog
+      .filter(p => matchSearch(p, q))
+      .sort((a, b) => calculateSearchScore(b, q) - calculateSearchScore(a, q))
+      .slice(0, 20)
+  }, [showAddProductPanel, productCatalog, productQuery])
+
+  const handleConfirmAddProductToLot = useCallback(() => {
+    if (!selectedNewProduct) return
+    const qty = parseFloat(newProductQtyStr.replace(',', '.'))
+    const validQty = isNaN(qty) || qty <= 0 ? 1 : qty
+    const unitVal = newProductUnit.trim() || currentUnit || 'Thùng'
+
     setErrorMsg(null)
-
-    setSubItemsDraft(prev => {
-      let baseList = [...prev]
-      if (baseList.length === 0 && position?.product_name) {
-        baseList = [
+    setSubItems(prev => {
+      let base = prev
+      if (base.length === 0 && position?.product_name) {
+        const baseQty = parseFloat(newQtyStr.replace(',', '.'))
+        base = [
           {
             product_id: null,
-            sku: position.sku || null,
             product_name: position.product_name,
-            old_qty: position.quantity ?? 0,
-            new_qty: parseFloat(newQtyText.replace(',', '.')) || (position.quantity ?? 0),
+            sku: position.sku || null,
+            current_quantity: position.quantity != null ? Number(position.quantity) : 0,
+            new_quantity: isNaN(baseQty) ? (position.quantity ?? 0) : baseQty,
             unit: position.unit || 'Thùng',
           },
         ]
+      } else if (base.length === 1) {
+        const baseQty = parseFloat(newQtyStr.replace(',', '.'))
+        if (!isNaN(baseQty)) {
+          base = [{ ...base[0], new_quantity: baseQty }]
+        }
       }
 
-      return [
-        ...baseList,
+      const next: ProposalSubItem[] = [
+        ...base,
         {
-          product_id: selectedNewProd?.id || null,
-          sku: selectedNewProd?.sku || null,
-          product_name: prodName,
-          old_qty: 0,
-          new_qty: parsedQty,
-          unit: unitToUse,
+          product_id: selectedNewProduct.id,
+          product_name: selectedNewProduct.name,
+          sku: selectedNewProduct.sku || null,
+          current_quantity: 0,
+          new_quantity: validQty,
+          unit: unitVal,
           is_new: true,
         },
       ]
+      const total = next.reduce((sum, item) => sum + (item.new_quantity || 0), 0)
+      setNewQtyStr(String(Number(total.toFixed(2))))
+      return next
     })
 
-    setShowAddProductForm(false)
-    setNewProdSearch('')
-    setSelectedNewProd(null)
-    setNewProdQtyText('1')
-  }
+    setShowAddProductPanel(false)
+    setSelectedNewProduct(null)
+    setProductQuery('')
+    setNewProductQtyStr('1')
+  }, [selectedNewProduct, newProductQtyStr, newProductUnit, currentUnit, position, newQtyStr])
 
-  const handleRemoveNewSubItem = (idx: number) => {
-    setSubItemsDraft(prev => prev.filter((_, i) => i !== idx))
-  }
+  const handleRemoveNewSubItem = useCallback((index: number) => {
+    setSubItems(prev => {
+      const next = prev.filter((_, idx) => idx !== index)
+      const total = next.reduce((sum, item) => sum + (item.new_quantity || 0), 0)
+      setNewQtyStr(String(Number(total.toFixed(2))))
+      return next
+    })
+  }, [])
 
-  const handleSave = () => {
-    setErrorMsg(null)
-    const parsedQty = newQtyText.trim() !== '' ? parseFloat(newQtyText.replace(',', '.')) : null
+  // Tăng giảm số lượng nhanh cho pallet đơn
+  const handleQuickAddQty = useCallback(
+    (delta: number) => {
+      const curr = parseFloat(newQtyStr.replace(',', '.')) || 0
+      const next = Math.max(0, Number((curr + delta).toFixed(2)))
+      setNewQtyStr(String(next))
 
-    if (action === 'NOTE' && !reasonText.trim()) {
-      setErrorMsg('Vui lòng nhập nội dung ghi chú cho vị trí này!')
-      return
+      setSubItems(prev => {
+        if (prev.length === 1) {
+          return [{ ...prev[0], new_quantity: next }]
+        }
+        return prev
+      })
+    },
+    [newQtyStr]
+  )
+
+  const handleUpdateSubItemQty = useCallback((index: number, newQty: number) => {
+    const validQty = Math.max(0, Number(newQty.toFixed(2)))
+    setSubItems(prev => {
+      const next = [...prev]
+      next[index] = { ...next[index], new_quantity: validQty }
+      const total = next.reduce((sum, item) => sum + (item.new_quantity || 0), 0)
+      setNewQtyStr(String(Number(total.toFixed(2))))
+      return next
+    })
+  }, [])
+
+  const handleSubItemTextChange = useCallback((index: number, text: string) => {
+    const parsed = parseFloat(text.replace(',', '.'))
+    const validQty = isNaN(parsed) ? 0 : Math.max(0, parsed)
+    setSubItems(prev => {
+      const next = [...prev]
+      next[index] = { ...next[index], new_quantity: validQty }
+      const total = next.reduce((sum, item) => sum + (item.new_quantity || 0), 0)
+      setNewQtyStr(String(Number(total.toFixed(2))))
+      return next
+    })
+  }, [])
+
+  // Gợi ý vị trí chuyển ô thông minh (ưu tiên tầng T1->T5, cùng dãy) giống Android
+  const positionSuggestions = useMemo(() => {
+    if (actionType !== 'MOVE' || !availablePositions || availablePositions.length === 0) {
+      return []
     }
 
-    if (action === 'SET_QTY') {
-      if (!isMultiSubItems && (parsedQty === null || isNaN(parsedQty) || parsedQty < 0)) {
-        setErrorMsg('Vui lòng nhập số lượng thực tế hợp lệ!')
+    const extractFloor = (code: string): number => {
+      const m = (code || '').match(/T(\d+)/i)
+      if (!m) return 999
+      const digits = m[1]
+      if (digits.length >= 3) {
+        return parseInt(digits[0], 10)
+      }
+      return parseInt(digits, 10)
+    }
+
+    const sortPositions = (list: PositionItem[]) => {
+      return [...list].sort((a, b) => {
+        const codeA = (a.code || '').toUpperCase()
+        const codeB = (b.code || '').toUpperCase()
+        const floorA = extractFloor(codeA)
+        const floorB = extractFloor(codeB)
+
+        const isPriorityA = floorA >= 1 && floorA <= 5
+        const isPriorityB = floorB >= 1 && floorB <= 5
+        if (isPriorityA && !isPriorityB) return -1
+        if (!isPriorityA && isPriorityB) return 1
+
+        if (floorA !== floorB) return floorA - floorB
+        return codeA.localeCompare(codeB, undefined, { numeric: true })
+      })
+    }
+
+    const currentPosId = position?.id
+    let pool = availablePositions.filter(p => p.id !== currentPosId)
+
+    if (onlyEmptySuggestions) {
+      pool = pool.filter(p => !p.lot_id)
+    }
+
+    const query = targetPosCode.trim().toUpperCase()
+
+    if (!query) {
+      const currentPrefix = (position?.code || '').slice(0, 4).toUpperCase()
+      if (currentPrefix) {
+        const samePrefix = pool.filter(p => (p.code || '').toUpperCase().startsWith(currentPrefix))
+        if (samePrefix.length > 0) {
+          return sortPositions(samePrefix).slice(0, 20)
+        }
+      }
+      return sortPositions(pool).slice(0, 20)
+    }
+
+    const matched = pool.filter(p => (p.code || '').toUpperCase().includes(query))
+    return sortPositions(matched).slice(0, 20)
+  }, [actionType, availablePositions, targetPosCode, onlyEmptySuggestions, position])
+
+  const handleSelectTargetPosition = useCallback((targetPos: PositionItem) => {
+    setTargetPosCode(targetPos.code || '')
+    setTargetPosId(targetPos.id || null)
+  }, [])
+
+  // Tra cứu Lot theo STT (VD: G57, G88) hoặc mã Lot
+  const handleSearchAssignLot = useCallback(
+    async (overrideQuery?: string) => {
+      const q = (overrideQuery ?? assignSttQuery).replace(/^#/, '').trim().toUpperCase()
+      if (!q) {
+        setFoundAssignLot(null)
+        setAssignLotError('Vui lòng nhập STT (VD: G949) hoặc mã Lot.')
         return
       }
-    }
+      setAssignLotError(null)
 
-    if (action === 'ASSIGN_LOT' && !newSttText.trim() && !newProductNameText.trim()) {
-      setErrorMsg('Vui lòng nhập STT Lot (ví dụ: G57) hoặc tên sản phẩm thực tế tại ô này!')
+      // 1. Tìm nhanh trên bản đồ hiện có (chạy cả khi offline)
+      if (Array.isArray(availablePositions) && availablePositions.length > 0) {
+        const localMatch = availablePositions.find(
+          p =>
+            p.lot_id &&
+            ((p.stt || '').toUpperCase() === q || (p.lot_code || '').toUpperCase() === q)
+        )
+        if (localMatch) {
+          setFoundAssignLot({
+            id: localMatch.lot_id!,
+            code: localMatch.lot_code || '',
+            stt: localMatch.stt || q,
+            quantity: Number(localMatch.quantity) || 0,
+            unit: localMatch.unit || 'Thùng',
+            product_name: localMatch.product_name || `Lot ${localMatch.lot_code || ''}`,
+            sku: localMatch.sku || null,
+            current_position_id: localMatch.id,
+            current_position_code: localMatch.code,
+          })
+          return
+        }
+      }
+
+      // 2. Tra cứu trực tiếp Supabase (tìm cả Lot chưa gán vị trí)
+      setSearchingLot(true)
+      try {
+        const remoteLot = await lookupLotBySttOrCode(q)
+        if (remoteLot) {
+          setFoundAssignLot(remoteLot)
+        } else {
+          setFoundAssignLot(null)
+          setAssignLotError(`Không tìm thấy Lot nào khớp STT/mã "${q}" trong kho hiện tại.`)
+        }
+      } finally {
+        setSearchingLot(false)
+      }
+    },
+    [assignSttQuery, availablePositions]
+  )
+
+  const handleSave = () => {
+    if (!position) return
+    setErrorMsg(null)
+
+    const cleanStt = assignSttQuery.replace(/^#/, '').trim().toUpperCase()
+    if (actionType === 'ASSIGN_LOT' && !cleanStt) {
+      setErrorMsg('Vui lòng nhập STT của Lot (VD: G57, G88...) cần gắn vào vị trí này.')
       return
     }
 
-    if (action === 'MOVE' && !targetPosCode.trim()) {
-      setErrorMsg('Vui lòng chọn hoặc nhập mã vị trí mới cần chuyển sang!')
+    if (actionType === 'NOTE' && !note.trim()) {
+      setErrorMsg('Vui lòng nhập nội dung ghi chú muốn gửi lên Web.')
       return
     }
 
-    const totalSubQty =
-      action === 'SET_QTY' && isMultiSubItems
-        ? subItemsDraft.reduce((s, it) => s + (Number(it.new_qty) || 0), 0)
-        : parsedQty
-
-    const item: ProposalItem = {
-      position_id: position.id,
-      position_code: position.code,
-      zone_path: zonePath || 'Chưa rõ khu vực',
-      old_lot_id: position.lot_id || null,
-      old_lot_code: position.lot_code || null,
-      old_stt: position.stt || null,
-      old_product_name: position.product_name || null,
-      old_sku: position.sku || null,
-      old_qty: position.quantity ?? null,
-      old_unit: position.unit || null,
-      action,
-      new_qty:
-        action === 'SET_QTY' || action === 'ASSIGN_LOT'
-          ? totalSubQty !== null && !isNaN(totalSubQty as number)
-            ? totalSubQty
-            : null
-          : action === 'CLEAR'
-          ? 0
-          : null,
-      new_stt:
-        action === 'ASSIGN_LOT'
-          ? lookedUpLot?.stt || newSttText.trim() || null
-          : null,
-      new_lot_code: action === 'ASSIGN_LOT' ? lookedUpLot?.code || null : null,
-      new_product_name:
-        action === 'ASSIGN_LOT'
-          ? lookedUpLot?.product_name || newProductNameText.trim() || null
-          : action === 'SET_QTY' && !hasExistingLot
-          ? newProductNameText.trim() || null
-          : null,
-      new_sku: action === 'ASSIGN_LOT' ? lookedUpLot?.sku || null : null,
-      new_unit:
-        action === 'ASSIGN_LOT' || action === 'SET_QTY'
-          ? lookedUpLot?.unit || newUnitText.trim() || position.unit || 'Thùng'
-          : null,
-      target_position_code:
-        action === 'MOVE' ? targetPosCode.trim().toUpperCase() : null,
-      sub_items:
-        action === 'SET_QTY' && subItemsDraft.length > 0 ? subItemsDraft : null,
-      reason: reasonText.trim() || null,
-      updated_at: new Date().toISOString(),
+    if (!isCurrentlyOccupied && actionType === 'SET_QTY' && subItems.length === 0) {
+      setErrorMsg('Vui lòng tìm và chọn ít nhất 1 sản phẩm để tạo Lot mới cho vị trí trống.')
+      return
     }
+
+    if (actionType === 'MOVE' && !targetPosCode.trim()) {
+      setErrorMsg('Vui lòng chọn hoặc nhập mã vị trí đích cần chuyển sang.')
+      return
+    }
+
+    let parsedNewQty: number | null = null
+    let finalSubItems: ProposalSubItem[] | undefined = undefined
+
+    if (actionType === 'SET_QTY') {
+      if (hasMultipleProducts) {
+        parsedNewQty = Number(
+          subItems.reduce((sum, item) => sum + (item.new_quantity || 0), 0).toFixed(2)
+        )
+        finalSubItems = subItems
+      } else {
+        const parsed = parseFloat(newQtyStr.replace(',', '.'))
+        if (isNaN(parsed) || parsed < 0) {
+          setErrorMsg('Vui lòng nhập số lượng thực tế hợp lệ!')
+          return
+        }
+        parsedNewQty = parsed
+        finalSubItems =
+          subItems.length > 0
+            ? subItems.map(s => ({ ...s, new_quantity: parsed }))
+            : undefined
+      }
+    } else if (actionType === 'CLEAR') {
+      parsedNewQty = 0
+      finalSubItems =
+        subItems.length > 0
+          ? subItems.map(s => ({ ...s, new_quantity: 0 }))
+          : undefined
+    }
+
+    let resolvedTargetId = targetPosId
+    if (actionType === 'MOVE' && !resolvedTargetId && targetPosCode.trim()) {
+      const found = availablePositions.find(
+        p => (p.code || '').trim().toUpperCase() === targetPosCode.trim().toUpperCase()
+      )
+      if (found) resolvedTargetId = found.id
+    }
+
+    const item: ProposalItem =
+      actionType === 'ASSIGN_LOT'
+        ? {
+            id: existingDraftItem?.id || `${position.id}-${Date.now()}`,
+            position_id: position.id,
+            position_code: position.code,
+            warehouse_name: zonePath || undefined,
+            action_type: 'ASSIGN_LOT',
+            lot_id: foundAssignLot?.id || null,
+            lot_code: foundAssignLot?.code || null,
+            lot_stt: foundAssignLot?.stt || cleanStt,
+            product_name: foundAssignLot?.product_name || `Gắn STT ${cleanStt}`,
+            sku: foundAssignLot?.sku || null,
+            current_quantity: position.quantity ?? 0,
+            unit: foundAssignLot?.unit || 'Thùng',
+            new_quantity: foundAssignLot?.quantity ?? null,
+            target_position_id: foundAssignLot?.current_position_id || null,
+            target_position_code: foundAssignLot?.current_position_code || null,
+            note: note.trim() || null,
+            updated_at: new Date().toISOString(),
+          }
+        : {
+            id: existingDraftItem?.id || `${position.id}-${Date.now()}`,
+            position_id: position.id,
+            position_code: position.code,
+            warehouse_name: zonePath || undefined,
+            action_type: actionType,
+            lot_id: position.lot_id || null,
+            lot_code: position.lot_code || null,
+            lot_stt: position.stt || null,
+            product_name:
+              position.product_name ||
+              (finalSubItems && finalSubItems.length > 0
+                ? finalSubItems.map(s => s.product_name).join(', ')
+                : null),
+            sku:
+              position.sku ||
+              (finalSubItems && finalSubItems.length > 0
+                ? finalSubItems.map(s => s.sku).filter(Boolean).join(', ') || null
+                : null),
+            current_quantity: position.quantity ?? null,
+            unit:
+              position.unit ||
+              (finalSubItems && finalSubItems.length > 0 ? finalSubItems[0].unit : 'Thùng'),
+            ...(finalSubItems && finalSubItems.length > 0 ? { sub_items: finalSubItems } : {}),
+            new_quantity: parsedNewQty,
+            target_position_id: actionType === 'MOVE' ? resolvedTargetId : null,
+            target_position_code:
+              actionType === 'MOVE' ? targetPosCode.trim().toUpperCase() : null,
+            note: note.trim() || null,
+            updated_at: new Date().toISOString(),
+          }
 
     onSaveItem(item)
     onClose()
   }
 
+  if (!visible || !position) return null
+
   return (
     <div
-      className="fixed inset-0 z-[115] bg-slate-950/60 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-150"
+      className="fixed inset-0 z-[115] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden"
+        className="bg-[#0f172a] text-slate-100 w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[92dvh] flex flex-col shadow-2xl border border-slate-700/80 overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900">
+        <div className="shrink-0 flex items-center justify-between px-4 py-3.5 border-b border-slate-800 bg-[#111827]">
           <div className="min-w-0 pr-2">
-            <h3 className="text-[16px] font-black text-slate-900 dark:text-white tracking-tight">
-              ✏️ Ghi nháp vị trí: {position.code}
+            <div className="text-[10px] font-black text-amber-400 tracking-wider uppercase">
+              GHI NHÁP ĐIỀU CHỈNH
+            </div>
+            <h3 className="text-[16px] font-black text-white tracking-tight font-mono">
+              VỊ TRÍ: {position.code}
             </h3>
-            <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate mt-0.5">
-              📍 {zonePath || 'Sơ đồ kho'}
-            </p>
+            {zonePath && (
+              <p className="text-[11px] font-medium text-slate-400 truncate mt-0.5">
+                📍 {zonePath}
+              </p>
+            )}
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-200/80 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300"
+            className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 shrink-0"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto overscroll-y-contain p-4 space-y-4">
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain no-scrollbar p-4 space-y-4">
           {errorMsg && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs font-bold text-rose-700 dark:text-rose-300">
-              {errorMsg}
+            <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/50 text-xs font-bold text-rose-200">
+              ⚠️ {errorMsg}
             </div>
           )}
 
-          {/* Current status card */}
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 space-y-2">
-            <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-              HIỆN TRẠNG TRÊN HỆ THỐNG
+          {/* Thẻ hiển thị trạng thái hiện tại của vị trí */}
+          <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <Package
+                  size={16}
+                  className={isCurrentlyOccupied ? 'text-amber-400' : 'text-emerald-400'}
+                />
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">
+                  {isCurrentlyOccupied
+                    ? hasMultipleProducts
+                      ? `HIỆN CÓ HÀNG (PALLET HỖN HỢP: ${subItems.length} SP)`
+                      : 'HIỆN CÓ HÀNG'
+                    : 'Ô HIỆN ĐANG TRỐNG'}
+                </span>
+              </div>
+              {position.stt && (
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-black">
+                  STT: {position.stt}
+                </span>
+              )}
             </div>
-            {hasExistingLot ? (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {position.stt && (
-                      <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-xs font-black">
-                        #{position.stt}
-                      </span>
-                    )}
-                    {position.sku && (
-                      <span className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[11px] font-bold font-mono">
-                        {position.sku}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-xs font-black text-emerald-700 dark:text-emerald-400">
-                    Tổng: {position.quantity ?? 0} {position.unit || 'Thùng'}
-                  </span>
-                </div>
 
-                {initialSubItems.length > 1 ? (
-                  <div className="pt-1 space-y-1 border-t border-slate-200/70 dark:border-slate-700/60">
-                    {initialSubItems.map((sub, i) => (
-                      <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="text-slate-700 dark:text-slate-300 font-semibold truncate">
-                          • {sub.product_name}
-                        </span>
-                        <span className="font-black text-slate-900 dark:text-white shrink-0">
-                          {sub.old_qty} {sub.unit}
+            {isCurrentlyOccupied ? (
+              <div className="space-y-2">
+                {hasMultipleProducts ? (
+                  <div className="space-y-1.5 pt-1 border-t border-slate-800">
+                    {subItems.map((sub, sIdx) => (
+                      <div key={sIdx} className="flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 text-[10px] font-bold shrink-0">
+                            {sub.is_new ? 'MỚI' : `SP ${sIdx + 1}`}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-slate-100 truncate">
+                              {sub.product_name}
+                            </div>
+                            {sub.sku && (
+                              <div className="text-[10px] font-mono text-slate-400">
+                                SKU: {sub.sku}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <span className="font-mono font-black text-sky-400 shrink-0">
+                          {sub.current_quantity} {sub.unit || currentUnit}
                         </span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                    {position.product_name || 'Chưa rõ sản phẩm'}
+                  <div className="text-xs font-bold text-white leading-snug">
+                    {position.product_name || 'Hàng đông lạnh'}
                   </div>
                 )}
+
+                <div className="flex items-center justify-between gap-2 flex-wrap pt-1.5 border-t border-slate-800/80 text-[11px]">
+                  {position.lot_code && (
+                    <span className="font-mono text-slate-400">Lot: {position.lot_code}</span>
+                  )}
+                  <span className="text-slate-300">
+                    Tổng số lượng:{' '}
+                    <strong className="text-sky-400 font-mono">
+                      {currentQty} {currentUnit}
+                    </strong>
+                  </span>
+                </div>
               </div>
             ) : (
-              <div className="text-xs font-semibold text-slate-400 italic">
-                Ô đang trống trên hệ thống
-              </div>
+              <p className="text-xs text-slate-400">
+                Vị trí đang trống, có thể gắn STT Lot, tạo Lot mới hoặc ghi chú cho ô này.
+              </p>
             )}
           </div>
 
-          {/* 1. Chọn thao tác đề xuất */}
+          {/* Chọn Thao Tác Điều Chỉnh */}
           <div>
-            <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-200 mb-2">
-              1. Chọn thao tác đề xuất:
-            </span>
+            <div className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-2">
+              CHỌN THAO TÁC ĐIỀU CHỈNH:
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setAction('NOTE')}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
-                  action === 'NOTE'
-                    ? 'bg-violet-600 border-violet-600 text-white shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                onClick={() => handleSelectAction('NOTE')}
+                className={`col-span-2 p-2.5 rounded-xl border text-left transition-all ${
+                  actionType === 'NOTE'
+                    ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300 shadow-sm'
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center gap-1.5 text-xs font-black">
                   <MessageSquare size={15} />
                   <span>Chỉ ghi chú</span>
                 </div>
-                <div
-                  className={`text-[10px] mt-0.5 ${
-                    action === 'NOTE' ? 'text-violet-100' : 'text-slate-400'
-                  }`}
-                >
-                  Gửi lời nhắn cho Web đọc
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  Gửi lời nhắn cho Web đọc (không đổi hàng)
                 </div>
               </button>
 
-              {hasExistingLot && (
+              {isCurrentlyOccupied && (
                 <button
                   type="button"
-                  onClick={() => setAction('CLEAR')}
+                  onClick={() => handleSelectAction('CLEAR')}
                   className={`p-2.5 rounded-xl border text-left transition-all ${
-                    action === 'CLEAR'
-                      ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
-                      : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                    actionType === 'CLEAR'
+                      ? 'bg-rose-950/60 border-rose-500 text-rose-300 shadow-sm'
+                      : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
                   }`}
                 >
                   <div className="flex items-center gap-1.5 text-xs font-black">
                     <Trash2 size={15} />
                     <span>Xuất rỗng ô</span>
                   </div>
-                  <div
-                    className={`text-[10px] mt-0.5 ${
-                      action === 'CLEAR' ? 'text-rose-100' : 'text-slate-400'
-                    }`}
-                  >
-                    Thực tế đã trống (Trừ vị trí)
-                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Trừ vị trí (X)</div>
                 </button>
               )}
 
               <button
                 type="button"
-                onClick={() => setAction('ASSIGN_LOT')}
+                onClick={() => handleSelectAction('ASSIGN_LOT')}
                 className={`p-2.5 rounded-xl border text-left transition-all ${
-                  action === 'ASSIGN_LOT'
-                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                  actionType === 'ASSIGN_LOT'
+                    ? 'bg-purple-950/60 border-purple-500 text-purple-300 shadow-sm'
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center gap-1.5 text-xs font-black">
-                  <PlusCircle size={15} />
+                  <Tag size={15} />
                   <span>Gắn STT Lot</span>
                 </div>
-                <div
-                  className={`text-[10px] mt-0.5 ${
-                    action === 'ASSIGN_LOT' ? 'text-emerald-100' : 'text-slate-400'
-                  }`}
-                >
-                  Nhập G57, G88... vào ô này
+                <div className="text-[10px] text-slate-400 mt-0.5">Nhập G57, G88...</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectAction('SET_QTY')}
+                className={`p-2.5 rounded-xl border text-left transition-all ${
+                  actionType === 'SET_QTY'
+                    ? 'bg-amber-950/60 border-amber-500 text-amber-300 shadow-sm'
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-xs font-black">
+                  <Calculator size={15} />
+                  <span>{isCurrentlyOccupied ? 'Sửa số lượng' : 'Tạo Lot mới'}</span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {!isCurrentlyOccupied
+                    ? 'Thêm SP mới'
+                    : hasMultipleProducts
+                    ? 'Từng dòng SP'
+                    : 'Lẻ thùng (25t...)'}
                 </div>
               </button>
 
               <button
                 type="button"
-                onClick={() => setAction('SET_QTY')}
+                onClick={() => handleSelectAction('MOVE')}
                 className={`p-2.5 rounded-xl border text-left transition-all ${
-                  action === 'SET_QTY'
-                    ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
-                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                  actionType === 'MOVE'
+                    ? 'bg-sky-950/60 border-sky-500 text-sky-300 shadow-sm'
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center gap-1.5 text-xs font-black">
-                  <Edit3 size={15} />
-                  <span>{hasExistingLot ? 'Sửa số lượng' : 'Tạo Lot mới'}</span>
+                  <ArrowRightLeft size={15} />
+                  <span>Chuyển ô</span>
                 </div>
-                <div
-                  className={`text-[10px] mt-0.5 ${
-                    action === 'SET_QTY' ? 'text-blue-100' : 'text-slate-400'
-                  }`}
-                >
-                  {hasExistingLot ? 'Chỉnh số lượng / thêm SP' : 'Đề xuất tạo Lot mới tại ô'}
-                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Sang vị trí mới</div>
               </button>
-
-              {hasExistingLot && (
-                <button
-                  type="button"
-                  onClick={() => setAction('MOVE')}
-                  className={`p-2.5 rounded-xl border text-left transition-all ${
-                    action === 'MOVE'
-                      ? 'bg-amber-600 border-amber-600 text-white shadow-sm'
-                      : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-black">
-                    <ArrowRightLeft size={15} />
-                    <span>Chuyển ô</span>
-                  </div>
-                  <div
-                    className={`text-[10px] mt-0.5 ${
-                      action === 'MOVE' ? 'text-amber-100' : 'text-slate-400'
-                    }`}
-                  >
-                    Sang vị trí mới
-                  </div>
-                </button>
-              )}
             </div>
           </div>
 
-          {/* 2. Form chi tiết theo Action */}
-          {action === 'NOTE' && (
-            <div className="p-3 rounded-xl bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800/60 text-xs font-semibold text-violet-800 dark:text-violet-300">
-              💬 Chế độ <b>Chỉ ghi chú</b>: Dùng khi bạn muốn nhắn bất kỳ thông tin gì về ô{' '}
-              <b>{position.code}</b> cho người duyệt trên Web xem.
-            </div>
-          )}
+          {/* ── FORM CHI TIẾT: GẮN STT LOT ── */}
+          {actionType === 'ASSIGN_LOT' && (
+            <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-purple-500/30 space-y-2.5">
+              <div className="text-[11px] font-black text-purple-300 uppercase">
+                NHẬP STT CỦA LOT CẦN GẮN VÀO Ô {position.code}:
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={assignSttQuery}
+                  onChange={e => {
+                    const txt = e.target.value
+                    setAssignSttQuery(txt)
+                    setAssignLotError(null)
+                    const clean = txt.replace(/^#/, '').trim().toUpperCase()
+                    if (clean && Array.isArray(availablePositions)) {
+                      const localMatch = availablePositions.find(
+                        p =>
+                          p.lot_id &&
+                          ((p.stt || '').toUpperCase() === clean ||
+                            (p.lot_code || '').toUpperCase() === clean)
+                      )
+                      if (localMatch) {
+                        setFoundAssignLot({
+                          id: localMatch.lot_id!,
+                          code: localMatch.lot_code || '',
+                          stt: localMatch.stt || clean,
+                          quantity: Number(localMatch.quantity) || 0,
+                          unit: localMatch.unit || 'Thùng',
+                          product_name:
+                            localMatch.product_name || `Lot ${localMatch.lot_code || ''}`,
+                          sku: localMatch.sku || null,
+                          current_position_id: localMatch.id,
+                          current_position_code: localMatch.code,
+                        })
+                      } else {
+                        setFoundAssignLot(null)
+                      }
+                    } else {
+                      setFoundAssignLot(null)
+                    }
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      void handleSearchAssignLot()
+                    }
+                  }}
+                  placeholder="VD: G57, G88..."
+                  className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-sm font-mono font-black text-white uppercase outline-none focus:border-purple-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSearchAssignLot()}
+                  disabled={searchingLot}
+                  className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white text-xs font-black flex items-center gap-1.5 shrink-0"
+                >
+                  {searchingLot ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Search size={14} />
+                  )}
+                  <span>{searchingLot ? 'Đang tìm...' : 'Kiểm tra'}</span>
+                </button>
+              </div>
 
-          {action === 'CLEAR' && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60 text-xs font-semibold text-rose-800 dark:text-rose-300">
-              ⚠️ Đề xuất: Vị trí <b>{position.code}</b> thực tế đang trống (Web sẽ bấm{' '}
-              <b>Trừ vị trí X</b> trên quản lý Lot).
-            </div>
-          )}
+              <p className="text-[11px] text-slate-400">
+                Chỉ cần nhập STT rồi bấm Lưu nháp — Web sẽ tự đối chiếu &amp; gán Lot khi duyệt.
+              </p>
 
-          {action === 'SET_QTY' && (
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-3">
-              {!hasExistingLot && (
-                <div>
-                  <label className="block text-xs font-extrabold text-slate-700 dark:text-slate-300 mb-1">
-                    Tên sản phẩm / Quy cách cần tạo Lot mới:
-                  </label>
-                  <input
-                    type="text"
-                    value={newProductNameText}
-                    onChange={e => setNewProductNameText(e.target.value)}
-                    placeholder="Nhập tên sản phẩm thực tế tại ô này..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-blue-500"
-                  />
+              {assignLotError && (
+                <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-500/40 flex items-start gap-2 text-[11px] text-amber-200 font-semibold">
+                  <Info size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                  <span>{assignLotError} (Vẫn có thể lưu nháp để Web kiểm tra)</span>
                 </div>
               )}
 
-              {isMultiSubItems ? (
-                <div className="space-y-2.5">
-                  <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                    Chỉnh số lượng từng mặt hàng trong Pallet:
+              {foundAssignLot && (
+                <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/40 space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {foundAssignLot.stt && (
+                      <span className="px-2 py-0.5 rounded bg-purple-600 text-white text-[11px] font-mono font-black">
+                        STT: {foundAssignLot.stt}
+                      </span>
+                    )}
+                    <span className="text-xs font-mono font-bold text-slate-300">
+                      {foundAssignLot.code}
+                    </span>
                   </div>
-                  {subItemsDraft.map((sub, idx) => (
+                  <div className="text-xs font-bold text-white leading-snug">
+                    {foundAssignLot.product_name}
+                  </div>
+                  <div className="text-xs text-slate-300">
+                    Số lượng:{' '}
+                    <strong className="text-emerald-400 font-mono">
+                      {foundAssignLot.quantity} {foundAssignLot.unit}
+                    </strong>
+                  </div>
+                  {foundAssignLot.current_position_code &&
+                    foundAssignLot.current_position_code !== position.code && (
+                      <div className="flex items-start gap-1.5 pt-1 text-[11px] text-amber-300 font-semibold">
+                        <ArrowRightLeft size={13} className="shrink-0 mt-0.5" />
+                        <span>
+                          Lot đang ở ô {foundAssignLot.current_position_code} — khi duyệt sẽ tự
+                          chuyển sang {position.code}.
+                        </span>
+                      </div>
+                    )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── FORM CHI TIẾT: SỬA SỐ LƯỢNG / TẠO LOT MỚI ── */}
+          {actionType === 'SET_QTY' && (
+            <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-amber-500/30 space-y-3">
+              {hasMultipleProducts ? (
+                /* Chỉnh sửa từng dòng sản phẩm (pallet hỗn hợp hoặc Lot mới đã chọn SP) */
+                <div className="space-y-2.5">
+                  <div className="text-[11px] font-black text-amber-300 uppercase">
+                    ĐIỀU CHỈNH SỐ LƯỢNG TỪNG DÒNG ({subItems.length} SẢN PHẨM):
+                  </div>
+
+                  {subItems.map((sub, sIdx) => (
                     <div
-                      key={idx}
-                      className={`p-3 rounded-xl border space-y-2 ${
+                      key={sIdx}
+                      className={`p-2.5 rounded-xl border space-y-2 ${
                         sub.is_new
-                          ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700'
+                          ? 'bg-emerald-950/30 border-emerald-500/40'
+                          : 'bg-slate-950/70 border-slate-800'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {sub.is_new && (
                               <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-black">
-                                + MỚI THÊM
+                                MỚI THÊM
                               </span>
                             )}
                             {sub.sku && (
-                              <span className="text-[10px] font-bold font-mono text-blue-600 dark:text-blue-400">
+                              <span className="text-[10px] font-mono font-bold text-sky-400">
                                 {sub.sku}
                               </span>
                             )}
                           </div>
-                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                          <div className="text-xs font-bold text-white leading-snug mt-0.5">
                             {sub.product_name}
                           </div>
-                          <div className="text-[11px] text-slate-500">
-                            {sub.is_new
-                              ? `Đơn vị: ${sub.unit}`
-                              : `Cũ: ${sub.old_qty} ${sub.unit}`}
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            Hiện có:{' '}
+                            <strong className="text-sky-400 font-mono">
+                              {sub.current_quantity}
+                            </strong>{' '}
+                            {sub.unit}
                           </div>
                         </div>
 
-                        {sub.is_new && (
+                        {sub.is_new ? (
                           <button
                             type="button"
-                            onClick={() => handleRemoveNewSubItem(idx)}
-                            className="p-1 text-rose-600"
+                            onClick={() => handleRemoveNewSubItem(sIdx)}
+                            className="p-1.5 rounded-lg bg-rose-950/60 text-rose-400 hover:bg-rose-900/60 shrink-0"
+                            title="Xóa dòng sản phẩm này"
                           >
-                            <Trash2 size={15} />
+                            <Trash2 size={14} />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSubItemQty(sIdx, 0)}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-black border shrink-0 ${
+                              sub.new_quantity === 0
+                                ? 'bg-rose-950/70 border-rose-500 text-rose-400'
+                                : 'bg-slate-800 border-slate-700 text-slate-300'
+                            }`}
+                          >
+                            =0
                           </button>
                         )}
                       </div>
@@ -708,400 +950,445 @@ export default function WarehouseAdjustmentDraftModal({
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => handleStepSubItemQty(idx, -1)}
-                          className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200 active:scale-95"
+                          onClick={() =>
+                            handleUpdateSubItemQty(sIdx, (sub.new_quantity || 0) - 1)
+                          }
+                          className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-200 active:scale-95 shrink-0"
                         >
                           <Minus size={15} />
                         </button>
                         <input
                           type="number"
-                          value={String(sub.new_qty ?? 0)}
-                          onChange={e => handleUpdateSubItemQty(idx, e.target.value)}
-                          className="flex-1 h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-center text-sm font-black text-slate-900 dark:text-white outline-none"
+                          inputMode="decimal"
+                          value={String(sub.new_quantity ?? 0)}
+                          onChange={e => handleSubItemTextChange(sIdx, e.target.value)}
+                          className="flex-1 min-w-0 h-9 px-3 rounded-xl border border-slate-700 bg-slate-950 text-center text-sm font-mono font-black text-white outline-none focus:border-amber-500"
                         />
                         <button
                           type="button"
-                          onClick={() => handleStepSubItemQty(idx, +1)}
-                          className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200 active:scale-95"
+                          onClick={() =>
+                            handleUpdateSubItemQty(sIdx, (sub.new_quantity || 0) + 1)
+                          }
+                          className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-200 active:scale-95 shrink-0"
                         >
                           <Plus size={15} />
                         </button>
+                        <span className="text-[11px] font-bold text-slate-400 shrink-0">
+                          {sub.unit}
+                        </span>
                       </div>
                     </div>
                   ))}
+
+                  <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-950/40 border border-amber-500/40">
+                    <span className="text-[11px] font-black text-amber-200 uppercase">
+                      TỔNG SỐ LƯỢNG MỚI:
+                    </span>
+                    <span className="text-sm font-mono font-black text-emerald-400">
+                      {newQtyStr} {subItems[0]?.unit || currentUnit}
+                    </span>
+                  </div>
                 </div>
-              ) : (
+              ) : isCurrentlyOccupied ? (
+                /* Chỉnh số lượng pallet đơn */
                 <div className="space-y-2.5">
-                  <label className="block text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                    Số lượng thực tế (mới):
+                  <label className="block text-[11px] font-black text-amber-300 uppercase">
+                    SỐ LƯỢNG THỰC TẾ CÒN LẠI ({currentUnit.toUpperCase()}):
                   </label>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
-                      value={newQtyText}
-                      onChange={e => setNewQtyText(e.target.value)}
-                      placeholder="Nhập SL..."
-                      className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-black text-slate-900 dark:text-white outline-none focus:border-blue-500"
+                      inputMode="decimal"
+                      value={newQtyStr}
+                      onChange={e => {
+                        const txt = e.target.value
+                        setNewQtyStr(txt)
+                        const parsed = parseFloat(txt.replace(',', '.')) || 0
+                        setSubItems(prev => {
+                          if (prev.length === 1) {
+                            return [{ ...prev[0], new_quantity: parsed }]
+                          }
+                          return prev
+                        })
+                      }}
+                      placeholder="0"
+                      className="flex-1 min-w-0 px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-950 text-base font-mono font-black text-white outline-none focus:border-amber-500"
                     />
-                    <input
-                      type="text"
-                      value={newUnitText}
-                      onChange={e => setNewUnitText(e.target.value)}
-                      placeholder="Đơn vị"
-                      className="w-24 px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-200 outline-none"
-                    />
+                    <span className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 shrink-0">
+                      {currentUnit}
+                    </span>
                   </div>
 
-                  {/* Quick Delta Buttons */}
-                  <div>
-                    <span className="block text-[10px] font-bold text-slate-400 mb-1">
-                      Cộng / trừ nhanh từ số đang nhập:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {QUICK_QTY_DELTAS.map(d => (
-                        <button
-                          key={d}
-                          type="button"
-                          onClick={() => handleQuickAdjustQty(d)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-black border ${
-                            d < 0
-                              ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
-                              : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                          }`}
-                        >
-                          {d > 0 ? `+${d}` : d}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_QTY_DELTAS.map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => handleQuickAddQty(val)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-mono font-black border active:scale-95 ${
+                          val < 0
+                            ? 'bg-rose-950/50 border-rose-500/40 text-rose-300'
+                            : 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                        }`}
+                      >
+                        {val > 0 ? `+${val}` : val}
+                      </button>
+                    ))}
                   </div>
+                </div>
+              ) : (
+                <div className="text-[11px] font-black text-amber-300 uppercase">
+                  CHỌN SẢN PHẨM ĐỂ TẠO LOT MỚI CHO Ô {position.code}:
                 </div>
               )}
 
-              {/* Thêm sản phẩm mới vào Lot hiện tại */}
-              {hasExistingLot && (
-                <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/60">
-                  {!showAddProductForm ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowAddProductForm(true)}
-                      className="w-full py-2 px-3 rounded-xl border border-dashed border-blue-400 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 text-xs font-extrabold flex items-center justify-center gap-1.5"
-                    >
-                      <PlusCircle size={15} />
-                      <span>+ Thêm sản phẩm vào Lot này</span>
-                    </button>
-                  ) : (
-                    <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-blue-700 dark:text-blue-300">
-                          ➕ Thêm mặt hàng mới vào Lot
-                        </span>
+              {/* Nút & Khung tìm kiếm thêm sản phẩm (hoạt động cho CẢ ô trống tạo Lot mới lẫn ô đang có hàng) */}
+              <div
+                className={
+                  !isCurrentlyOccupied && subItems.length === 0
+                    ? ''
+                    : 'pt-2.5 border-t border-slate-800'
+                }
+              >
+                <button
+                  type="button"
+                  onClick={handleToggleAddProductPanel}
+                  className={`w-full py-2 px-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 transition ${
+                    showAddProductPanel
+                      ? 'border-sky-500 bg-sky-950/50 text-sky-300'
+                      : 'border-dashed border-sky-500/60 bg-sky-950/25 text-sky-300 hover:bg-sky-950/40'
+                  }`}
+                >
+                  {showAddProductPanel ? <ChevronUp size={15} /> : <PlusCircle size={15} />}
+                  <span>
+                    {showAddProductPanel
+                      ? 'Đóng khung thêm sản phẩm'
+                      : isCurrentlyOccupied
+                      ? '+ Thêm sản phẩm vào Lot này'
+                      : '+ Tìm & chọn sản phẩm cho Lot mới'}
+                  </span>
+                </button>
+
+                {showAddProductPanel && (
+                  <div className="mt-2.5 p-3 rounded-xl bg-slate-950/90 border border-sky-500/40 space-y-2.5">
+                    <div className="text-[10px] font-black text-sky-300 uppercase">
+                      CHỌN SẢN PHẨM THÊM VÀO LOT (HỖ TRỢ TÊN VIẾT TẮT, SKU, KHÔNG DẤU):
+                    </div>
+
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-700 bg-slate-900">
+                      <Search size={14} className="text-slate-400 shrink-0" />
+                      <input
+                        type="text"
+                        value={productQuery}
+                        onChange={e => {
+                          setProductQuery(e.target.value)
+                          if (selectedNewProduct) setSelectedNewProduct(null)
+                        }}
+                        placeholder="Tìm tên viết tắt (đô c, ri6...), tên SP hoặc SKU..."
+                        className="flex-1 min-w-0 bg-transparent text-xs font-bold text-white outline-none placeholder:text-slate-500"
+                      />
+                      {productQuery.length > 0 && (
                         <button
                           type="button"
                           onClick={() => {
-                            setShowAddProductForm(false)
-                            setSelectedNewProd(null)
-                            setNewProdSearch('')
+                            setProductQuery('')
+                            setSelectedNewProduct(null)
                           }}
-                          className="text-[11px] font-bold text-slate-400 hover:text-slate-600"
+                          className="text-slate-400 hover:text-white"
                         >
-                          Đóng
+                          <X size={14} />
                         </button>
-                      </div>
+                      )}
+                    </div>
 
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                        <Search size={14} className="text-slate-400 shrink-0" />
-                        <input
-                          type="text"
-                          value={newProdSearch}
-                          onChange={e => {
-                            setNewProdSearch(e.target.value)
-                            setSelectedNewProd(null)
-                          }}
-                          placeholder="Gõ tên viết tắt, mã SKU hoặc tên SP..."
-                          className="flex-1 bg-transparent text-xs font-bold text-slate-900 dark:text-white outline-none"
-                        />
-                        {loadingProducts && <Loader2 size={14} className="animate-spin text-blue-600" />}
-                      </div>
-
-                      {!selectedNewProd && productSuggestions.length > 0 && (
-                        <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-                          {productSuggestions.map(p => (
+                    {!selectedNewProduct ? (
+                      <div className="max-h-52 overflow-y-auto overscroll-y-contain no-scrollbar space-y-1.5">
+                        {loadingCatalog ? (
+                          <div className="py-5 flex items-center justify-center gap-2 text-xs text-slate-400">
+                            <Loader2 size={15} className="animate-spin text-sky-400" />
+                            <span>Đang tải danh mục sản phẩm...</span>
+                          </div>
+                        ) : filteredProductSuggestions.length === 0 ? (
+                          <div className="py-4 text-center text-xs text-slate-400">
+                            Không tìm thấy sản phẩm phù hợp với &quot;{productQuery}&quot;
+                          </div>
+                        ) : (
+                          filteredProductSuggestions.map(prod => (
                             <button
-                              key={p.id}
+                              key={prod.id}
                               type="button"
                               onClick={() => {
-                                setSelectedNewProd(p)
-                                setNewProdSearch(p.name)
-                                setNewProdUnit(p.unit || 'Thùng')
+                                setSelectedNewProduct(prod)
+                                const units = getProductAvailableUnits(
+                                  prod,
+                                  position?.unit || 'Thùng'
+                                )
+                                setNewProductUnit(units[0])
                               }}
-                              className="w-full px-3 py-2 text-left hover:bg-blue-50 dark:hover:bg-slate-800 flex items-center justify-between gap-2"
+                              className="w-full p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/50 text-left transition space-y-0.5"
                             >
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[10px] font-black font-mono text-blue-600 dark:text-blue-400">
-                                    {p.sku}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {prod.aliases && prod.aliases.length > 0 && (
+                                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-black">
+                                    ⚡ {prod.aliases.join(', ')}
                                   </span>
-                                  {p.aliases.length > 0 && (
-                                    <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                                      ⚡ {p.aliases.slice(0, 2).join(', ')}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                                  {p.name}
-                                </div>
+                                )}
+                                {prod.sku && (
+                                  <span className="text-[10px] font-mono font-bold text-sky-400">
+                                    {prod.sku}
+                                  </span>
+                                )}
                               </div>
-                              <span className="text-[10px] font-bold text-slate-400 shrink-0">
-                                {p.unit}
+                              <div className="text-xs font-bold text-white leading-snug">
+                                {prod.name}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                ĐVT:{' '}
+                                {prod.available_units && prod.available_units.length > 0
+                                  ? prod.available_units.join(', ')
+                                  : prod.unit}
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-xl bg-slate-900 border border-emerald-500/40 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            {selectedNewProduct.aliases.length > 0 && (
+                              <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-black mb-1">
+                                ⚡ {selectedNewProduct.aliases.join(', ')}
                               </span>
+                            )}
+                            <div className="text-xs font-black text-white leading-snug">
+                              {selectedNewProduct.name}
+                            </div>
+                            <div className="text-[10px] font-mono text-sky-400 mt-0.5">
+                              SKU: {selectedNewProduct.sku || '---'}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedNewProduct(null)}
+                            className="px-2 py-1 rounded-lg bg-slate-800 text-slate-300 text-[11px] font-bold shrink-0"
+                          >
+                            Đổi SP
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-5 gap-2">
+                          <div className="col-span-2">
+                            <label className="block text-[10px] font-black text-slate-400 mb-1">
+                              SỐ LƯỢNG:
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              value={newProductQtyStr}
+                              onChange={e => setNewProductQtyStr(e.target.value)}
+                              placeholder="1"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-sm font-mono font-black text-white outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div className="col-span-3">
+                            <label className="block text-[10px] font-black text-slate-400 mb-1">
+                              ĐƠN VỊ:
+                            </label>
+                            <input
+                              type="text"
+                              value={newProductUnit}
+                              onChange={e => setNewProductUnit(e.target.value)}
+                              placeholder="Thùng (20kg)..."
+                              className="w-full px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-xs font-bold text-white outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {getProductAvailableUnits(
+                            selectedNewProduct,
+                            position?.unit || 'Thùng'
+                          ).map(u => (
+                            <button
+                              key={u}
+                              type="button"
+                              onClick={() => setNewProductUnit(u)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${
+                                newProductUnit === u
+                                  ? 'bg-sky-950/70 border-sky-400 text-sky-300'
+                                  : 'bg-slate-800 border-slate-700 text-slate-300'
+                              }`}
+                            >
+                              {u}
                             </button>
                           ))}
                         </div>
-                      )}
 
-                      {selectedNewProd && (
-                        <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                          <Package size={14} />
-                          <span className="truncate">
-                            Đã chọn: [{selectedNewProd.sku}] {selectedNewProd.name}
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                            Số lượng thêm:
-                          </label>
-                          <input
-                            type="number"
-                            value={newProdQtyText}
-                            onChange={e => setNewProdQtyText(e.target.value)}
-                            placeholder="VD: 5"
-                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-black text-slate-900 dark:text-white outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                            Đơn vị:
-                          </label>
-                          <input
-                            type="text"
-                            value={newProdUnit}
-                            onChange={e => setNewProdUnit(e.target.value)}
-                            placeholder="Thùng / Kg..."
-                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white outline-none"
-                          />
-                        </div>
+                        <button
+                          type="button"
+                          onClick={handleConfirmAddProductToLot}
+                          className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-1.5 active:scale-[0.99]"
+                        >
+                          <PlusCircle size={16} />
+                          <span>THÊM VÀO LOT NÀY</span>
+                        </button>
                       </div>
-
-                      <div className="flex flex-wrap gap-1">
-                        {QUICK_UNITS.map(u => (
-                          <button
-                            key={u}
-                            type="button"
-                            onClick={() => setNewProdUnit(u)}
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                              newProdUnit === u
-                                ? 'bg-blue-600 border-blue-600 text-white'
-                                : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                            }`}
-                          >
-                            {u}
-                          </button>
-                        ))}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleConfirmAddSubItem}
-                        className="w-full py-2 rounded-xl bg-blue-600 text-white text-xs font-black flex items-center justify-center gap-1"
-                      >
-                        <Check size={14} />
-                        <span>Xác nhận thêm sản phẩm này</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {action === 'ASSIGN_LOT' && (
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-3">
-              <div>
-                <label className="block text-xs font-extrabold text-slate-800 dark:text-slate-200 mb-1">
-                  Nhập STT Lot hoặc Mã Lot đang nằm tại ô {position.code}:
-                </label>
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-                  <Search size={15} className="text-emerald-600 shrink-0" />
-                  <input
-                    type="text"
-                    value={newSttText}
-                    onChange={e => setNewSttText(e.target.value)}
-                    placeholder="Ví dụ: G57, 57, hoặc LOT-2603..."
-                    className="flex-1 bg-transparent text-xs font-bold text-slate-900 dark:text-white outline-none"
-                  />
-                  {lookingUpLot && <Loader2 size={14} className="animate-spin text-emerald-600" />}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
-
-              {lookedUpLot ? (
-                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-1">
-                  <div className="flex items-center justify-between text-xs font-black text-emerald-800 dark:text-emerald-300">
-                    <span>✅ Tìm thấy Lot #{lookedUpLot.stt}</span>
-                    {lookedUpLot.code && (
-                      <span className="font-mono text-[11px]">{lookedUpLot.code}</span>
-                    )}
-                  </div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                    {lookedUpLot.product_name}
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                    <span>
-                      SL: {lookedUpLot.quantity} {lookedUpLot.unit}
-                    </span>
-                    {lookedUpLot.current_position_code && (
-                      <span>Đang ở: {lookedUpLot.current_position_code}</span>
-                    )}
-                  </div>
-                </div>
-              ) : newSttText.trim().length > 0 && !lookingUpLot ? (
-                <div className="space-y-2">
-                  <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">
-                    Chưa tìm thấy tự động mã &quot;{newSttText}&quot; — bạn có thể nhập tay thông tin bên dưới:
-                  </div>
-                  <input
-                    type="text"
-                    value={newProductNameText}
-                    onChange={e => setNewProductNameText(e.target.value)}
-                    placeholder="Tên sản phẩm (tùy chọn)..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-900 dark:text-white outline-none"
-                  />
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={newQtyText}
-                      onChange={e => setNewQtyText(e.target.value)}
-                      placeholder="Số lượng"
-                      className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-900 dark:text-white outline-none"
-                    />
-                    <input
-                      type="text"
-                      value={newUnitText}
-                      onChange={e => setNewUnitText(e.target.value)}
-                      placeholder="Đơn vị"
-                      className="w-24 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-900 dark:text-white outline-none"
-                    />
-                  </div>
-                </div>
-              ) : null}
             </div>
           )}
 
-          {action === 'MOVE' && (
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                  Chọn vị trí mới cần chuyển sang:
+          {/* ── FORM CHI TIẾT: CHUYỂN Ô ── */}
+          {actionType === 'MOVE' && (
+            <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-sky-500/30 space-y-2.5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[11px] font-black text-sky-300 uppercase">
+                  VỊ TRÍ ĐÍCH CHUYỂN ĐẾN (MÃ Ô):
                 </span>
                 <button
                   type="button"
-                  onClick={() => setOnlyEmptyTarget(!onlyEmptyTarget)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${
-                    onlyEmptyTarget
-                      ? 'bg-emerald-600 border-emerald-600 text-white'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  onClick={() => setOnlyEmptySuggestions(prev => !prev)}
+                  className={`px-2 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1 ${
+                    onlyEmptySuggestions
+                      ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300'
+                      : 'bg-slate-800 border-slate-700 text-slate-400'
                   }`}
                 >
-                  {onlyEmptyTarget ? '✓ Chỉ ô trống' : 'Tất cả ô'}
+                  <CheckCircle2 size={12} />
+                  <span>Chỉ ô trống</span>
                 </button>
               </div>
 
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-                <MapPin size={15} className="text-amber-600 shrink-0" />
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-700 bg-slate-950">
                 <input
                   type="text"
                   value={targetPosCode}
-                  onChange={e => setTargetPosCode(e.target.value.toUpperCase())}
-                  placeholder="Nhập hoặc chạm chọn mã vị trí bên dưới..."
-                  className="flex-1 bg-transparent text-xs font-black font-mono text-slate-900 dark:text-white outline-none uppercase"
+                  onChange={e => {
+                    setTargetPosCode(e.target.value)
+                    setTargetPosId(null)
+                  }}
+                  placeholder="Nhập hoặc chọn gợi ý bên dưới..."
+                  className="flex-1 min-w-0 bg-transparent text-sm font-mono font-black text-white uppercase outline-none placeholder:text-slate-500"
                 />
                 {targetPosCode.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setTargetPosCode('')}
-                    className="text-slate-400 hover:text-slate-600"
+                    onClick={() => {
+                      setTargetPosCode('')
+                      setTargetPosId(null)
+                    }}
+                    className="text-slate-400 hover:text-white"
                   >
-                    <X size={14} />
+                    <X size={16} />
                   </button>
                 )}
               </div>
 
-              {movePositionSuggestions.length > 0 && (
-                <div>
-                  <span className="block text-[10px] font-bold text-slate-400 mb-1.5">
-                    Gợi ý nhanh ({onlyEmptyTarget ? 'ô đang trống' : 'vị trí trong kho'}):
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black text-slate-400 uppercase">
+                    {targetPosCode.trim()
+                      ? `GỢI Ý KHỚP TỪ KHÓA (${positionSuggestions.length}):`
+                      : `GỢI Ý Ô GẦN KỀ CÙNG DÃY (${positionSuggestions.length}):`}
                   </span>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {movePositionSuggestions.map(p => {
-                      const selected = targetPosCode.toUpperCase() === p.code.toUpperCase()
-                      const isEmpty = !p.lot_id && !p.product_name && !p.stt
+                  {targetPosId && (
+                    <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 size={11} />
+                      <span>Đã khớp ô</span>
+                    </span>
+                  )}
+                </div>
+
+                {positionSuggestions.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic">
+                    Không tìm thấy vị trí nào phù hợp. Bạn vẫn có thể nhập trực tiếp mã ô.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5 max-h-44 overflow-y-auto overscroll-y-contain no-scrollbar">
+                    {positionSuggestions.map(sp => {
+                      const isSelected =
+                        (sp.code || '').toUpperCase() === targetPosCode.trim().toUpperCase()
+                      const isEmpty = !sp.lot_id
                       return (
                         <button
-                          key={p.id}
+                          key={sp.id}
                           type="button"
-                          onClick={() => setTargetPosCode(p.code)}
-                          className={`p-2 rounded-xl border text-left transition-all ${
-                            selected
-                              ? 'bg-amber-500 border-amber-600 text-white shadow-sm'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                          onClick={() => handleSelectTargetPosition(sp)}
+                          className={`p-2 rounded-xl border text-left transition ${
+                            isSelected
+                              ? 'bg-sky-950/70 border-sky-400 ring-1 ring-sky-400/50'
+                              : isEmpty
+                              ? 'bg-slate-950/70 border-emerald-500/30 hover:border-emerald-400'
+                              : 'bg-slate-950/70 border-amber-500/30 hover:border-amber-400'
                           }`}
                         >
-                          <div className="text-[11px] font-black font-mono truncate">{p.code}</div>
+                          <div className="flex items-center justify-between gap-1">
+                            <span
+                              className={`text-xs font-mono font-black truncate ${
+                                isSelected ? 'text-sky-300' : 'text-white'
+                              }`}
+                            >
+                              {sp.code}
+                            </span>
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                isEmpty ? 'bg-emerald-400' : 'bg-amber-400'
+                              }`}
+                            />
+                          </div>
                           <div
-                            className={`text-[9px] font-bold truncate ${
-                              selected
-                                ? 'text-amber-100'
-                                : isEmpty
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-slate-400'
+                            className={`text-[10px] truncate mt-0.5 ${
+                              isEmpty ? 'text-emerald-400' : 'text-amber-300'
                             }`}
                           >
-                            {isEmpty ? 'Trống' : `#${p.stt || 'Có hàng'}`}
+                            {isEmpty ? '🟢 Trống' : `🔴 ${sp.product_name || 'Có hàng'}`}
                           </div>
                         </button>
                       )
                     })}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
 
-          {/* Ghi chú / Lý do */}
+          {/* ── FORM CHI TIẾT: XUẤT RỖNG ── */}
+          {actionType === 'CLEAR' && (
+            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 flex items-start gap-2 text-xs font-bold text-rose-200">
+              <Info size={16} className="text-rose-400 shrink-0 mt-0.5" />
+              <span>
+                {hasMultipleProducts
+                  ? `Xác nhận bốc xuất sạch cả ${subItems.length} sản phẩm (ô trở thành rỗng).`
+                  : 'Xác nhận ô này đã bốc xuất sạch hàng (Web sẽ bấm Trừ vị trí X).'}
+              </span>
+            </div>
+          )}
+
+          {/* Ghi chú */}
           <div>
-            <label className="block text-xs font-extrabold text-slate-800 dark:text-slate-200 mb-1.5">
-              {action === 'NOTE'
-                ? 'Nội dung ghi chú gửi lên Web (bắt buộc):'
-                : 'Ghi chú gửi kèm cho Web (tùy chọn):'}
+            <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1.5">
+              GHI CHÚ {actionType === 'NOTE' ? '(BẮT BUỘC)' : '(TÙY CHỌN)'}:
             </label>
             <textarea
-              rows={action === 'NOTE' ? 3 : 2}
-              value={reasonText}
-              onChange={e => setReasonText(e.target.value)}
+              ref={noteInputRef}
+              rows={2}
+              value={note}
+              onChange={e => setNote(e.target.value)}
               placeholder={
-                action === 'NOTE'
-                  ? 'Nhập lời nhắn của bạn về vị trí này (VD: Hàng rách thùng, cần dồn kệ, sai ngày đóng gói...)'
-                  : 'VD: Đã xuất ca sáng, kiểm đếm thực tế thiếu 2 thùng...'
+                actionType === 'NOTE'
+                  ? 'Nhập lời nhắn cần gửi lên Web cho vị trí này...'
+                  : 'Nhập ghi chú giải thích thêm (nếu có)...'
               }
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white outline-none focus:border-blue-500 resize-none"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-900 text-xs font-semibold text-white outline-none focus:border-amber-500 resize-none placeholder:text-slate-500"
             />
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-2 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-t border-slate-800 bg-[#111827]">
           {existingDraftItem && onRemoveItem && (
             <button
               type="button"
@@ -1109,26 +1396,19 @@ export default function WarehouseAdjustmentDraftModal({
                 onRemoveItem(position.id)
                 onClose()
               }}
-              className="px-3 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs font-bold flex items-center gap-1"
+              className="px-3 py-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs font-black flex items-center gap-1 shrink-0 active:scale-95"
             >
               <Trash2 size={14} />
-              <span>Bỏ nháp</span>
+              <span>Xóa nháp</span>
             </button>
           )}
           <button
             type="button"
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300"
-          >
-            Hủy
-          </button>
-          <button
-            type="button"
             onClick={handleSave}
-            className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99]"
+            className="flex-1 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center justify-center gap-1.5 shadow-md active:scale-[0.99]"
           >
-            <Check size={15} />
-            <span>Lưu vào phiếu nháp</span>
+            <Check size={16} />
+            <span>{existingDraftItem ? 'CẬP NHẬT GHI NHÁP' : 'LƯU VÀO PHIẾU NHÁP'}</span>
           </button>
         </div>
       </div>

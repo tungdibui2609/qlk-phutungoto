@@ -158,18 +158,59 @@ export const getPositionProductItems = (pos: PositionItem): PositionProductSubIt
   ]
 }
 
-export const extractSubItemsFromPosition = (pos: PositionItem): ProposalSubItem[] => {
-  if (pos.items && Array.isArray(pos.items) && pos.items.length > 0) {
-    return pos.items
-      .filter(it => it && (it.product_name || it.sku))
-      .map(it => ({
+export const extractSubItemsFromPosition = (pos: PositionItem | null | undefined): ProposalSubItem[] => {
+  if (!pos || !pos.lot_id) return []
+
+  // 1. Nếu có mảng items chi tiết từ lot_items
+  if (Array.isArray(pos.items) && pos.items.length > 0) {
+    const valid = pos.items.filter(it => it && ((it.product_name || '').trim() || (it.sku || '').trim()))
+    if (valid.length > 0) {
+      return valid.map(it => ({
         product_id: it.product_id || null,
-        sku: it.sku || null,
-        product_name: it.product_name || it.sku || 'Sản phẩm',
-        old_qty: typeof it.quantity === 'number' ? it.quantity : 0,
-        new_qty: typeof it.quantity === 'number' ? it.quantity : 0,
+        product_name: (it.product_name || it.sku || 'Sản phẩm').trim(),
+        sku: it.sku || pos.sku || null,
+        current_quantity: it.quantity != null ? Number(it.quantity) : 0,
+        new_quantity: it.quantity != null ? Number(it.quantity) : 0,
         unit: it.unit || pos.unit || 'Thùng',
       }))
+    }
   }
+
+  // 2. Nếu tên có dấu phẩy (ghép nhiều sản phẩm)
+  const rawNames = (pos.product_name || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+  const rawSkus = (pos.sku || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+  if (rawNames.length > 1) {
+    const totalQty = pos.quantity ? Number(pos.quantity) : 0
+    const eachQty = Number((totalQty / rawNames.length).toFixed(2))
+    return rawNames.map((name, i) => ({
+      product_id: null,
+      product_name: name,
+      sku: rawSkus[i] || pos.sku || null,
+      current_quantity: eachQty,
+      new_quantity: eachQty,
+      unit: pos.unit || 'Thùng',
+    }))
+  }
+
+  // 3. Nếu là sản phẩm đơn
+  if (pos.product_name) {
+    return [
+      {
+        product_id: null,
+        product_name: pos.product_name.trim(),
+        sku: pos.sku || null,
+        current_quantity: pos.quantity != null ? Number(pos.quantity) : 0,
+        new_quantity: pos.quantity != null ? Number(pos.quantity) : 0,
+        unit: pos.unit || 'Thùng',
+      },
+    ]
+  }
+
   return []
 }

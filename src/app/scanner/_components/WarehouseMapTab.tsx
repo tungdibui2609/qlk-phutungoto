@@ -178,11 +178,10 @@ export default function WarehouseMapTab() {
   // Chế độ Ghi nháp điều chỉnh vị trí (Draft Adjustment Proposal)
   const [isDraftMode, setIsDraftMode] = useState(false)
   const [draftProposal, setDraftProposal] = useState<DraftProposal>({
-    id: 'DRAFT-INIT',
-    title: 'Phiếu điều chỉnh vị trí',
-    created_by: 'Kiểm kho Mobile',
-    created_at: new Date().toISOString(),
+    title: '',
+    notes: '',
     items: [],
+    updated_at: new Date().toISOString(),
   })
   const [draftModalPos, setDraftModalPos] = useState<PositionItem | null>(null)
   const [showDraftListModal, setShowDraftListModal] = useState(false)
@@ -3639,6 +3638,19 @@ export default function WarehouseMapTab() {
           const foundPos = positions.find(p => p.id === item.position_id)
           if (foundPos) {
             setDraftModalPos(foundPos)
+          } else {
+            setDraftModalPos({
+              id: item.position_id,
+              code: item.position_code,
+              lot_id: item.lot_id || null,
+              lot_code: item.lot_code || null,
+              stt: item.lot_stt || null,
+              product_name: item.product_name || null,
+              sku: item.sku || null,
+              quantity: item.current_quantity ?? null,
+              unit: item.unit || null,
+              zone_ids: [],
+            })
           }
         }}
         onRemoveItem={handleRemoveDraftItem}
