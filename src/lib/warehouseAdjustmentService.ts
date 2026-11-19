@@ -3,6 +3,7 @@ import { lotService } from '@/services/warehouse/lotService'
 import { logActivity } from '@/lib/audit'
 import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
 import { encodeSTT } from '@/lib/numberUtils'
+import { fetchDefaultBranchName } from '@/lib/branches'
 
 export type ProposalActionType = 'CLEAR' | 'SET_QTY' | 'MOVE' | 'ASSIGN_LOT' | 'NOTE'
 
@@ -509,20 +510,38 @@ async function applyProposalItemUpdate(supabase: SupabaseClient, it: ProposalIte
 
                 if (validSubs.length > 0 || fallbackQty > 0) {
                     const sysCode = posRecord?.system_type || 'KHO_DONG_LANH'
-                    const companyId = posRecord?.company_id || null
+                    let companyId: string | null = posRecord?.company_id || null
 
                     let systemName: string | null = sysCode === 'KHO_DONG_LANH' ? 'Kho Đông Lạnh' : sysCode
                     try {
                         const { data: sysRec } = await (supabase as any)
                             .from('systems')
-                            .select('name')
+                            .select('name, company_id')
                             .eq('code', sysCode)
                             .maybeSingle()
                         if (sysRec?.name) systemName = sysRec.name
+                        if (!companyId && sysRec?.company_id) companyId = sysRec.company_id
                     } catch {
                         // ignore
                     }
 
+                    if (!companyId) {
+                        try {
+                            const { data: authData } = await supabase.auth.getUser()
+                            if (authData?.user?.id) {
+                                const { data: prof } = await (supabase as any)
+                                    .from('user_profiles')
+                                    .select('company_id')
+                                    .eq('id', authData.user.id)
+                                    .maybeSingle()
+                                if (prof?.company_id) companyId = prof.company_id
+                            }
+                        } catch {
+                            // ignore
+                        }
+                    }
+
+                    const defaultBranchName = await fetchDefaultBranchName(supabase, companyId)
                     const newLotCode = await generateUniqueLotCode(supabase, systemName)
                     const resolvedSubs: Array<ProposalSubItem & { product_id: string | null }> = []
                     for (const sub of validSubs) {
@@ -557,6 +576,7 @@ async function applyProposalItemUpdate(supabase: SupabaseClient, it: ProposalIte
                             inbound_date: new Date().toISOString().split('T')[0],
                             system_code: sysCode,
                             company_id: companyId,
+                            warehouse_name: defaultBranchName || null,
                             notes: it.note || 'Tạo Lot mới từ đề xuất điều chỉnh vị trí'
                         })
                         .select('id')

@@ -81,6 +81,7 @@ export function useLotManagement() {
     const [lockFilter, setLockFilter] = useState<'all' | 'unlocked' | 'locked'>('all')
     const [sttFilter, setSttFilter] = useState<'all' | 'has_stt' | 'no_stt'>('all')
     const [branchFilter, setBranchFilter] = useState<string>(BRANCH_FILTER_ALL)
+    const [branchReady, setBranchReady] = useState(false)
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
     const [startDate, setStartDate] = useState<string>('')
@@ -133,14 +134,15 @@ export function useLotManagement() {
     // Use Ref to access latest fetchLots in subscription without re-subscribing
     const fetchLotsRef = useRef(fetchLots)
     fetchLotsRef.current = fetchLots
+    const fetchLotsSeqRef = useRef(0)
 
     useEffect(() => {
         if (currentSystem?.code) {
-            // Reset page when system changes
+            // Reset page & đợi chi nhánh mặc định sẵn sàng trước khi gọi fetchLots lần đầu
+            setBranchReady(false)
             setPage(0)
-            fetchLots()
+            fetchCommonData()
         }
-        fetchCommonData()
 
         // Debounce timer for realtime events
         let realtimeDebounceTimer: NodeJS.Timeout | null = null
@@ -175,19 +177,19 @@ export function useLotManagement() {
     // For now, let the UI trigger fetchLots explicitly or we add effects here?
     // Let's add an effect for filters to trigger fetch, but debounce searchTerm
     useEffect(() => {
-        if (!currentSystem?.code) return
+        if (!currentSystem?.code || !branchReady) return
 
         const timer = setTimeout(() => {
             setPage(0) // Reset to first page on filter change
             fetchLots()
-        }, 500)
+        }, searchTerm ? 350 : 0)
 
         return () => clearTimeout(timer)
-    }, [searchTerm, searchMode, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive, lockFilter, sttFilter, branchFilter])
+    }, [branchReady, searchTerm, searchMode, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive, lockFilter, sttFilter, branchFilter])
 
     // Effect for page change ONLY
     useEffect(() => {
-        if (!currentSystem?.code) return
+        if (!currentSystem?.code || !branchReady) return
         fetchLots()
     }, [page, pageSize])
 
@@ -233,6 +235,7 @@ export function useLotManagement() {
         setBranches(companyBranches)
         // Bộ lọc chi nhánh mặc định: chọn sẵn chi nhánh mặc định của công ty (VD: CN Cư M'gar)
         setBranchFilter(getDefaultBranchName(companyBranches, currentSystem.company_id) || BRANCH_FILTER_ALL)
+        setBranchReady(true)
         setUnits(unitData)
         setProductUnits(pUnitData)
         setProductions(productionData)
@@ -404,6 +407,7 @@ export function useLotManagement() {
     async function fetchLots(showLoading = true) {
         if (!currentSystem?.code) return;
 
+        const reqSeq = ++fetchLotsSeqRef.current
         if (showLoading) setLoading(true)
 
         try {
@@ -1229,6 +1233,8 @@ export function useLotManagement() {
             const { data, error, count } = await query
                 .range(from, to)
 
+            if (reqSeq !== fetchLotsSeqRef.current) return
+
             if (error) {
                 console.error('Error fetching lots:', JSON.stringify(error, null, 2))
                 showToast('Lỗi tải dữ liệu: ' + error.message, 'error')
@@ -1253,13 +1259,13 @@ export function useLotManagement() {
                         .is('positions', null)
                         .neq('status', 'hidden')
                         .neq('status', 'exported');
-                    setUnassignedTotal(unassignedCount || 0)
+                    if (reqSeq === fetchLotsSeqRef.current) setUnassignedTotal(unassignedCount || 0)
                 }
             }
         } catch (err: any) {
             console.error('Error in fetchLots:', err)
         } finally {
-            setLoading(false)
+            if (reqSeq === fetchLotsSeqRef.current) setLoading(false)
         }
     }
 
