@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient'
-import { parseDateToISO } from './dateUtils'
+import { parseDateToISO, validateAndFormatDate } from './dateUtils'
 import { formatMaterialZoneProvince } from './provinces'
 
 /**
@@ -50,24 +50,27 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
                     if (cleanL2.length >= 5) {
                         const dd = cleanL2.substring(1, 3)
                         const mm = cleanL2.substring(3, 5)
-                        const day = parseInt(dd, 10)
-                        const month = parseInt(mm, 10)
-                        if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
-                            const yyyy = new Date().getFullYear()
-                            newPackagingDates.add(`${yyyy}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+                        const currentYear = new Date().getFullYear()
+                        const isoPack = validateAndFormatDate(currentYear, parseInt(mm, 10), parseInt(dd, 10))
+                        if (isoPack) {
+                            newPackagingDates.add(isoPack)
                         }
                     }
-                    // Raw material date: DDMMYY từ ký tự 5..11
+                    // Raw material date: DDMMYY từ ký tự 5..11 (hoặc 6..12 nếu OCR dư số)
                     if (cleanL2.length >= 11) {
                         const dd = cleanL2.substring(5, 7)
                         const mm = cleanL2.substring(7, 9)
                         const yy = cleanL2.substring(9, 11)
-                        const day = parseInt(dd, 10)
-                        const month = parseInt(mm, 10)
-                        if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
-                            const iso = `20${yy}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-                            newRawMaterialDates.add(iso)
-                            if (!detectedRawMaterialDate) detectedRawMaterialDate = iso
+                        let isoRaw = validateAndFormatDate(2000 + parseInt(yy, 10), parseInt(mm, 10), parseInt(dd, 10))
+                        if (!isoRaw && cleanL2.length >= 12) {
+                            const altDd = cleanL2.substring(6, 8)
+                            const altMm = cleanL2.substring(8, 10)
+                            const altYy = cleanL2.substring(10, 12)
+                            isoRaw = validateAndFormatDate(2000 + parseInt(altYy, 10), parseInt(altMm, 10), parseInt(altDd, 10))
+                        }
+                        if (isoRaw) {
+                            newRawMaterialDates.add(isoRaw)
+                            if (!detectedRawMaterialDate) detectedRawMaterialDate = isoRaw
                         }
                     }
                 }

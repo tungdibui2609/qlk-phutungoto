@@ -1,3 +1,5 @@
+import { parseDateToISO } from './dateUtils'
+
 // Hệ thống giải mã chuẩn quy tắc tem dập mực Chánh Thu
 // Hỗ trợ giải mã 12 trường thông tin từ Dòng 1 & Dòng 2
 
@@ -352,6 +354,9 @@ export function decodeStampBox(box: any, dictMap?: Record<string, Record<string,
 
     // Raw material date (DD/MM/YYYY)
     let rawMaterialDateStr = meta.raw_material_date || meta.production_date || ''
+    if (rawMaterialDateStr && !parseDateToISO(rawMaterialDateStr)) {
+        rawMaterialDateStr = ''
+    }
     if (!rawMaterialDateStr && rawMatDate.length === 6) {
         const dd = parseInt(rawMatDate.substring(0, 2), 10)
         const mm = parseInt(rawMatDate.substring(2, 4), 10)

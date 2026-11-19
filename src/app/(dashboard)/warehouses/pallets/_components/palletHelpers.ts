@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabaseClient'
 import { normalizeSearchString } from '@/lib/searchUtils'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
-import { parseDateToISO } from '@/lib/dateUtils'
+import { parseDateToISO, validateAndFormatDate } from '@/lib/dateUtils'
 import { DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
 import { decodeSTT } from '@/lib/numberUtils'
 import type { BoxLabelItem, PalletLot, WarehouseProduct, ApproveLotProductLine } from './types'
@@ -75,7 +75,14 @@ export function applyStampDecodeToMeta(meta: Record<string, any>): Record<string
         const dd = l2Digits.substring(5, 7)
         const mm = l2Digits.substring(7, 9)
         const yy = l2Digits.substring(9, 11)
-        const raw = cleanDateForDB(`${dd}/${mm}/20${yy}`)
+        let raw = cleanDateForDB(`${dd}/${mm}/20${yy}`)
+        // Nếu vị trí 5..11 không ra ngày hợp lệ (do OCR đọc thừa số) và chuỗi đủ dài, thử vị trí 6..12
+        if (!raw && l2Digits.length >= 12) {
+            const altDd = l2Digits.substring(6, 8)
+            const altMm = l2Digits.substring(8, 10)
+            const altYy = l2Digits.substring(10, 12)
+            raw = cleanDateForDB(`${altDd}/${altMm}/20${altYy}`)
+        }
         if (raw) next.raw_material_date = raw
     }
     if (l2Digits.length >= 14) {
@@ -129,6 +136,7 @@ export async function healStampBoxesInDB(boxes: BoxLabelItem[]) {
 
 /**
  * Chuẩn hóa chuỗi ngày quét từ thùng (VD: "15/10", "15/10/2026", "2026-10-15") về định dạng ISO YYYY-MM-DD hợp lệ cho cột DATE của PostgreSQL
+ * Tự động loại bỏ và validate triệt để ngày tháng sai phạm vi (tránh crash DB với mã lỗi out of range).
  */
 export function cleanDateForDB(dateStr?: string | null): string | null {
     if (!dateStr || typeof dateStr !== 'string') return null
@@ -141,9 +149,9 @@ export function cleanDateForDB(dateStr?: string | null): string | null {
     // Hỗ trợ dạng con tem ghi DD/MM hoặc DD-MM (VD: "15/10" -> gán năm hiện tại)
     const dmMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})$/)
     if (dmMatch) {
-        const [, d, m] = dmMatch
+        const [, dStr, mStr] = dmMatch
         const currentYear = new Date().getFullYear()
-        return `${currentYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+        return validateAndFormatDate(currentYear, parseInt(mStr, 10), parseInt(dStr, 10))
     }
 
     return null
@@ -213,7 +221,17 @@ export function extractRawMaterialDate(box: BoxLabelItem): string | null {
             const dd = cleanL2.substring(5, 7)
             const mm = cleanL2.substring(7, 9)
             const yy = cleanL2.substring(9, 11)
-            return cleanDateForDB(`${dd}/${mm}/20${yy}`)
+            const parsed = cleanDateForDB(`${dd}/${mm}/20${yy}`)
+            if (parsed) return parsed
+
+            // Nếu vị trí 5..11 không ra ngày hợp lệ (do OCR đọc thừa số) và chuỗi đủ dài, thử vị trí 6..12
+            if (cleanL2.length >= 12) {
+                const altDd = cleanL2.substring(6, 8)
+                const altMm = cleanL2.substring(8, 10)
+                const altYy = cleanL2.substring(10, 12)
+                const altParsed = cleanDateForDB(`${altDd}/${altMm}/20${altYy}`)
+                if (altParsed) return altParsed
+            }
         }
     }
     if (isStamp && meta.inbound_date) {
