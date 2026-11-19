@@ -70,6 +70,61 @@ export default function WarehouseAdjustmentDraftModal({
   const currentUnit = position?.unit || 'Thùng'
 
   const noteInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null)
+  const addProductPanelRef = useRef<HTMLDivElement | null>(null)
+  const productSearchInputRef = useRef<HTMLInputElement | null>(null)
+
+  const [viewportStyle, setViewportStyle] = useState<{
+    height?: number
+    top?: number
+    isKeyboardOpen: boolean
+  }>({ isKeyboardOpen: false })
+  const [isProductSearchFocused, setIsProductSearchFocused] = useState(false)
+
+  // Theo dõi chiều cao visualViewport thực tế trên mobile khi bàn phím ảo mở/đóng
+  useEffect(() => {
+    if (!visible || typeof window === 'undefined') return
+    const vv = window.visualViewport
+    if (!vv) return
+
+    const updateViewport = () => {
+      const keyboardOpen = window.innerHeight - vv.height > 120
+      setViewportStyle({
+        height: vv.height,
+        top: vv.offsetTop,
+        isKeyboardOpen: keyboardOpen,
+      })
+    }
+
+    updateViewport()
+    vv.addEventListener('resize', updateViewport)
+    vv.addEventListener('scroll', updateViewport)
+    return () => {
+      vv.removeEventListener('resize', updateViewport)
+      vv.removeEventListener('scroll', updateViewport)
+    }
+  }, [visible])
+
+  const scrollProductSearchToTop = useCallback(() => {
+    const scrollEl = bodyScrollRef.current
+    const panelEl = addProductPanelRef.current
+    if (!scrollEl || !panelEl) return
+    const scrollRect = scrollEl.getBoundingClientRect()
+    const panelRect = panelEl.getBoundingClientRect()
+    const targetTop = panelRect.top - scrollRect.top + scrollEl.scrollTop - 8
+    scrollEl.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' })
+  }, [])
+
+  // Mỗi khi bàn phím ảo mở xong hoặc đang focus ô tìm sản phẩm -> tự căn chỉnh đưa ô tìm kiếm lên sát đỉnh
+  useEffect(() => {
+    if (!visible || !isProductSearchFocused) return
+    const t1 = setTimeout(scrollProductSearchToTop, 80)
+    const t2 = setTimeout(scrollProductSearchToTop, 280)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [visible, isProductSearchFocused, viewportStyle.height, scrollProductSearchToTop])
 
   const [actionType, setActionType] = useState<ProposalActionType>('NOTE')
   const [newQtyStr, setNewQtyStr] = useState<string>('0')
@@ -553,11 +608,19 @@ export default function WarehouseAdjustmentDraftModal({
 
   return (
     <div
-      className="fixed inset-0 z-[115] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-150"
+      className="fixed inset-x-0 z-[115] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-150"
+      style={
+        viewportStyle.height
+          ? { top: viewportStyle.top || 0, height: viewportStyle.height }
+          : { top: 0, bottom: 0 }
+      }
       onClick={onClose}
     >
       <div
-        className="bg-[#0f172a] text-slate-100 w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[92dvh] flex flex-col shadow-2xl border border-slate-700/80 overflow-hidden"
+        className="bg-[#0f172a] text-slate-100 w-full max-w-lg rounded-t-3xl sm:rounded-3xl flex flex-col shadow-2xl border border-slate-700/80 overflow-hidden"
+        style={{
+          maxHeight: viewportStyle.isKeyboardOpen ? '98%' : '92%',
+        }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -585,7 +648,10 @@ export default function WarehouseAdjustmentDraftModal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain no-scrollbar p-4 space-y-4">
+        <div
+          ref={bodyScrollRef}
+          className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain no-scrollbar p-4 space-y-4"
+        >
           {errorMsg && (
             <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/50 text-xs font-bold text-rose-200">
               ⚠️ {errorMsg}
@@ -1070,16 +1136,39 @@ export default function WarehouseAdjustmentDraftModal({
                 </button>
 
                 {showAddProductPanel && (
-                  <div className="mt-2.5 p-3 rounded-xl bg-slate-950/90 border border-sky-500/40 space-y-2.5">
-                    <div className="text-[10px] font-black text-sky-300 uppercase">
-                      CHỌN SẢN PHẨM THÊM VÀO LOT (HỖ TRỢ TÊN VIẾT TẮT, SKU, KHÔNG DẤU):
+                  <div
+                    ref={addProductPanelRef}
+                    className="mt-2.5 p-3 rounded-xl bg-slate-950/90 border border-sky-500/40 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-black text-sky-300 uppercase">
+                        CHỌN SẢN PHẨM THÊM VÀO LOT:
+                      </div>
+                      {(viewportStyle.isKeyboardOpen || isProductSearchFocused) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            productSearchInputRef.current?.blur()
+                            setIsProductSearchFocused(false)
+                          }}
+                          className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-sky-300 text-[10px] font-bold shrink-0"
+                        >
+                          Ẩn phím
+                        </button>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-700 bg-slate-900">
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-700 bg-slate-900 sticky top-0 z-10">
                       <Search size={14} className="text-slate-400 shrink-0" />
                       <input
+                        ref={productSearchInputRef}
                         type="text"
                         value={productQuery}
+                        onFocus={() => {
+                          setIsProductSearchFocused(true)
+                          setTimeout(scrollProductSearchToTop, 100)
+                        }}
+                        onBlur={() => setIsProductSearchFocused(false)}
                         onChange={e => {
                           setProductQuery(e.target.value)
                           if (selectedNewProduct) setSelectedNewProduct(null)
@@ -1102,7 +1191,7 @@ export default function WarehouseAdjustmentDraftModal({
                     </div>
 
                     {!selectedNewProduct ? (
-                      <div className="max-h-52 overflow-y-auto overscroll-y-contain no-scrollbar space-y-1.5">
+                      <div className="space-y-1.5">
                         {loadingCatalog ? (
                           <div className="py-5 flex items-center justify-center gap-2 text-xs text-slate-400">
                             <Loader2 size={15} className="animate-spin text-sky-400" />
