@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 import {
   Camera,
   CloudDownload,
@@ -41,6 +42,7 @@ import {
   JournalRecord,
   SubShiftRecord,
   ReconcileSession,
+  ConfirmInterimCloseResult,
   getOpenShifts,
   getPastShifts,
   getJobTemplates,
@@ -51,7 +53,7 @@ import {
   closeDeliveryShift,
   deleteDeliveryShift,
   getSubShifts,
-  createSubShift,
+  registerShiftParticipant,
   getShiftJournals,
   getMultiShiftsJournals,
   createShiftJournalEntry,
@@ -327,7 +329,51 @@ export function OperationsDataTab({
 
   useEffect(() => {
     void loadSelectedShiftDetails(selectedShift)
-  }, [selectedShift, loadSelectedShiftDetails])
+    if (selectedShift && !selectedShift.id.startsWith('local_') && userObj) {
+      void registerShiftParticipant(selectedShift.id, userObj)
+    }
+  }, [selectedShift, loadSelectedShiftDetails, userObj])
+
+  // ── REALTIME ĐỒNG BỘ KHI ĐỒNG NGHIỆP CHỐT CA TẠM HOẶC ĐẨY SỐ LIỆU ──
+  useEffect(() => {
+    const shiftId = selectedShift?.id
+    if (!shiftId || shiftId.startsWith('local_')) return
+
+    const channel = supabase
+      .channel(`scanner_solieu_shift_${shiftId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'delivery_shifts', filter: `id=eq.${shiftId}` },
+        () => {
+          void getOpenShifts(activeSysCode).then(shifts => {
+            setOpenShifts(shifts)
+          })
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'delivery_sub_shifts', filter: `shift_id=eq.${shiftId}` },
+        () => {
+          void loadSelectedShiftDetails(selectedShift)
+          void getOpenShifts(activeSysCode).then(shifts => setOpenShifts(shifts))
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'delivery_journal' },
+        (payload: any) => {
+          const notesStr = String(payload?.new?.notes || payload?.old?.notes || '')
+          if (notesStr.includes(`[CV_ID: ${shiftId}]`)) {
+            void loadSelectedShiftDetails(selectedShift)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [selectedShift, activeSysCode, loadSelectedShiftDetails])
 
   // ── TỰ ĐỘNG ĐỒNG BỘ NGẦM ẢNH OFFLINE & GOOGLE DRIVE KHI CÓ MẠNG ──
   const bgImageSyncLockRef = useRef(false)
@@ -427,7 +473,7 @@ export function OperationsDataTab({
     }
   }
 
-  // ── LOGIC LỌC ĐỢT HIỆN TẠI VS TOÀN CA ──
+  // ── LOGIC LỌC ĐỢT HIỆN TẠI VS TOÀN CA (ĐỒNG BỘ CHUẨN CẢ THEO MỐC THỜI GIAN & JOURNAL_IDS) ──
   const closedJournalIdsSet = useMemo(() => {
     const set = new Set<string>()
     subShifts.forEach(ss => {
@@ -436,10 +482,25 @@ export function OperationsDataTab({
     return set
   }, [subShifts])
 
-  const currentBatchJournals = useMemo(
-    () => allJournals.filter(j => !closedJournalIdsSet.has(j.id)),
-    [allJournals, closedJournalIdsSet]
-  )
+  const latestSubShiftToTime = useMemo(() => {
+    if (subShifts.length === 0) return 0
+    return subShifts.reduce((max, s) => {
+      const t = s.to_time ? new Date(s.to_time).getTime() : 0
+      return t > max ? t : max
+    }, 0)
+  }, [subShifts])
+
+  const currentBatchJournals = useMemo(() => {
+    if (subShifts.length === 0) return allJournals
+    return allJournals.filter(j => {
+      if (closedJournalIdsSet.has(j.id)) return false
+      if (latestSubShiftToTime > 0 && j.sent_at) {
+        const jTime = new Date(j.sent_at).getTime()
+        if (!Number.isNaN(jTime) && jTime <= latestSubShiftToTime) return false
+      }
+      return true
+    })
+  }, [allJournals, subShifts.length, closedJournalIdsSet, latestSubShiftToTime])
 
   const activeScopeJournals = useMemo(
     () => (viewScope === 'current_batch' && subShifts.length > 0 ? currentBatchJournals : allJournals),
@@ -1009,27 +1070,26 @@ export function OperationsDataTab({
     setQuickSnaps(prev => prev.filter(s => s.id !== snap.id))
   }
 
-  const handleInterimClose = async (notes: string) => {
-    if (!selectedShift || currentBatchJournals.length === 0) return
-    const lastSub = subShifts[subShifts.length - 1]
-    const fromTime = lastSub?.to_time || selectedShift.opened_at || new Date().toISOString()
-
-    const createdSub = await createSubShift({
-      shift: selectedShift,
-      user: userObj,
-      notes,
-      currentJournals: currentBatchJournals,
-      existingSubShiftsCount: subShifts.length,
-      fromTime,
-    })
-
-    // Clear reconcile sessions for new batch
-    await clearShiftReconciliations(selectedShift.id, selectedShift.summary_data)
-    setReconcileSessions([])
-    setSubShifts(prev => [...prev, createdSub])
-    setViewScope('current_batch')
+  const handleInterimCloseCompleted = async (result: ConfirmInterimCloseResult) => {
+    if (!selectedShift) return
+    if (result.status === 'finalized') {
+      await clearShiftReconciliations(selectedShift.id, selectedShift.summary_data)
+      setReconcileSessions([])
+      setViewScope('current_batch')
+      showToast(`Đã hoàn tất chốt ca tạm đợt #${result.sub_shift_number}!`)
+    } else {
+      const missingNames = result.missing_users.map(m => m.user_name).join(', ')
+      showToast(
+        missingNames
+          ? `Bạn đã chốt Đợt #${result.sub_shift_number} (${result.confirmed_count}/${result.total_participants}) • Chờ: ${missingNames}`
+          : `Bạn đã chốt Đợt #${result.sub_shift_number} • Đang chờ đồng nghiệp khác`
+      )
+    }
+    const freshShifts = await getOpenShifts(activeSysCode)
+    setOpenShifts(freshShifts)
+    const freshTarget = freshShifts.find(s => s.id === selectedShift.id) || selectedShift
+    await loadSelectedShiftDetails(freshTarget)
     await refreshPendingQueueCount()
-    showToast(`Đã chốt ca tạm đợt #${createdSub.sub_shift_number}!`)
   }
 
   const handleCloseJob = async (data: {
@@ -1761,6 +1821,47 @@ export function OperationsDataTab({
                 )}
               </div>
 
+              {/* ── BANNER TRẠNG THÁI ĐANG CHỜ CHỐT CA TẠM ĐA NGƯỜI DÙNG ── */}
+              {selectedShift?.summary_data?.pending_interim_close && (() => {
+                const pend = selectedShift.summary_data!.pending_interim_close!
+                const confs = pend.confirmations || []
+                const myId = userObj?.id ? String(userObj.id) : ''
+                const myName = (userObj?.full_name || userObj?.email || '').trim().toLowerCase()
+                const iDone = confs.some(
+                  c =>
+                    (myId && c.user_id && String(c.user_id) === myId) ||
+                    (myName && (c.user_name || '').trim().toLowerCase() === myName)
+                )
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setInterimModalVisible(true)}
+                    className={`w-full mt-3 px-3 py-2.5 rounded-xl border text-left flex items-center justify-between gap-2 ${
+                      iDone
+                        ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-200'
+                        : 'bg-amber-500/15 border-amber-500/50 text-amber-200'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-extrabold flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          {iDone
+                            ? `Bạn đã chốt tạm Đợt #${pend.sub_shift_number} (${confs.length} người đã chốt) — Đang chờ người khác`
+                            : `Đang chốt tạm Đợt #${pend.sub_shift_number} (${confs.map(c => c.user_name).join(', ')} đã chốt) — Chờ bạn chốt!`}
+                        </span>
+                      </div>
+                      <div className="text-[10px] opacity-80 mt-0.5">
+                        Bấm vào đây để xem danh sách ai đã chốt / ai chưa chốt
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 rounded-lg bg-amber-500 text-slate-950 text-[10px] font-extrabold shrink-0">
+                      Xem
+                    </span>
+                  </button>
+                )
+              })()}
+
               {/* ── FOOTER REPORT CARD (LỊCH SỬ ĐỢT | BÁO CÁO | THAM CHIẾU) ── */}
               <div className="bg-[#1e293b] border border-slate-700 rounded-2xl overflow-hidden mt-4">
                 {/* Thanh chuyển chế độ xem Đợt hiện tại vs Toàn ca khi đã có chốt ca tạm */}
@@ -1850,14 +1951,24 @@ export function OperationsDataTab({
                     </div>
 
                     {/* Các lần chốt ca tạm trước đó */}
-                    {subShifts.map(sub => {
+                    {subShifts.map((sub, sIdx) => {
                       const isExp = !!expandedSubShiftIds[sub.id]
                       const subIds = new Set(sub.summary_data?.journal_ids || [])
-                      const subJournals = allJournals.filter(
-                        j =>
-                          subIds.has(j.id) &&
-                          (historyFilter === 'all' || j.direction === historyFilter)
-                      )
+                      const hasExplicitIds = subIds.size > 0
+                      const ssFrom = sub.from_time ? new Date(sub.from_time).getTime() : 0
+                      const ssTo = sub.to_time ? new Date(sub.to_time).getTime() : 0
+                      const prevTo =
+                        sIdx > 0 && subShifts[sIdx - 1]?.to_time
+                          ? new Date(subShifts[sIdx - 1].to_time).getTime()
+                          : ssFrom
+                      const subJournals = allJournals.filter(j => {
+                        if (historyFilter !== 'all' && j.direction !== historyFilter) return false
+                        if (hasExplicitIds) return subIds.has(j.id)
+                        const jTime = j.sent_at ? new Date(j.sent_at).getTime() : 0
+                        return sIdx === 0
+                          ? jTime >= ssFrom && jTime <= ssTo
+                          : jTime > prevTo && jTime <= ssTo
+                      })
                       return (
                         <div
                           key={sub.id}
@@ -2762,10 +2873,19 @@ export function OperationsDataTab({
       <InterimCloseModal
         visible={interimModalVisible}
         shift={selectedShift}
+        user={userObj}
         currentJournals={currentBatchJournals}
         subShiftNumber={subShifts.length + 1}
         onClose={() => setInterimModalVisible(false)}
-        onConfirm={handleInterimClose}
+        onCompleted={handleInterimCloseCompleted}
+        onSyncedReload={async () => {
+          if (!selectedShift) return
+          const freshShifts = await getOpenShifts(activeSysCode)
+          setOpenShifts(freshShifts)
+          const freshTarget = freshShifts.find(s => s.id === selectedShift.id) || selectedShift
+          await loadSelectedShiftDetails(freshTarget)
+          await refreshPendingQueueCount()
+        }}
       />
 
       <EditJournalModal

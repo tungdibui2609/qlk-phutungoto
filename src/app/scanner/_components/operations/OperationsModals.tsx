@@ -29,6 +29,9 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Search,
+  WifiOff,
+  Users,
+  RefreshCw,
 } from 'lucide-react'
 import {
   DeliveryShift,
@@ -39,10 +42,16 @@ import {
   SubShiftRecord,
   ReconcileSession,
   ReconcileBatchRow,
+  InterimCloseStatus,
+  ConfirmInterimCloseResult,
   extractCleanUserNote,
   aggregateShiftsProducts,
   aggregateShiftsUnits,
   getShiftJournals,
+  syncOperationsOfflineQueue,
+  getInterimCloseStatus,
+  confirmInterimClose,
+  cancelMyInterimClose,
   getSubShifts,
   reopenDeliveryShift,
   deleteDeliveryShift,
@@ -765,39 +774,157 @@ export function CloseJobModal({
   )
 }
 
-// ── 4. INTERIM CLOSE MODAL (CHỐT CA TẠM) ──────────────────────
+// ── 4. INTERIM CLOSE MODAL (CHỐT CA TẠM ĐA NGƯỜI DÙNG - BẮT BUỘC CÓ MẠNG) ──
 export function InterimCloseModal({
   visible,
   shift,
+  user,
   currentJournals,
   subShiftNumber,
   onClose,
-  onConfirm,
+  onCompleted,
+  onSyncedReload,
 }: {
   visible: boolean
   shift: DeliveryShift | null
+  user: any
   currentJournals: JournalRecord[]
   subShiftNumber: number
   onClose: () => void
-  onConfirm: (notes: string) => Promise<void>
+  onCompleted: (result: ConfirmInterimCloseResult) => Promise<void>
+  onSyncedReload?: () => Promise<void>
 }) {
   const [notes, setNotes] = useState('')
+  const [loadingStatus, setLoadingStatus] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [offlineError, setOfflineError] = useState<string | null>(null)
+  const [status, setStatus] = useState<InterimCloseStatus | null>(null)
+  const [keepWaiting, setKeepWaiting] = useState(false)
+  const [confirmForceMode, setConfirmForceMode] = useState(false)
+
+  const currentUserId = user?.id ? String(user.id) : ''
+  const currentUserName = (user?.full_name || user?.email || '').trim().toLowerCase()
+
+  const loadStatusOnline = async () => {
+    if (!shift) return
+    setLoadingStatus(true)
+    setOfflineError(null)
+    setConfirmForceMode(false)
+    try {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('OFFLINE_REQUIRED')
+      }
+      // Đồng bộ toàn bộ hàng đợi offline của máy này lên server trước
+      const syncRes = await syncOperationsOfflineQueue()
+      if (syncRes.remainingCount > 0) {
+        throw new Error('OFFLINE_SYNC_INCOMPLETE')
+      }
+      const st = await getInterimCloseStatus(shift.id)
+      setStatus(st)
+      if (onSyncedReload) {
+        await onSyncedReload()
+      }
+    } catch (err: any) {
+      const msg = String(err?.message || err || '')
+      if (msg === 'OFFLINE_REQUIRED') {
+        setOfflineError(
+          'Chốt ca tạm BẮT BUỘC phải có kết nối mạng để đồng bộ số liệu và kiểm tra người làm chung. Vui lòng bật Wifi / 4G rồi bấm "Kiểm tra lại".'
+        )
+      } else if (msg === 'OFFLINE_SYNC_INCOMPLETE') {
+        setOfflineError(
+          'Còn số liệu ngoại tuyến chưa đẩy lên được máy chủ do mất mạng. Vui lòng ra khu vực có sóng ổn định rồi thử lại.'
+        )
+      } else if (msg === 'OFFLINE_SHIFT_UNSYNCED') {
+        setOfflineError(
+          'Công việc này được mở lúc mất mạng và chưa đồng bộ lên máy chủ. Vui lòng bật mạng để đồng bộ trước khi chốt tạm.'
+        )
+      } else {
+        setOfflineError(`Không thể kết nối máy chủ: ${msg}`)
+      }
+      setStatus(null)
+    } finally {
+      setLoadingStatus(false)
+    }
+  }
 
   useEffect(() => {
-    if (!visible) return
+    if (!visible || !shift) return
     setNotes('')
     setSubmitting(false)
-  }, [visible])
+    setKeepWaiting(false)
+    setConfirmForceMode(false)
+    void loadStatusOnline()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, shift?.id])
 
   if (!visible || !shift) return null
 
-  const handleSubmit = async () => {
+  const effectiveSubNumber = status?.next_sub_shift_number ?? subShiftNumber
+  const effectiveBatchCount = status?.current_batch_count ?? currentJournals.length
+  const participants = status?.participants || []
+  const confirmedUsers = status?.confirmed_users || []
+  const missingUsers = status?.missing_users || []
+
+  const isUserConfirmed = (uid?: string | null, uname?: string | null) => {
+    const cleanUid = uid ? String(uid) : ''
+    const cleanName = (uname || '').trim().toLowerCase()
+    return confirmedUsers.some(c => {
+      if (cleanUid && c.user_id) return String(c.user_id) === cleanUid
+      return cleanName && (c.user_name || '').trim().toLowerCase() === cleanName
+    })
+  }
+
+  const iHaveConfirmed = isUserConfirmed(currentUserId, currentUserName)
+  const otherMissingNames = missingUsers
+    .filter(m => {
+      if (currentUserId && m.user_id) return String(m.user_id) !== currentUserId
+      return (m.user_name || '').trim().toLowerCase() !== currentUserName
+    })
+    .map(m => m.user_name)
+
+  const handleConfirmAction = async (forceFinalize = false) => {
+    if (submitting || loadingStatus) return
+    setSubmitting(true)
+    setOfflineError(null)
+    try {
+      const result = await confirmInterimClose({
+        shift,
+        user,
+        notes: notes.trim(),
+        forceFinalize,
+        keepWaiting: !forceFinalize && keepWaiting,
+      })
+      await onCompleted(result)
+      if (result.status === 'finalized') {
+        onClose()
+      } else {
+        // Giữ modal mở hoặc tải lại trạng thái để người dùng thấy rõ "Bạn đã chốt - đang đợi ai"
+        const st = await getInterimCloseStatus(shift.id)
+        setStatus(st)
+        setConfirmForceMode(false)
+      }
+    } catch (err: any) {
+      const msg = String(err?.message || err || '')
+      if (msg === 'OFFLINE_REQUIRED' || msg === 'OFFLINE_SYNC_INCOMPLETE') {
+        setOfflineError(
+          'Mất kết nối mạng trong lúc chốt ca tạm! Vui lòng mở Wifi / 4G và bấm Thử lại.'
+        )
+      } else {
+        setOfflineError(`Lỗi chốt ca tạm: ${msg}`)
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleCancelMyConfirm = async () => {
     if (submitting) return
     setSubmitting(true)
     try {
-      await onConfirm(notes.trim())
-      onClose()
+      await cancelMyInterimClose(shift.id, user)
+      await loadStatusOnline()
+    } catch (err: any) {
+      setOfflineError(`Không thể rút xác nhận: ${err?.message || err}`)
     } finally {
       setSubmitting(false)
     }
@@ -805,56 +932,251 @@ export function InterimCloseModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-      <div className="w-full max-w-md bg-[#0f172a] border border-slate-700 rounded-2xl overflow-hidden flex flex-col">
+      <div className="w-full max-w-md max-h-[90vh] bg-[#0f172a] border border-slate-700 rounded-2xl overflow-hidden flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 bg-[#1e293b] border-b border-slate-700">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-amber-400" />
             <span className="text-sm font-extrabold text-white">
-              Chốt Ca Tạm (Đợt #{subShiftNumber})
+              Chốt Ca Tạm (Đợt #{effectiveSubNumber})
             </span>
           </div>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => void loadStatusOnline()}
+              disabled={loadingStatus}
+              title="Tải lại trạng thái từ máy chủ"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/60"
+            >
+              <RefreshCw className={`w-4 h-4 ${loadingStatus ? 'animate-spin text-amber-400' : ''}`} />
+            </button>
+            <button onClick={onClose} className="p-1 text-slate-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        <div className="p-4 space-y-3">
-          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200">
-            Chốt ca tạm sẽ gom <b>{currentJournals.length} đợt nhập/xuất hiện tại</b> vào{' '}
-            <b>Lần chốt ca tạm #{subShiftNumber}</b>, đồng thời giữ công việc tiếp tục mở cho ca sau.
-          </div>
+        <div className="p-4 space-y-3 overflow-y-auto">
+          {loadingStatus && !status && (
+            <div className="p-4 rounded-xl bg-slate-800/70 border border-slate-700 flex items-center gap-3 text-xs text-slate-200">
+              <Loader2 className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+              <span>Đang kiểm tra mạng, đồng bộ số liệu của bạn và tải số liệu mọi người...</span>
+            </div>
+          )}
 
-          <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
-              Ghi chú đợt chốt tạm (Người bàn giao / Ca nhận...)
-            </label>
-            <textarea
-              rows={2}
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="VD: Chốt giao ca sáng cho ca chiều..."
-              className="w-full px-3 py-2 rounded-xl bg-[#1e293b] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-            />
-          </div>
+          {offlineError && (
+            <div className="p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 space-y-2">
+              <div className="flex items-start gap-2 text-xs text-rose-200 font-semibold">
+                <WifiOff className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <span>{offlineError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadStatusOnline()}
+                disabled={loadingStatus}
+                className="w-full py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold flex items-center justify-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingStatus ? 'animate-spin' : ''}`} />
+                <span>Kiểm Tra Lại Mạng & Đồng Bộ</span>
+              </button>
+            </div>
+          )}
 
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"
-            >
-              Hủy
-            </button>
-            <button
-              type="button"
-              disabled={submitting || currentJournals.length === 0}
-              onClick={handleSubmit}
-              className="flex-2 py-2.5 px-4 rounded-xl bg-amber-600 disabled:bg-slate-700 text-white text-xs font-extrabold flex items-center justify-center gap-1.5"
-            >
-              {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>Chốt Ca Tạm #{subShiftNumber}</span>
-            </button>
-          </div>
+          {status && !offlineError && (
+            <>
+              {/* Tổng quan số người & số lượt nhập/xuất */}
+              <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5 font-extrabold text-amber-300">
+                    <Users className="w-4 h-4" />
+                    Người tham gia công việc: {status.total_participants} người
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 text-[11px] font-bold">
+                    Đã chốt {status.confirmed_count}/{status.total_participants}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300">
+                  Tổng số liệu đợt #{effectiveSubNumber} (đã gộp từ mọi người):{' '}
+                  <b className="text-white">{effectiveBatchCount} lượt nhập/xuất</b>
+                </div>
+
+                {/* Danh sách chi tiết từng người */}
+                <div className="space-y-1.5 pt-1">
+                  {participants.map((p, idx) => {
+                    const done = isUserConfirmed(p.user_id, p.user_name)
+                    const isMe =
+                      (currentUserId && p.user_id && String(p.user_id) === currentUserId) ||
+                      (currentUserName && (p.user_name || '').trim().toLowerCase() === currentUserName)
+                    const uKey = p.user_id || (p.user_name || '').trim().toLowerCase()
+                    const uCount = status.per_user_counts?.[uKey] || 0
+                    return (
+                      <div
+                        key={`${p.user_id || p.user_name}_${idx}`}
+                        className={`px-2.5 py-1.5 rounded-lg border flex items-center justify-between text-xs ${
+                          done
+                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                            : 'bg-slate-900/70 border-slate-700 text-slate-200'
+                        }`}
+                      >
+                        <div className="min-w-0 flex items-center gap-1.5">
+                          <span className="font-bold truncate">
+                            {p.user_name}
+                            {isMe ? ' (Bạn)' : ''}
+                          </span>
+                          <span className="text-[10px] text-slate-400 shrink-0">
+                            • {uCount} lượt
+                          </span>
+                        </div>
+                        <span
+                          className={`text-[11px] font-extrabold shrink-0 ${
+                            done ? 'text-emerald-400' : 'text-amber-400'
+                          }`}
+                        >
+                          {done ? '✅ Đã chốt' : '⏳ Chưa chốt'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Thông báo trạng thái chờ nếu mình đã chốt */}
+              {iHaveConfirmed ? (
+                <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 space-y-1.5 text-xs">
+                  <div className="font-extrabold text-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Bạn đã xác nhận chốt ca tạm Đợt #{effectiveSubNumber}!</span>
+                  </div>
+                  {missingUsers.length > 0 ? (
+                    <div className="text-amber-200">
+                      ⏳ Đang chờ{' '}
+                      <b>{missingUsers.map(m => m.user_name).join(', ')}</b> mở mạng và bấm Chốt ca tạm để hoàn tất đợt này.
+                    </div>
+                  ) : (
+                    <div className="text-amber-200">
+                      ⏳ Đang giữ trạng thái chờ đồng nghiệp khác mở mạng vào chốt cùng đợt #{effectiveSubNumber}.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {otherMissingNames.length > 0 && (
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-200">
+                      Sau khi bạn bấm chốt, hệ thống sẽ ghi nhận phần của bạn và chờ:{' '}
+                      <b>{otherMissingNames.join(', ')}</b> chốt tiếp.
+                    </div>
+                  )}
+
+                  {status.total_participants <= 1 && (
+                    <label className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-800/70 border border-slate-700 cursor-pointer text-xs text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={keepWaiting}
+                        onChange={e => setKeepWaiting(e.target.checked)}
+                        className="mt-0.5 accent-amber-500"
+                      />
+                      <span>
+                        <b>Đợi thêm đồng nghiệp trong kho</b> (nếu có người làm chung nhưng máy họ chưa bật mạng để đồng bộ)
+                      </span>
+                    </label>
+                  )}
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+                      Ghi chú đợt chốt tạm (Người bàn giao / Ca nhận...)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      placeholder="VD: Chốt giao ca sáng cho ca chiều..."
+                      className="w-full px-3 py-2 rounded-xl bg-[#1e293b] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Các nút hành động */}
+              {iHaveConfirmed ? (
+                <div className="space-y-2 pt-1">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleCancelMyConfirm()}
+                      disabled={submitting}
+                      className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold"
+                    >
+                      Rút xác nhận
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold"
+                    >
+                      Đóng (Tiếp tục đợi)
+                    </button>
+                  </div>
+
+                  {!confirmForceMode ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmForceMode(true)}
+                      className="w-full py-2 rounded-xl border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 text-[11px] font-bold"
+                    >
+                      Chốt hoàn tất ngay (không đợi người chưa chốt)
+                    </button>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 space-y-2">
+                      <div className="text-[11px] text-amber-200">
+                        Xác nhận hoàn tất Đợt #{effectiveSubNumber} ngay bây giờ với toàn bộ số liệu đã có trên máy chủ?
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmForceMode(false)}
+                          className="flex-1 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="button"
+                          disabled={submitting}
+                          onClick={() => void handleConfirmAction(true)}
+                          className="flex-1 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-extrabold flex items-center justify-center gap-1"
+                        >
+                          {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                          <span>Xác nhận chốt luôn</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting || loadingStatus}
+                    onClick={() => void handleConfirmAction(false)}
+                    className="flex-2 py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 text-white text-xs font-extrabold flex items-center justify-center gap-1.5"
+                  >
+                    {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>
+                      {otherMissingNames.length > 0 || keepWaiting
+                        ? `Xác Nhận Chốt (${status.confirmed_count + 1}/${Math.max(status.total_participants, 1)})`
+                        : `Hoàn Tất Chốt Đợt #${effectiveSubNumber}`}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>

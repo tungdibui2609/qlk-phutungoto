@@ -5,6 +5,57 @@ import {
   submitScannerApprovalRequest,
 } from './approvalService'
 
+export interface ShiftParticipant {
+  user_id?: string | null
+  user_name: string
+  joined_at?: string
+  last_active_at?: string
+  source?: string
+}
+
+export interface InterimCloseConfirmation {
+  user_id?: string | null
+  user_name: string
+  confirmed_at: string
+  notes?: string | null
+}
+
+export interface PendingInterimClose {
+  sub_shift_number: number
+  from_time: string
+  started_at: string
+  started_by?: string | null
+  started_by_name?: string | null
+  confirmations: InterimCloseConfirmation[]
+}
+
+export interface InterimCloseStatus {
+  shift_id: string
+  next_sub_shift_number: number
+  from_time: string
+  current_batch_count: number
+  per_user_counts: Record<string, number>
+  participants: ShiftParticipant[]
+  pending_interim_close: PendingInterimClose | null
+  confirmed_users: InterimCloseConfirmation[]
+  missing_users: ShiftParticipant[]
+  total_participants: number
+  confirmed_count: number
+}
+
+export interface ConfirmInterimCloseResult {
+  status: 'waiting' | 'finalized'
+  shift_id: string
+  sub_shift_number: number
+  sub_shift?: SubShiftRecord | null
+  participants: ShiftParticipant[]
+  confirmed_users: InterimCloseConfirmation[]
+  missing_users: ShiftParticipant[]
+  total_participants: number
+  confirmed_count: number
+  pending_interim_close?: PendingInterimClose | null
+}
+
 export interface DeliveryShift {
   id: string
   company_id?: string | null
@@ -38,6 +89,8 @@ export interface DeliveryShift {
     units_summary?: Record<string, { in_qty: number; out_qty: number; count: number }>
     total_records?: number
     reconciliations?: ReconcileSession[]
+    participants?: ShiftParticipant[]
+    pending_interim_close?: PendingInterimClose | null
     is_offline?: boolean
     [key: string]: any
   } | null
@@ -1019,6 +1072,99 @@ export async function getSubShifts(shiftId: string): Promise<SubShiftRecord[]> {
   }
 }
 
+export async function registerShiftParticipant(shiftId: string, user: any): Promise<void> {
+  if (!shiftId || shiftId.startsWith('local_')) return
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+  try {
+    await (supabase as any).rpc('register_shift_participant', {
+      p_shift_id: shiftId,
+      p_user_id: user?.id || null,
+      p_user_name: user?.full_name || user?.email || 'Nhân viên',
+    })
+  } catch {
+    // Bỏ qua im lặng nếu đang mất mạng trong kho
+  }
+}
+
+export async function getInterimCloseStatus(shiftId: string): Promise<InterimCloseStatus> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('OFFLINE_REQUIRED')
+  }
+  if (!shiftId || shiftId.startsWith('local_')) {
+    throw new Error('OFFLINE_SHIFT_UNSYNCED')
+  }
+  const { data, error } = await (supabase as any).rpc('get_interim_close_status', {
+    p_shift_id: shiftId,
+  })
+  if (error) {
+    const msg = String(error?.message || '')
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('fetch')) {
+      throw new Error('OFFLINE_REQUIRED')
+    }
+    throw error
+  }
+  return data as InterimCloseStatus
+}
+
+export async function confirmInterimClose(params: {
+  shift: DeliveryShift
+  user: any
+  notes?: string
+  forceFinalize?: boolean
+  keepWaiting?: boolean
+}): Promise<ConfirmInterimCloseResult> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('OFFLINE_REQUIRED')
+  }
+
+  // 1. Bắt buộc đồng bộ toàn bộ hàng đợi offline của máy này lên server trước khi chốt tạm
+  const syncRes = await syncOperationsOfflineQueue()
+  if (syncRes.remainingCount > 0) {
+    throw new Error('OFFLINE_SYNC_INCOMPLETE')
+  }
+
+  if (params.shift.id.startsWith('local_')) {
+    throw new Error('OFFLINE_SHIFT_UNSYNCED')
+  }
+
+  // 2. Gọi RPC chốt ca tạm đa người dùng (atomic trên PostgreSQL)
+  const { data, error } = await (supabase as any).rpc('confirm_interim_close', {
+    p_shift_id: params.shift.id,
+    p_user_id: params.user?.id || null,
+    p_user_name: params.user?.full_name || params.user?.email || 'Nhân viên',
+    p_notes: params.notes?.trim() || null,
+    p_force_finalize: Boolean(params.forceFinalize),
+    p_keep_waiting: Boolean(params.keepWaiting),
+  })
+
+  if (error) {
+    const msg = String(error?.message || '')
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('fetch')) {
+      throw new Error('OFFLINE_REQUIRED')
+    }
+    throw error
+  }
+
+  const res = data as ConfirmInterimCloseResult
+  if (res.status === 'finalized' && res.sub_shift) {
+    const cacheKey = `${CACHE_KEYS.SUB_SHIFTS_PREFIX}${params.shift.id}`
+    const existing = getStorageJson<SubShiftRecord[]>(cacheKey, [])
+    setStorageJson(cacheKey, [...existing.filter(s => s.id !== res.sub_shift!.id), res.sub_shift])
+  }
+  return res
+}
+
+export async function cancelMyInterimClose(shiftId: string, user: any): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('OFFLINE_REQUIRED')
+  }
+  const { error } = await (supabase as any).rpc('cancel_my_interim_close', {
+    p_shift_id: shiftId,
+    p_user_id: user?.id || null,
+  })
+  if (error) throw error
+}
+
 export async function createSubShift(params: {
   shift: DeliveryShift
   user: any
@@ -1218,6 +1364,7 @@ export async function createShiftJournalEntry(params: {
 }): Promise<JournalRecord> {
   const { shift, user, productId, productSku, itemName, quantity, unit, direction, notes } = params
   const cleanSys = getActiveSystemCode(params.systemCode || shift.system_code)
+  const shiftSys = getShiftSystemCode(cleanSys)
   const now = new Date().toISOString()
   const jobName = shift.summary_data?.job_name || shift.notes || 'Công việc'
   const dirLabel = direction === 'in' ? 'Nhập kho' : 'Xuất kho'
@@ -1228,7 +1375,7 @@ export async function createShiftJournalEntry(params: {
   const insertRow = {
     delivery_code: deliveryCode,
     company_id: shift.company_id || user?.company_id || null,
-    system_code: cleanSys,
+    system_code: shiftSys,
     item_name: itemName.trim(),
     quantity_sent: Number(quantity),
     unit: unit.trim(),

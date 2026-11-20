@@ -1923,7 +1923,9 @@ export default function WarehouseMapTab() {
       filtered = filtered.filter(p => matchingPosIds.has(p.id))
     }
 
-    return sortPositionsByDepthAndCol(filtered)
+    return filtered.sort((a, b) =>
+      a.code.localeCompare(b.code, undefined, { numeric: true })
+    )
   }, [
     isSelectedAisleHall,
     selectedAisleId,
@@ -1942,8 +1944,10 @@ export default function WarehouseMapTab() {
 
     tiers.forEach(tier => {
       const descIds = getDescendantZoneIds(tier.id)
-      const list = positions.filter(p => p.zone_ids.some(zid => descIds.has(zid)))
-      map.set(tier.id, sortPositionsByDepthAndCol(list))
+      const list = positions
+        .filter(p => p.zone_ids.some(zid => descIds.has(zid)))
+        .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+      map.set(tier.id, list)
     })
 
     return map

@@ -2585,31 +2585,17 @@ export default function SoLieuPage() {
     const handleInterimClose = async () => {
         if (!activeShift || !shiftSystemCode) return
         try {
-            const lastSubShift = subShifts.length > 0 ? subShifts[subShifts.length - 1] : null
-            const fromTime = lastSubShift ? lastSubShift.to_time : activeShift.opened_at
-            const toTime = new Date().toISOString()
-
-            const payload = {
-                shift_id: activeShift.id,
-                system_code: shiftSystemCode,
-                company_id: currentSystem?.company_id || profile?.company_id || null,
-                sub_shift_number: subShifts.length + 1,
-                from_time: fromTime,
-                to_time: toTime,
-                closed_by: profile?.id || null,
-                closed_by_name: profile?.full_name || 'Nhân viên kho',
-                summary_data: {
-                    job_name: currentJobName,
-                    ...(interimSummary || {})
-                },
-                notes: interimNotes ? `[CV: ${currentJobName}] ${interimNotes}` : `[CV: ${currentJobName}] Chốt đợt ${subShifts.length + 1}`,
-            }
-            const { data: insertedSub, error } = await (supabase as any)
-                .from('delivery_sub_shifts')
-                .insert([payload])
-                .select('id')
-                .single()
+            const { data: rpcRes, error } = await (supabase as any).rpc('confirm_interim_close', {
+                p_shift_id: activeShift.id,
+                p_user_id: profile?.id || null,
+                p_user_name: profile?.full_name || 'Nhân viên kho',
+                p_notes: interimNotes ? `[CV: ${currentJobName}] ${interimNotes}` : null,
+                p_force_finalize: true,
+                p_keep_waiting: false,
+            })
             if (error) throw error
+            const insertedSub = rpcRes?.sub_shift
+            const finalSubNum = rpcRes?.sub_shift_number || (subShifts.length + 1)
             if (interimImages.length > 0 && currentSystem?.code) {
                 const filesToUpload = interimImages.map(p => p.file)
                 setInterimImages([])
@@ -2623,7 +2609,7 @@ export default function SoLieuPage() {
                     jobName: currentJobName,
                     capturedBy: profile?.id || null,
                     capturedByName: profile?.full_name || 'Nhân viên kho',
-                    notes: interimNotes || `Chốt tạm đợt ${subShifts.length + 1}`,
+                    notes: interimNotes || `Chốt tạm đợt ${finalSubNum}`,
                 }).catch(e => console.warn('Upload interim images error:', e))
                 setShiftImageCount(c => c + filesToUpload.length)
             }
@@ -2633,7 +2619,7 @@ export default function SoLieuPage() {
             loadSubShifts(activeShift.id)
             loadJournalData()
             loadPastShifts(doneRange)
-            showToast(`Đã chốt ca tạm đợt #${subShifts.length + 1}`, 'in')
+            showToast(`Đã chốt ca tạm đợt #${finalSubNum}`, 'in')
         } catch (err: any) {
             alert('Lỗi chốt ca tạm: ' + (err?.message || err))
         }
