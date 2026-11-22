@@ -347,13 +347,29 @@ export default function SoLieuPage() {
             } catch {
                 // ignore storage quota
             }
-            const nextSummary = { ...(activeShift.summary_data || {}), reconciliations: reconcileMap }
+            let nextSummary = { ...(activeShift.summary_data || {}), reconciliations: reconcileMap }
             if (!String(activeShift.id).startsWith('offline_')) {
+                const { data: serverShift } = await (supabase as any)
+                    .from('delivery_shifts')
+                    .select('summary_data')
+                    .eq('id', activeShift.id)
+                    .maybeSingle()
+                const freshSummary = {
+                    ...(activeShift.summary_data || {}),
+                    ...(serverShift?.summary_data || {}),
+                }
+                const serverReconcile =
+                    freshSummary?.reconciliations && typeof freshSummary.reconciliations === 'object' && !Array.isArray(freshSummary.reconciliations)
+                        ? freshSummary.reconciliations
+                        : {}
+                const mergedReconcile = { ...serverReconcile, ...reconcileMap }
+                nextSummary = { ...freshSummary, reconciliations: mergedReconcile }
                 const { error } = await (supabase as any)
                     .from('delivery_shifts')
                     .update({ summary_data: nextSummary })
                     .eq('id', activeShift.id)
                 if (error) throw error
+                setReconcileMap(mergedReconcile)
                 setOpenShifts((prev: any[]) => prev.map(s => (s.id === activeShift.id ? { ...s, summary_data: nextSummary } : s)))
             }
             showToast('Đã lưu dữ liệu tham chiếu!', 'in')
@@ -524,16 +540,27 @@ export default function SoLieuPage() {
     const syncPinnedToDb = useCallback(async (shiftId: string, currentSummary: any, list: ProductItem[]) => {
         if (!shiftId || !shiftSystemCode) return
         try {
-            const nextSummary = {
+            const localSummary = {
                 ...(currentSummary || {}),
                 pinned_products: list,
             }
-            setOpenShifts(prev => prev.map(s => s.id === shiftId ? { ...s, summary_data: nextSummary } : s))
+            setOpenShifts(prev => prev.map(s => s.id === shiftId ? { ...s, summary_data: localSummary } : s))
+            const { data: serverShift } = await (supabase as any)
+                .from('delivery_shifts')
+                .select('summary_data')
+                .eq('id', shiftId)
+                .maybeSingle()
+            const mergedSummary = {
+                ...(currentSummary || {}),
+                ...(serverShift?.summary_data || {}),
+                pinned_products: list,
+            }
             await (supabase as any)
                 .from('delivery_shifts')
-                .update({ summary_data: nextSummary })
+                .update({ summary_data: mergedSummary })
                 .eq('id', shiftId)
                 .eq('system_code', shiftSystemCode)
+            setOpenShifts(prev => prev.map(s => s.id === shiftId ? { ...s, summary_data: mergedSummary } : s))
         } catch (err) {
             console.error('Failed to sync pinned products to DB:', err)
         }
@@ -975,6 +1002,32 @@ export default function SoLieuPage() {
         }
     }, [shiftSystemCode, currentSystem, profile, activeShift, currentJobName, viewMode, subShifts])
 
+    // Đồng bộ 2 chiều toàn bộ dữ liệu phiên làm việc hiện tại (Đẩy offline lên + Tải bản mới đầy đủ nhất từ Server về để khớp 3 nền tảng)
+    const [isSyncingShift, setIsSyncingShift] = useState(false)
+    const handleSyncCurrentShift = useCallback(async () => {
+        if (isSyncingShift) return
+        setIsSyncingShift(true)
+        try {
+            if (offlineQueueCount > 0) {
+                await syncOfflineWebData()
+            }
+            await loadOpenShifts()
+            await loadJournalData()
+            if (activeShift?.id) {
+                await Promise.all([
+                    loadSubShifts(activeShift.id),
+                    refreshShiftImageCounts(activeShift.id),
+                ])
+            }
+            showToast('Đã đồng bộ đầy đủ dữ liệu mới nhất của phiên làm việc!', 'in')
+        } catch (err) {
+            console.error('Lỗi đồng bộ phiên làm việc:', err)
+            showToast('Chưa thể đồng bộ (mất kết nối). Dữ liệu offline vẫn được giữ an toàn.', 'out')
+        } finally {
+            setIsSyncingShift(false)
+        }
+    }, [isSyncingShift, offlineQueueCount, syncOfflineWebData, loadOpenShifts, loadJournalData, activeShift, loadSubShifts, refreshShiftImageCounts, showToast])
+
     // Tải danh sách các công việc cho mục Báo cáo & Lịch sử ca (cả đang mở và đã hoàn thành)
     const loadPastShifts = async (range: 'today' | '7d' | '30d' | 'all' = doneRange) => {
         if (!shiftSystemCode) return
@@ -1205,33 +1258,52 @@ export default function SoLieuPage() {
         loadPastShifts(doneRange)
     }
 
-    // Mở lại công việc đã hoàn thành (nếu chốt nhầm)
+    // Gửi yêu cầu Mở lại công việc đã hoàn thành (Bắt buộc duyệt tại /so-lieu/duyet-thao-tac)
     const handleReopenShift = async (shift: any) => {
         const jobName = shift.summary_data?.job_name || shift.notes || 'Công việc'
-        if (!confirm(`Mở lại công việc "${jobName}" để tiếp tục nhập số liệu?`)) return
+        const reason = window.prompt(
+            `Công việc "${jobName}" đã hoàn thành và bị khóa.\nNhập lý do yêu cầu mở lại để quản lý duyệt (tùy chọn):`,
+            'Bổ sung / chỉnh sửa số liệu'
+        )
+        if (reason === null) return
         try {
-            const { error } = await (supabase as any)
-                .from('delivery_shifts')
-                .update({ status: 'open', closed_at: null, closed_by: null, closed_by_name: null })
-                .eq('id', shift.id)
-                .eq('system_code', shiftSystemCode)
+            const { data: existingPending } = await (supabase.from('operation_approval_requests') as any)
+                .select('id')
+                .eq('target_table', 'delivery_shifts')
+                .eq('target_id', shift.id)
+                .eq('action_type', 'reopen_shift')
+                .eq('status', 'pending')
+                .limit(1)
+            if (Array.isArray(existingPending) && existingPending.length > 0) {
+                alert('Công việc này đã có yêu cầu Mở lại đang chờ quản lý duyệt tại mục Duyệt thao tác.')
+                return
+            }
+
+            const companyId = currentSystem?.company_id || profile?.company_id || shift.company_id || null
+            const { error } = await (supabase.from('operation_approval_requests') as any).insert([
+                {
+                    system_code: shift.system_code || shiftSystemCode,
+                    ...(companyId ? { company_id: companyId } : {}),
+                    action_type: 'reopen_shift',
+                    target_table: 'delivery_shifts',
+                    target_id: shift.id,
+                    shift_id: shift.id,
+                    shift_name: jobName,
+                    target_label: jobName,
+                    before_data: shift,
+                    after_data: { status: 'open' },
+                    reason: reason.trim() || 'Yêu cầu mở lại công việc đã hoàn thành để chỉnh sửa / bổ sung',
+                    source_device: 'web',
+                    status: 'pending',
+                    ...(profile?.id ? { requested_by: profile.id } : {}),
+                    requested_by_name: profile?.full_name || 'Nhân viên Web',
+                },
+            ])
             if (error) throw error
 
-            // Nếu lúc bấm Hoàn thành CV hệ thống có tự chốt đợt cuối, gỡ đợt cuối đó ra để tiếp tục nhập vào đợt hiện tại
-            await (supabase as any)
-                .from('delivery_sub_shifts')
-                .delete()
-                .eq('shift_id', shift.id)
-                .eq('system_code', shiftSystemCode)
-                .ilike('notes', '%Chốt đợt cuối%(Hoàn thành CV)%')
-
-            await Promise.all([loadOpenShifts(), loadPastShifts(doneRange)])
-            setSelectedShiftId(shift.id)
-            setDoneSelectedId(null)
-            setPageView('active')
-            showToast(`Đã mở lại công việc "${jobName}"`, 'in')
+            showToast(`Đã gửi yêu cầu mở lại "${jobName}" chờ duyệt tại Duyệt thao tác!`, 'in')
         } catch (err: any) {
-            alert('Lỗi mở lại công việc: ' + (err?.message || err))
+            alert('Lỗi gửi yêu cầu mở lại công việc: ' + (err?.message || err))
         }
     }
 
@@ -2980,6 +3052,8 @@ export default function SoLieuPage() {
                     setCloseShiftModal(true)
                 }}
                 onReloadJournalData={() => loadJournalData()}
+                isSyncingShift={isSyncingShift}
+                onSyncCurrentShift={handleSyncCurrentShift}
             />
 
             {/* 4. BÀN LÀM VIỆC CHÍNH & BÁO CÁO ĐÃ HOÀN THÀNH TÍCH HỢP */}

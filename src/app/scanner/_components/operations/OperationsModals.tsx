@@ -2053,14 +2053,18 @@ export function PastShiftDetailModal({
   if (!visible || !shift) return null
 
   const handleReopen = async () => {
-    if (!window.confirm('Bạn muốn mở lại công việc này để tiếp tục nhập/xuất?')) return
+    const reason = window.prompt(
+      'Công việc đã hoàn thành cần quản lý duyệt để mở lại.\nNhập lý do mở lại (tùy chọn):',
+      'Bổ sung / chỉnh sửa số liệu'
+    )
+    if (reason === null) return
     setProcessing(true)
     try {
-      await reopenDeliveryShift(shift)
-      onReopened(shift)
+      await reopenDeliveryShift(shift, { reason: reason.trim() || null })
+      alert('Đã gửi yêu cầu Mở lại công việc! Sau khi quản lý duyệt tại mục Duyệt thao tác, công việc sẽ chuyển về tab Đang làm.')
       onClose()
     } catch (e: any) {
-      alert('Lỗi mở lại công việc: ' + (e?.message || e))
+      alert(e?.message || 'Không thể gửi yêu cầu mở lại công việc')
     } finally {
       setProcessing(false)
     }

@@ -60,7 +60,7 @@ export function SearchStatsPanel({
           {/* Dòng 1: Tên từ khóa & Tổng số vị trí khớp & Nút xóa */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <div className="truncate text-xs">
                 {searchQuery.trim() ? (
                   <>
@@ -79,7 +79,7 @@ export function SearchStatsPanel({
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-[11px] font-mono font-bold text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded-md border border-cyan-800/50">
+              <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-800/50">
                 {matchingPositions.length} vị trí khớp
               </span>
               <button
@@ -139,7 +139,7 @@ export function SearchStatsPanel({
               type="button"
               onClick={() => setSearchTab('map')}
               className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 ${searchTab === 'map'
-                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 font-black'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 font-black'
                   : 'text-slate-400 hover:text-slate-200'
                 }`}
             >
@@ -159,15 +159,15 @@ export function SearchStatsPanel({
                   setSelectedTierId(null)
                 }}
                 className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1.5 active:scale-95 ${(!selectedWarehouseId || selectedWarehouseId === 'all')
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 font-black'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 font-black'
                     : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white'
                   }`}
               >
                 <Building2 size={12} />
                 <span>Tất cả kho</span>
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-black ${(!selectedWarehouseId || selectedWarehouseId === 'all')
-                    ? 'bg-slate-950/30 text-slate-950'
-                    : 'bg-slate-800 text-cyan-300'
+                    ? 'bg-slate-950/30 text-white'
+                    : 'bg-slate-800 text-emerald-300'
                   }`}>
                   {matchingPositions.length}
                 </span>
@@ -188,14 +188,14 @@ export function SearchStatsPanel({
                       setSelectedTierId(null)
                     }}
                     className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1.5 active:scale-95 ${isSelected
-                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black'
-                        : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-amber-500/50'
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 font-black'
+                        : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-emerald-500/50'
                       }`}
                   >
                     <span>{wh.name}</span>
                     <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-black ${isSelected
-                        ? 'bg-slate-950/30 text-slate-950'
-                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        ? 'bg-slate-950/30 text-white'
+                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                       }`}>
                       🔥 {matchCount}
                     </span>

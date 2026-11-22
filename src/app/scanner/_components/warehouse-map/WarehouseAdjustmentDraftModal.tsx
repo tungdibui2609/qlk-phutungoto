@@ -688,7 +688,7 @@ export default function WarehouseAdjustmentDraftModal({
                     {subItems.map((sub, sIdx) => (
                       <div key={sIdx} className="flex items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                          <span className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 text-[10px] font-bold shrink-0">
+                          <span className="px-1.5 py-0.5 rounded bg-slate-800 text-emerald-300 text-[10px] font-bold shrink-0">
                             {sub.is_new ? 'MỚI' : `SP ${sIdx + 1}`}
                           </span>
                           <div className="min-w-0 flex-1">

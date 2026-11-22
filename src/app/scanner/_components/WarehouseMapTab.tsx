@@ -2013,7 +2013,7 @@ export default function WarehouseMapTab() {
           <div className="flex items-center justify-between text-[9px] font-mono pt-0.5 border-t border-slate-700/60">
             {tagStr ? (
               <span
-                className="truncate max-w-[90px] text-cyan-300 font-bold"
+                className="truncate max-w-[90px] text-emerald-300 font-bold"
                 title={tagStr}
               >
                 TAG: {tagStr}
@@ -2042,7 +2042,7 @@ export default function WarehouseMapTab() {
         <div className="flex items-center justify-between text-[9px] font-mono pt-0.5">
           {tagStr ? (
             <span
-              className="truncate max-w-[95px] text-cyan-300 font-bold"
+              className="truncate max-w-[95px] text-emerald-300 font-bold"
               title={tagStr}
             >
               TAG: {tagStr}
@@ -2080,7 +2080,7 @@ export default function WarehouseMapTab() {
             : isMatched
             ? 'border-amber-400/90 ring-1 ring-amber-400/50 bg-gradient-to-b from-amber-950/50 to-[#131d33] shadow-md shadow-amber-500/20'
             : isOccupied
-            ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
+            ? 'bg-[#131d33] border-emerald-500/50 hover:border-emerald-400'
             : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
         }`}
       >
@@ -2140,13 +2140,13 @@ export default function WarehouseMapTab() {
       {/* ── TOP HEADER & QUICK STATS ────────────────────────────── */}
       <div className="p-2.5 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-sm shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-sm shrink-0">
             <MapPin size={18} />
           </div>
           <div className="min-w-0">
             <h2 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
               <span className="truncate">Sơ Đồ Kho</span>
-              <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold shrink-0">
+              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold shrink-0">
                 ĐÔNG LẠNH
               </span>
             </h2>
@@ -2203,7 +2203,7 @@ export default function WarehouseMapTab() {
             className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition"
             title="Tải lại sơ đồ kho"
           >
-            <RefreshCw size={15} className={refreshing ? 'animate-spin text-cyan-400' : ''} />
+            <RefreshCw size={15} className={refreshing ? 'animate-spin text-emerald-400' : ''} />
           </button>
         </div>
       </div>
@@ -2334,7 +2334,7 @@ export default function WarehouseMapTab() {
             }}
             className={`shrink-0 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition ${
               !selectedWarehouseId || selectedWarehouseId === 'all'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                ? 'bg-emerald-600 text-slate-950 shadow-md shadow-emerald-600/30'
                 : 'bg-slate-800 text-slate-300 hover:text-white'
             }`}
           >
@@ -2354,7 +2354,7 @@ export default function WarehouseMapTab() {
                 }}
                 className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
                   !selectedAisleId
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                    ? 'bg-emerald-600 text-slate-950 shadow-md shadow-emerald-600/30'
                     : 'bg-slate-800 text-slate-300 hover:text-white'
                 }`}
               >
@@ -2374,7 +2374,7 @@ export default function WarehouseMapTab() {
                 }}
                 className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition ${
                   !selectedSlotId
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                    ? 'bg-emerald-600 text-slate-950 shadow-md shadow-emerald-600/30'
                     : 'bg-slate-800 text-slate-300 hover:text-white'
                 }`}
               >
@@ -2391,7 +2391,7 @@ export default function WarehouseMapTab() {
                 onClick={() => setSelectedTierId(null)}
                 className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition ${
                   !selectedTierId
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                    ? 'bg-emerald-600 text-slate-950 shadow-md shadow-emerald-600/30'
                     : 'bg-slate-800 text-slate-300 hover:text-white'
                 }`}
               >
@@ -2403,7 +2403,7 @@ export default function WarehouseMapTab() {
           {selectedTierId && (
             <>
               <ChevronRight size={13} className="text-slate-600 shrink-0" />
-              <span className="shrink-0 px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 font-bold shadow-md shadow-cyan-500/30">
+              <span className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 text-slate-950 font-bold shadow-md shadow-emerald-600/30">
                 {getZoneName(selectedTierId)}
               </span>
             </>
@@ -2415,7 +2415,7 @@ export default function WarehouseMapTab() {
       <div className="flex-1 overflow-y-auto overscroll-y-contain p-3 space-y-3 pb-24">
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center space-y-2 text-slate-400">
-            <RefreshCw size={28} className="animate-spin text-cyan-400" />
+            <RefreshCw size={28} className="animate-spin text-emerald-400" />
             <p className="text-xs">Đang tải sơ đồ kho...</p>
           </div>
         ) : isSearchActive && searchTab === 'breakdown' && breakdownReport ? (
@@ -2431,7 +2431,7 @@ export default function WarehouseMapTab() {
                   <button
                     type="button"
                     onClick={handleExpandAll}
-                    className="text-[10px] text-slate-400 hover:text-cyan-300 underline active:scale-95 transition"
+                    className="text-[10px] text-slate-400 hover:text-emerald-300 underline active:scale-95 transition"
                   >
                     Mở rộng
                   </button>
@@ -2439,7 +2439,7 @@ export default function WarehouseMapTab() {
                   <button
                     type="button"
                     onClick={handleCollapseAll}
-                    className="text-[10px] text-slate-400 hover:text-cyan-300 underline active:scale-95 transition"
+                    className="text-[10px] text-slate-400 hover:text-emerald-300 underline active:scale-95 transition"
                   >
                     Thu gọn
                   </button>
@@ -2496,12 +2496,12 @@ export default function WarehouseMapTab() {
                   )
                 })()}
 
-                <div className="bg-cyan-950/30 border border-cyan-500/30 rounded-xl p-2.5 text-center flex flex-col justify-center min-h-[72px]">
+                <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-2.5 text-center flex flex-col justify-center min-h-[72px]">
                   <div className="text-[10px] text-slate-400 font-medium">VỊ TRÍ LƯU</div>
-                  <div className="text-base font-black text-cyan-300 font-mono leading-tight mt-0.5">
+                  <div className="text-base font-black text-emerald-300 font-mono leading-tight mt-0.5">
                     {breakdownReport.totalPositions}
                   </div>
-                  <div className="text-[10px] text-cyan-400/80 font-medium">vị trí (ô)</div>
+                  <div className="text-[10px] text-emerald-400/80 font-medium">vị trí (ô)</div>
                 </div>
 
                 <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-2.5 text-center flex flex-col justify-center min-h-[72px]">
@@ -2532,8 +2532,8 @@ export default function WarehouseMapTab() {
                         <span className="text-slate-400">
                           {isWhExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         </span>
-                        <div className="w-6 h-6 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center shrink-0">
-                          <Building2 size={13} className="text-cyan-400" />
+                        <div className="w-6 h-6 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                          <Building2 size={13} className="text-emerald-400" />
                         </div>
                         <span className="text-xs font-bold text-white uppercase truncate">
                           {whAcc.warehouse.name}
@@ -2559,7 +2559,7 @@ export default function WarehouseMapTab() {
                             setSelectedTierId(null)
                             setSearchTab('map')
                           }}
-                          className="px-2 py-1 rounded-lg bg-cyan-950/80 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-800/60 text-[10px] font-bold flex items-center gap-1 transition shrink-0 active:scale-95"
+                          className="px-2 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-600 text-emerald-300 hover:text-slate-950 border border-emerald-800/60 text-[10px] font-bold flex items-center gap-1 transition shrink-0 active:scale-95"
                         >
                           <MapPin size={11} />
                           <span>Sơ đồ</span>
@@ -2613,7 +2613,7 @@ export default function WarehouseMapTab() {
                                       setSelectedTierId(null)
                                       setSearchTab('map')
                                     }}
-                                    className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition active:scale-95"
+                                    className="p-1 rounded-md text-slate-400 hover:text-emerald-300 hover:bg-slate-800 transition active:scale-95"
                                   >
                                     <ExternalLink size={12} />
                                   </button>
@@ -2630,8 +2630,8 @@ export default function WarehouseMapTab() {
                                         key={slotAcc.slot.id}
                                         className={`rounded-lg border transition overflow-hidden ${
                                           isSlotExpanded
-                                            ? 'bg-[#0c1629] border-cyan-500/40'
-                                            : 'bg-slate-900/60 border-slate-800/60 hover:border-cyan-500/30'
+                                            ? 'bg-[#0c1629] border-emerald-500/40'
+                                            : 'bg-slate-900/60 border-slate-800/60 hover:border-emerald-500/30'
                                         }`}
                                       >
                                         <div className="flex items-center justify-between px-2.5 py-1.5 text-xs gap-2">
@@ -2642,7 +2642,7 @@ export default function WarehouseMapTab() {
                                           >
                                             <span
                                               className={
-                                                isSlotExpanded ? 'text-cyan-400' : 'text-slate-500'
+                                                isSlotExpanded ? 'text-emerald-400' : 'text-slate-500'
                                               }
                                             >
                                               {isSlotExpanded ? (
@@ -2653,7 +2653,7 @@ export default function WarehouseMapTab() {
                                             </span>
                                             <span
                                               className={`font-semibold truncate ${
-                                                isSlotExpanded ? 'text-cyan-300' : 'text-slate-300'
+                                                isSlotExpanded ? 'text-emerald-300' : 'text-slate-300'
                                               }`}
                                             >
                                               {slotAcc.slot.name}
@@ -2693,7 +2693,7 @@ export default function WarehouseMapTab() {
                                                 setSelectedTierId(null)
                                                 setSearchTab('map')
                                               }}
-                                              className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline px-1 py-0.5 active:scale-95 transition"
+                                              className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 hover:underline px-1 py-0.5 active:scale-95 transition"
                                             >
                                               Xem vị trí
                                             </button>
@@ -2782,7 +2782,7 @@ export default function WarehouseMapTab() {
                                                             }
                                                             setSearchTab('map')
                                                           }}
-                                                          className="px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-800/70 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500 hover:text-slate-950 transition"
+                                                          className="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-800/70 text-[10px] font-bold text-emerald-300 hover:bg-emerald-600 hover:text-slate-950 transition"
                                                         >
                                                           Xem tầng
                                                         </button>
@@ -2901,7 +2901,7 @@ export default function WarehouseMapTab() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Building2 size={14} className="text-cyan-400" />
+                <Building2 size={14} className="text-emerald-400" />
                 <span>CHỌN KHO ĐỂ XEM DÃY / KỆ:</span>
               </span>
               <span className="text-[10px] text-slate-500 font-mono">
@@ -2929,16 +2929,16 @@ export default function WarehouseMapTab() {
                     }}
                     className={`p-3 rounded-xl bg-[#111827] border text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group ${
                       whMatchCount > 0
-                        ? 'border-cyan-500/80 shadow-lg shadow-cyan-500/10'
-                        : 'border-slate-800 hover:border-cyan-500/50'
+                        ? 'border-emerald-500/80 shadow-lg shadow-emerald-600/10'
+                        : 'border-slate-800 hover:border-emerald-500/50'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-cyan-400 shrink-0">
+                        <span className="text-emerald-400 shrink-0">
                           <Building2 size={16} />
                         </span>
-                        <span className="font-black text-sm text-white group-hover:text-cyan-300 transition truncate">
+                        <span className="font-black text-sm text-white group-hover:text-emerald-300 transition truncate">
                           {wh.name}
                         </span>
                       </div>
@@ -2947,7 +2947,7 @@ export default function WarehouseMapTab() {
                           🔥 {whMatchCount} khớp
                         </span>
                       ) : (
-                        <span className="text-xs text-cyan-400 font-bold flex items-center gap-0.5 shrink-0 whitespace-nowrap">
+                        <span className="text-xs text-emerald-400 font-bold flex items-center gap-0.5 shrink-0 whitespace-nowrap">
                           <span>Xem Dãy →</span>
                         </span>
                       )}
@@ -3005,7 +3005,7 @@ export default function WarehouseMapTab() {
                   setSelectedSlotId(null)
                   setSelectedTierId(null)
                 }}
-                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition"
+                className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition"
               >
                 <ArrowLeft size={14} />
                 <span>Quay lại danh sách Kho</span>
@@ -3017,7 +3017,7 @@ export default function WarehouseMapTab() {
 
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Layers size={14} className="text-cyan-400" />
+                <Layers size={14} className="text-emerald-400" />
                 <span>CHỌN DÃY / SẢNH ({getZoneName(selectedWarehouseId)}):</span>
               </span>
 
@@ -3069,7 +3069,7 @@ export default function WarehouseMapTab() {
                       }}
                       className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
                         wh.id === selectedWarehouseId
-                          ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
+                          ? 'bg-emerald-600 text-slate-950 font-black shadow-md shadow-emerald-600/30'
                           : 'bg-slate-800 text-slate-400 hover:text-white'
                       }`}
                     >
@@ -3104,12 +3104,12 @@ export default function WarehouseMapTab() {
                     }}
                     className={`p-3.5 rounded-2xl bg-[#111827] border text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group cursor-pointer ${
                       aisleMatchCount > 0
-                        ? 'border-cyan-500/80 shadow-lg shadow-cyan-500/10'
-                        : 'border-slate-800 hover:border-cyan-500/50'
+                        ? 'border-emerald-500/80 shadow-lg shadow-emerald-600/10'
+                        : 'border-slate-800 hover:border-emerald-500/50'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-black text-sm text-white group-hover:text-cyan-300 transition flex items-center gap-1.5 min-w-0 truncate">
+                      <span className="font-black text-sm text-white group-hover:text-emerald-300 transition flex items-center gap-1.5 min-w-0 truncate">
                         {isHall ? '🏢' : '🚪'} {aisle.name}
                         {isHall && (
                           <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -3149,7 +3149,7 @@ export default function WarehouseMapTab() {
                             🔥 {aisleMatchCount} khớp
                           </span>
                         ) : (
-                          <span className="text-xs text-cyan-400 font-bold flex items-center gap-0.5">
+                          <span className="text-xs text-emerald-400 font-bold flex items-center gap-0.5">
                             {isHall ? 'Xem vị trí →' : 'Xem Ô →'}
                           </span>
                         )}
@@ -3192,7 +3192,7 @@ export default function WarehouseMapTab() {
                   setSelectedSlotId(null)
                   setSelectedTierId(null)
                 }}
-                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition"
+                className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition"
               >
                 <ArrowLeft size={14} />
                 <span>Quay lại Dãy / Sảnh</span>
@@ -3284,7 +3284,7 @@ export default function WarehouseMapTab() {
                   <button
                     type="button"
                     onClick={() => setHallVisibleLimit(prev => prev + 160)}
-                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-xs font-bold transition"
+                    className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 text-xs font-bold transition"
                   >
                     Xem thêm ({currentPositions.length - hallVisibleLimit} vị trí còn lại)
                   </button>
@@ -3299,7 +3299,7 @@ export default function WarehouseMapTab() {
               <button
                 type="button"
                 onClick={() => setSelectedAisleId(null)}
-                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition"
+                className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition"
               >
                 <ArrowLeft size={14} />
                 <span>Quay lại Dãy</span>
@@ -3329,7 +3329,7 @@ export default function WarehouseMapTab() {
                     }}
                     className={`p-3.5 rounded-2xl bg-[#111827] border text-center transition hover:bg-slate-900 active:scale-[0.98] space-y-1.5 group shadow-sm flex flex-col items-center justify-between min-h-[112px] ${
                       slotMatchCount > 0
-                        ? 'border-cyan-500/80 shadow-md shadow-cyan-500/10'
+                        ? 'border-emerald-500/80 shadow-md shadow-emerald-600/10'
                         : 'border-slate-800 hover:border-emerald-500/80'
                     }`}
                   >
@@ -3371,7 +3371,7 @@ export default function WarehouseMapTab() {
               <button
                 type="button"
                 onClick={() => setSelectedSlotId(null)}
-                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition"
+                className="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition"
               >
                 <ArrowLeft size={14} />
                 <span>Quay lại Ô kệ</span>
@@ -3403,7 +3403,7 @@ export default function WarehouseMapTab() {
                 onClick={() => setSelectedTierId(null)}
                 className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition ${
                   !selectedTierId
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                    ? 'bg-emerald-600 text-slate-950 shadow-md shadow-emerald-600/30'
                     : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
@@ -3420,7 +3420,7 @@ export default function WarehouseMapTab() {
                     onClick={() => setSelectedTierId(tier.id)}
                     className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition flex items-center gap-1.5 ${
                       selectedTierId === tier.id
-                        ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                        ? 'bg-emerald-600 text-slate-950 shadow-md shadow-emerald-600/30'
                         : 'bg-slate-800 text-slate-400 hover:text-white'
                     }`}
                   >
@@ -3452,7 +3452,7 @@ export default function WarehouseMapTab() {
                     <button
                       type="button"
                       onClick={handleExpandAllTiers}
-                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 text-cyan-300 hover:bg-slate-700 border border-slate-700 transition active:scale-95 flex items-center gap-1 shadow-xs"
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 text-emerald-300 hover:bg-slate-700 border border-slate-700 transition active:scale-95 flex items-center gap-1 shadow-xs"
                     >
                       <span>+ Mở tất cả</span>
                     </button>
@@ -3495,14 +3495,14 @@ export default function WarehouseMapTab() {
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-slate-500 group-hover:text-cyan-400 transition shrink-0">
+                          <span className="text-slate-500 group-hover:text-emerald-400 transition shrink-0">
                             {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                           </span>
-                          <span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0" />
-                          <span className="font-black text-xs text-white uppercase tracking-wider group-hover:text-cyan-300 transition">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                          <span className="font-black text-xs text-white uppercase tracking-wider group-hover:text-emerald-300 transition">
                             {tier.name}
                           </span>
-                          <span className="text-[10px] text-cyan-300 font-mono">
+                          <span className="text-[10px] text-emerald-300 font-mono">
                             ({stats.occupied}/{stats.total} vị trí có hàng)
                           </span>
                           {isSearchActive && tierMatchCount > 0 && (
@@ -3530,7 +3530,7 @@ export default function WarehouseMapTab() {
             ) : (
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between px-1">
-                  <span className="font-black text-xs text-cyan-300 uppercase flex items-center gap-1.5">
+                  <span className="font-black text-xs text-emerald-300 uppercase flex items-center gap-1.5">
                     <span>🏢 {getZoneName(selectedTierId)}</span>
                     <span className="text-[10px] text-slate-400 font-mono font-normal">
                       ({currentPositions.filter(p => p.lot_id).length}/{currentPositions.length} vị

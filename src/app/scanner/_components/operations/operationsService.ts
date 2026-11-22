@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabaseClient'
 import {
   addHiddenId,
+  canBypassOperationApproval,
   reconcileHiddenIds,
   submitScannerApprovalRequest,
 } from './approvalService'
@@ -851,27 +852,43 @@ export async function updateShiftPinnedProducts(
   pinnedProducts: ShiftProductItem[],
   currentSummaryData?: any
 ): Promise<void> {
-  const nextSummary = {
+  const localSummary = {
     ...(currentSummaryData || {}),
     pinned_products: pinnedProducts,
   }
 
   const cached = getStorageJson<DeliveryShift[]>(CACHE_KEYS.OPEN_SHIFTS, [])
-  const updatedCache = cached.map(s => (s.id === shiftId ? { ...s, summary_data: nextSummary } : s))
+  const updatedCache = cached.map(s => (s.id === shiftId ? { ...s, summary_data: localSummary } : s))
   setStorageJson(CACHE_KEYS.OPEN_SHIFTS, updatedCache)
 
   if (shiftId.startsWith('local_')) {
-    enqueueOfflineAction('UPDATE_PINNED_PRODUCTS', { shiftId, summaryData: nextSummary })
+    enqueueOfflineAction('UPDATE_PINNED_PRODUCTS', { shiftId, summaryData: localSummary })
     return
   }
 
   try {
+    // Lấy summary_data mới nhất từ server để gộp, tránh ghi đè thao tác song song của đồng nghiệp
+    const { data: serverShift } = await (supabase.from('delivery_shifts') as any)
+      .select('summary_data')
+      .eq('id', shiftId)
+      .maybeSingle()
+    const mergedSummary = {
+      ...(currentSummaryData || {}),
+      ...(serverShift?.summary_data || {}),
+      pinned_products: pinnedProducts,
+    }
     const { error } = await (supabase.from('delivery_shifts') as any)
-      .update({ summary_data: nextSummary })
+      .update({ summary_data: mergedSummary })
       .eq('id', shiftId)
     if (error) throw error
+    setStorageJson(
+      CACHE_KEYS.OPEN_SHIFTS,
+      getStorageJson<DeliveryShift[]>(CACHE_KEYS.OPEN_SHIFTS, []).map(s =>
+        s.id === shiftId ? { ...s, summary_data: mergedSummary } : s
+      )
+    )
   } catch {
-    enqueueOfflineAction('UPDATE_PINNED_PRODUCTS', { shiftId, summaryData: nextSummary })
+    enqueueOfflineAction('UPDATE_PINNED_PRODUCTS', { shiftId, summaryData: localSummary })
   }
 }
 
@@ -971,26 +988,53 @@ export async function closeDeliveryShift(params: {
   }
 }
 
-export async function reopenDeliveryShift(shift: DeliveryShift): Promise<void> {
-  const updateData = {
-    status: 'open' as const,
-    closed_at: null,
-    closed_by: null,
-    closed_by_name: null,
+export async function reopenDeliveryShift(
+  shift: DeliveryShift,
+  meta?: { reason?: string | null; user?: any }
+): Promise<void> {
+  // Chống gửi trùng nếu công việc này đang có yêu cầu mở lại chờ duyệt
+  const { data: existingPending } = await (supabase.from('operation_approval_requests') as any)
+    .select('id')
+    .eq('target_table', 'delivery_shifts')
+    .eq('target_id', shift.id)
+    .eq('action_type', 'reopen_shift')
+    .eq('status', 'pending')
+    .limit(1)
+  if (Array.isArray(existingPending) && existingPending.length > 0) {
+    throw new Error('Công việc này đã có yêu cầu Mở lại đang chờ quản lý duyệt.')
   }
 
-  const { error } = await (supabase.from('delivery_shifts') as any)
-    .update(updateData)
-    .eq('id', shift.id)
-  if (error) throw error
+  let uid = meta?.user?.id || null
+  let reqName = meta?.user?.full_name || meta?.user?.email || 'Nhân viên Scanner'
+  if (!uid) {
+    const { data: authData } = await supabase.auth.getUser()
+    uid = authData?.user?.id || null
+    if (uid) {
+      const { data: prof } = await (supabase.from('user_profiles') as any)
+        .select('full_name')
+        .eq('id', uid)
+        .maybeSingle()
+      if (prof?.full_name) reqName = prof.full_name
+    }
+  }
 
-  const pastCached = getStorageJson<DeliveryShift[]>(CACHE_KEYS.PAST_SHIFTS, [])
-  setStorageJson(
-    CACHE_KEYS.PAST_SHIFTS,
-    pastCached.filter(s => s.id !== shift.id)
-  )
-  const openCached = getStorageJson<DeliveryShift[]>(CACHE_KEYS.OPEN_SHIFTS, [])
-  setStorageJson(CACHE_KEYS.OPEN_SHIFTS, [{ ...shift, ...updateData }, ...openCached])
+  const shiftName = shift.summary_data?.job_name || shift.notes || 'Công việc'
+  await submitScannerApprovalRequest({
+    systemCode: shift.system_code || getShiftSystemCode(),
+    companyId: shift.company_id || null,
+    actionType: 'reopen_shift',
+    targetTable: 'delivery_shifts',
+    targetId: shift.id,
+    shiftId: shift.id,
+    shiftName,
+    targetLabel: shiftName,
+    beforeData: shift,
+    afterData: { status: 'open' },
+    reason: meta?.reason || 'Yêu cầu mở lại công việc đã hoàn thành để chỉnh sửa / bổ sung',
+    requestedBy: uid,
+    requestedByName: reqName,
+    sourceDevice: 'scanner',
+  })
 }
 
 export async function deleteDeliveryShift(
@@ -1012,21 +1056,30 @@ export async function deleteDeliveryShift(
     const shiftName =
       meta?.shiftName || serverShift?.summary_data?.job_name || serverShift?.notes || 'Công việc'
 
-    await submitScannerApprovalRequest({
-      systemCode: sysCode,
-      companyId: meta?.companyId ?? serverShift?.company_id ?? null,
-      actionType: 'delete_shift',
-      targetTable: 'delivery_shifts',
-      targetId: shiftId,
-      shiftId,
-      shiftName,
-      targetLabel: shiftName,
-      beforeData: serverShift || { id: shiftId, job_name: shiftName },
-      requestedBy: meta?.user?.id || null,
-      requestedByName: meta?.user?.full_name || meta?.user?.email || 'Nhân viên Scanner',
-      sourceDevice: 'scanner',
-    })
-    addHiddenId('shifts', shiftId)
+    const bypass = await canBypassOperationApproval('delete_shift', sysCode, meta?.user?.id)
+    if (bypass) {
+      await (supabase.from('delivery_journal') as any).delete().ilike('notes', `%[CV_ID: ${shiftId}]%`)
+      await (supabase.from('delivery_sub_shifts') as any).delete().eq('shift_id', shiftId)
+      await (supabase.from('operation_images') as any).delete().eq('shift_id', shiftId)
+      const { error } = await (supabase.from('delivery_shifts') as any).delete().eq('id', shiftId)
+      if (error) throw error
+    } else {
+      await submitScannerApprovalRequest({
+        systemCode: sysCode,
+        companyId: meta?.companyId ?? serverShift?.company_id ?? null,
+        actionType: 'delete_shift',
+        targetTable: 'delivery_shifts',
+        targetId: shiftId,
+        shiftId,
+        shiftName,
+        targetLabel: shiftName,
+        beforeData: serverShift || { id: shiftId, job_name: shiftName },
+        requestedBy: meta?.user?.id || null,
+        requestedByName: meta?.user?.full_name || meta?.user?.email || 'Nhân viên Scanner',
+        sourceDevice: 'scanner',
+      })
+      addHiddenId('shifts', shiftId)
+    }
   } else {
     const queue = getOfflineQueue()
     const cleaned = queue.filter(q => {
@@ -1470,6 +1523,15 @@ export async function updateShiftJournalEntry(params: {
   }
 
   const sysCode = params.systemCode || getActiveSystemCode()
+  const bypass = await canBypassOperationApproval('update_journal', sysCode, params.user?.id)
+  if (bypass) {
+    const { error } = await (supabase.from('delivery_journal') as any)
+      .update(updateFields)
+      .eq('id', journalId)
+    if (error) throw error
+    return
+  }
+
   await submitScannerApprovalRequest({
     systemCode: sysCode,
     companyId: params.companyId ?? null,
@@ -1504,6 +1566,15 @@ export async function deleteShiftJournalEntry(
   }
 
   const sysCode = meta?.systemCode || getActiveSystemCode()
+  const bypass = await canBypassOperationApproval('delete_journal', sysCode, meta?.user?.id)
+  if (bypass) {
+    const { error } = await (supabase.from('delivery_journal') as any)
+      .delete()
+      .eq('id', journalId)
+    if (error) throw error
+    return
+  }
+
   await submitScannerApprovalRequest({
     systemCode: sysCode,
     companyId: meta?.companyId ?? null,
@@ -1547,22 +1618,32 @@ export async function saveShiftReconciliations(
   const localKey = `${CACHE_KEYS.RECONCILE_PREFIX}${shiftId}`
   setStorageJson(localKey, sessions)
 
-  const nextSummary = {
+  const localSummary = {
     ...(currentSummaryData || {}),
     reconciliations: sessions,
   }
 
   if (shiftId.startsWith('local_')) {
-    enqueueOfflineAction('SAVE_RECONCILE', { shiftId, summaryData: nextSummary })
+    enqueueOfflineAction('SAVE_RECONCILE', { shiftId, summaryData: localSummary })
     return
   }
 
   try {
+    // Gộp với summary_data mới nhất trên server để không ghi đè sản phẩm ghim / chốt tạm của đồng nghiệp
+    const { data: serverShift } = await (supabase.from('delivery_shifts') as any)
+      .select('summary_data')
+      .eq('id', shiftId)
+      .maybeSingle()
+    const mergedSummary = {
+      ...(currentSummaryData || {}),
+      ...(serverShift?.summary_data || {}),
+      reconciliations: sessions,
+    }
     await (supabase.from('delivery_shifts') as any)
-      .update({ summary_data: nextSummary })
+      .update({ summary_data: mergedSummary })
       .eq('id', shiftId)
   } catch {
-    enqueueOfflineAction('SAVE_RECONCILE', { shiftId, summaryData: nextSummary })
+    enqueueOfflineAction('SAVE_RECONCILE', { shiftId, summaryData: localSummary })
   }
 }
 

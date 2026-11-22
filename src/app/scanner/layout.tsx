@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import SwRegister from './SwRegister'
+import { ScannerThemeProvider } from './_components/ScannerThemeContext'
 
 export const metadata: Metadata = {
   title: 'Chánh Thu - Máy Quét Pallet & Tem Thùng',
@@ -40,7 +41,7 @@ export default function ScannerLayout({ children }: { children: React.ReactNode 
       }}
     >
       <SwRegister />
-      {children}
+      <ScannerThemeProvider>{children}</ScannerThemeProvider>
     </div>
   )
 }

@@ -20,7 +20,12 @@ import {
   Eye,
   EyeOff,
   Check,
+  Sun,
+  Moon,
+  Palette,
+  ChevronRight,
 } from 'lucide-react'
+import { useScannerTheme, SCANNER_THEME_TAB_META } from './ScannerThemeContext'
 import type { ScannerTab, ScannerUserProfile } from './types'
 import { supabase } from '@/lib/supabaseClient'
 import {
@@ -100,6 +105,8 @@ export function ScannerSettingsTab({
   handleTestConnection,
   handleVersionTap,
 }: ScannerSettingsTabProps) {
+  const { isDark, tabThemes, setTabTheme, setAllTabsTheme } = useScannerTheme()
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false)
   // Đồng bộ All-in-One trước ca làm việc
   const [syncingAll, setSyncingAll] = useState(false)
   const [syncAllStatus, setSyncAllStatus] = useState<string | null>(null)
@@ -287,6 +294,120 @@ export function ScannerSettingsTab({
 
   return (
     <div className="flex-1 overflow-y-auto overscroll-contain bg-[#0b0f19] p-4 space-y-4">
+      {/* 0. Nút mở Cài đặt Giao diện (Theme) riêng cho từng Menu */}
+      <button
+        type="button"
+        onClick={() => setIsThemeModalOpen(true)}
+        className="w-full p-4 rounded-2xl bg-[#111827] border border-slate-800 flex items-center justify-between gap-3 text-left active:scale-[0.99] transition"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center shrink-0 text-indigo-400">
+            <Palette size={20} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-extrabold text-slate-100">
+              Cài Đặt Giao Diện (Theme) Từng Menu
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5 truncate">
+              Tùy chỉnh Sáng / Tối riêng cho từng tab ({SCANNER_THEME_TAB_META.filter(t => tabThemes[t.key] === 'light').length} Sáng · {SCANNER_THEME_TAB_META.filter(t => tabThemes[t.key] === 'dark').length} Tối)
+            </div>
+          </div>
+        </div>
+        <ChevronRight size={18} className="text-slate-400 shrink-0" />
+      </button>
+
+      {/* Modal Tùy Chỉnh Theme Sáng / Tối Cho Từng Menu */}
+      {isThemeModalOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs">
+          <div className="absolute inset-0" onClick={() => setIsThemeModalOpen(false)} />
+          <div className="relative z-10 w-full max-w-md mx-auto rounded-t-3xl bg-[#111827] border-t border-slate-800 p-4 pb-7 max-h-[85dvh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Palette size={18} className="text-indigo-400" />
+                <span className="text-sm font-extrabold text-slate-100">
+                  Giao Diện Sáng / Tối Theo Từng Menu
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsThemeModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 my-3">
+              <button
+                type="button"
+                onClick={() => setAllTabsTheme('light')}
+                className="py-2 px-3 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-300 text-xs font-extrabold flex items-center justify-center gap-1.5"
+              >
+                <Sun size={14} />
+                <span>Đặt tất cả Sáng</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllTabsTheme('dark')}
+                className="py-2 px-3 rounded-xl bg-indigo-500/15 border border-indigo-500/35 text-indigo-300 text-xs font-extrabold flex items-center justify-center gap-1.5"
+              >
+                <Moon size={14} />
+                <span>Đặt tất cả Tối</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
+              {SCANNER_THEME_TAB_META.map(item => {
+                const curMode = tabThemes[item.key] || 'light'
+                const itemIsDark = curMode === 'dark'
+                return (
+                  <div
+                    key={item.key}
+                    className="p-2.5 rounded-2xl bg-[#1e293b] border border-slate-700 flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-extrabold text-slate-100 truncate">
+                        {item.label}
+                      </div>
+                      <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                        {item.desc}
+                      </div>
+                    </div>
+
+                    <div className="flex bg-[#0f172a] p-1 rounded-xl border border-slate-700 gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setTabTheme(item.key, 'light')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition ${
+                          !itemIsDark
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        <Sun size={12} />
+                        <span>Sáng</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTabTheme(item.key, 'dark')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition ${
+                          itemIsDark
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        <Moon size={12} />
+                        <span>Tối</span>
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1. User Profile Card (Matching SettingsScreen.tsx) */}
       <div className="p-4 rounded-2xl bg-[#111827] border border-slate-800 space-y-3">
         <div className="flex items-center justify-between">

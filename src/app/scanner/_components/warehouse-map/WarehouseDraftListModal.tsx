@@ -810,7 +810,7 @@ export default function WarehouseDraftListModal({
 
                       <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-400">
                         {item.lot_code && (
-                          <span className="px-1.5 py-0.5 rounded bg-slate-800 font-mono text-cyan-300">
+                          <span className="px-1.5 py-0.5 rounded bg-slate-800 font-mono text-emerald-300">
                             {item.lot_code}
                           </span>
                         )}

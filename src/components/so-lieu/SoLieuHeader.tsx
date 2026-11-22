@@ -79,6 +79,8 @@ interface SoLieuHeaderProps {
     onOpenInterimCloseModal: () => void
     onOpenCloseShiftModal: () => void
     onReloadJournalData: () => void
+    isSyncingShift?: boolean
+    onSyncCurrentShift?: () => void
 }
 
 export default function SoLieuHeader({
@@ -135,6 +137,8 @@ export default function SoLieuHeader({
     onOpenInterimCloseModal,
     onOpenCloseShiftModal,
     onReloadJournalData,
+    isSyncingShift = false,
+    onSyncCurrentShift,
 }: SoLieuHeaderProps) {
     return (
         <>
@@ -229,6 +233,19 @@ export default function SoLieuHeader({
                                     <Plus className="w-3.5 h-3.5" /> Tạo công việc
                                 </button>
                             )}
+                            <button
+                                type="button"
+                                onClick={onSyncCurrentShift || onReloadJournalData}
+                                disabled={isSyncingShift || loadingData}
+                                title="Đồng bộ 2 chiều & tải đầy đủ dữ liệu phiên làm việc này"
+                                aria-label="Đồng bộ phiên làm việc"
+                                className="relative w-10 h-10 shrink-0 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 flex items-center justify-center active:scale-95 transition disabled:opacity-60"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${(isSyncingShift || loadingData) ? 'animate-spin' : ''}`} />
+                                {offlineQueueCount > 0 && !isSyncingShift && (
+                                    <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-white dark:border-zinc-900" />
+                                )}
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => setMobileMenu(true)}
@@ -510,12 +527,18 @@ export default function SoLieuHeader({
                                 </Link>
                                 <button
                                     type="button"
-                                    onClick={onReloadJournalData}
-                                    disabled={loadingData}
-                                    title="Tải lại số liệu"
-                                    className="w-8 h-8 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-500 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center justify-center"
+                                    onClick={onSyncCurrentShift || onReloadJournalData}
+                                    disabled={isSyncingShift || loadingData}
+                                    title="Đồng bộ 2 chiều & tải đầy đủ dữ liệu phiên làm việc này"
+                                    className="relative h-8 px-2.5 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-xs font-bold flex items-center gap-1.5 transition disabled:opacity-60"
                                 >
-                                    <RefreshCw className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin' : ''}`} />
+                                    <RefreshCw className={`w-3.5 h-3.5 ${(isSyncingShift || loadingData) ? 'animate-spin' : ''}`} />
+                                    <span>{isSyncingShift ? 'Đang đồng bộ...' : 'Đồng bộ phiên'}</span>
+                                    {offlineQueueCount > 0 && !isSyncingShift && (
+                                        <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-black leading-tight">
+                                            {offlineQueueCount}
+                                        </span>
+                                    )}
                                 </button>
                             </div>
                         </>

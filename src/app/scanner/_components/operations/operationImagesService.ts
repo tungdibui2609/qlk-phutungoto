@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabaseClient'
 import {
   addHiddenId,
+  canBypassOperationApproval,
   reconcileHiddenIds,
   submitScannerApprovalRequest,
 } from './approvalService'
@@ -546,6 +547,16 @@ export async function deleteOperationImage(img: OperationImageRecord): Promise<v
         )
       }
     } catch {}
+    return
+  }
+
+  const bypass = await canBypassOperationApproval('delete_image', img.system_code)
+  if (bypass) {
+    if (img.storage_path) {
+      await supabase.storage.from('operation-images').remove([img.storage_path]).catch(() => {})
+    }
+    const { error } = await (supabase.from('operation_images') as any).delete().eq('id', img.id)
+    if (error) throw error
     return
   }
 

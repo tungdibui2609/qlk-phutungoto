@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { useScannerTheme } from './ScannerThemeContext'
 import {
   Camera,
   CloudDownload,
@@ -27,6 +28,7 @@ import {
   Calendar,
   Scale,
   Loader2,
+  RefreshCw,
   Image as ImageIcon,
   FolderOpen,
   Moon,
@@ -160,6 +162,7 @@ export function OperationsDataTab({
   systemCode,
   userProfile,
 }: OperationsDataTabProps) {
+  const { isDark } = useScannerTheme()
   const activeSysCode = useMemo(() => getActiveSystemCode(systemCode), [systemCode])
 
   const userObj = useMemo(
@@ -445,6 +448,58 @@ export function OperationsDataTab({
   }, [mainTab, doneMode, pastShifts, activeSysCode])
 
   // ── OFFLINE SYNC HANDLERS ──
+  const [syncingCurrentShift, setSyncingCurrentShift] = useState(false)
+
+  const handleSyncCurrentShift = async () => {
+    if (syncingCurrentShift) return
+    setSyncingCurrentShift(true)
+    try {
+      // 1. Đẩy toàn bộ số liệu & ảnh offline cục bộ lên máy chủ trước
+      const pushRes = await syncOperationsOfflineQueue().catch(() => ({ syncedCount: 0 }))
+      const pushedImages = await syncOfflineOperationImages().catch(() => 0)
+      await refreshPendingQueueCount()
+
+      // 2. Tải mới nhất thông tin ca đang mở + sản phẩm từ máy chủ
+      const [openList, prods] = await Promise.all([
+        getOpenShifts(activeSysCode),
+        getWarehouseProducts(activeSysCode),
+      ])
+      setOpenShifts(openList)
+      setAllProducts(prods)
+
+      const targetId = selectedShift?.id
+      const freshShift = targetId
+        ? openList.find(s => s.id === targetId) || null
+        : openList[0] || null
+
+      if (freshShift) {
+        setSelectedShiftId(freshShift.id)
+        await loadSelectedShiftDetails(freshShift)
+        const pushedMsg =
+          pushRes.syncedCount > 0 || pushedImages > 0
+            ? `Đã gửi ${pushRes.syncedCount} lượt${pushedImages > 0 ? `, ${pushedImages} ảnh` : ''} • `
+            : ''
+        showToast(
+          `${pushedMsg}Đã đồng bộ đầy đủ phiên "${freshShift.summary_data?.job_name || freshShift.notes || 'Công việc'}"!`
+        )
+      } else if (targetId) {
+        setSelectedShiftId(openList[0]?.id || null)
+        if (openList[0]) {
+          await loadSelectedShiftDetails(openList[0])
+        } else {
+          await loadSelectedShiftDetails(null)
+        }
+        showToast('Phiên làm việc trước đã hoàn thành trên máy chủ. Đã tải lại danh sách mới nhất.')
+      } else {
+        showToast('Đã đồng bộ danh sách công việc mới nhất.')
+      }
+    } catch {
+      showToast('Chưa thể đồng bộ (mất kết nối). Dữ liệu offline vẫn được giữ an toàn.')
+    } finally {
+      setSyncingCurrentShift(false)
+    }
+  }
+
   const handleSyncOfflineQueueNow = async () => {
     if (syncingOffline) return
     setSyncingOffline(true)
@@ -1272,7 +1327,11 @@ export function OperationsDataTab({
   )
 
   return (
-    <div className="flex flex-col h-full bg-stone-50 text-stone-900 select-none overflow-hidden">
+    <div
+      className={`flex flex-col h-full select-none overflow-hidden ${
+        isDark ? 'bg-[#0b1120] text-slate-100' : 'bg-stone-50 text-stone-900'
+      }`}
+    >
       {/* Toast Notification */}
       {toastMsg && (
         <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold shadow-xl border border-emerald-400 max-w-[90vw] text-center">
@@ -1312,16 +1371,28 @@ export function OperationsDataTab({
         </div>
       )}
 
-      {/* ── TOP HEADER GỌN SÁNG CHUẨN /SO-LIEU MOBILE ── */}
-      <div className="px-3 pt-2.5 pb-2 bg-white border-b border-stone-200 space-y-2 shrink-0">
+      {/* ── TOP HEADER GỌN SÁNG/TỐI CHUẨN /SO-LIEU MOBILE ── */}
+      <div
+        className={`px-3 pt-2.5 pb-2 border-b space-y-2 shrink-0 ${
+          isDark ? 'bg-[#0f172a] border-slate-800' : 'bg-white border-stone-200'
+        }`}
+      >
         {/* Hàng 1: Segmented Pill Đang làm / Đã hoàn thành */}
-        <div className="grid grid-cols-2 gap-1 p-1 bg-stone-100 rounded-full">
+        <div
+          className={`grid grid-cols-2 gap-1 p-1 rounded-full ${
+            isDark ? 'bg-[#1e293b]' : 'bg-stone-100'
+          }`}
+        >
           <button
             type="button"
             onClick={() => setMainTab('active')}
             className={`h-8 rounded-full text-xs font-extrabold flex items-center justify-center gap-1.5 transition ${
               mainTab === 'active'
-                ? 'bg-white text-indigo-600 shadow-xs'
+                ? isDark
+                  ? 'bg-slate-700 text-white shadow-xs'
+                  : 'bg-white text-indigo-600 shadow-xs'
+                : isDark
+                ? 'text-slate-400 hover:text-slate-200'
                 : 'text-stone-500 hover:text-stone-700'
             }`}
           >
@@ -1338,7 +1409,11 @@ export function OperationsDataTab({
             onClick={() => setMainTab('done')}
             className={`h-8 rounded-full text-xs font-extrabold flex items-center justify-center gap-1.5 transition ${
               mainTab === 'done'
-                ? 'bg-white text-indigo-600 shadow-xs'
+                ? isDark
+                  ? 'bg-slate-700 text-white shadow-xs'
+                  : 'bg-white text-indigo-600 shadow-xs'
+                : isDark
+                ? 'text-slate-400 hover:text-slate-200'
                 : 'text-stone-500 hover:text-stone-700'
             }`}
           >
@@ -1383,11 +1458,33 @@ export function OperationsDataTab({
                 </button>
               )}
 
+              {/* Nút tròn Đồng bộ / Tải đầy đủ dữ liệu phiên làm việc (nằm giữa Công việc và Menu ⋯) */}
+              <button
+                type="button"
+                onClick={handleSyncCurrentShift}
+                disabled={syncingCurrentShift}
+                title="Đồng bộ 2 chiều & tải đầy đủ dữ liệu mới nhất của phiên làm việc này"
+                className={`relative w-11 h-11 shrink-0 rounded-full border flex items-center justify-center shadow-2xs active:scale-95 transition disabled:opacity-60 ${
+                  isDark
+                    ? 'bg-emerald-950/50 border-emerald-700 text-emerald-300 hover:bg-emerald-900/60'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                }`}
+              >
+                <RefreshCw className={`w-4 h-4 ${syncingCurrentShift ? 'animate-spin' : ''}`} />
+                {pendingSyncCount > 0 && !syncingCurrentShift && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-white" />
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={() => setActionMenuOpen(true)}
                 title="Thao tác công việc"
-                className="relative w-11 h-11 shrink-0 rounded-full bg-white border border-stone-200 hover:bg-stone-50 text-stone-600 flex items-center justify-center text-lg font-black leading-none shadow-2xs active:scale-95 transition"
+                className={`relative w-11 h-11 shrink-0 rounded-full border flex items-center justify-center text-lg font-black leading-none shadow-2xs active:scale-95 transition ${
+                  isDark
+                    ? 'bg-[#1e293b] border-slate-700 text-slate-200 hover:bg-slate-800'
+                    : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                }`}
               >
                 <span>⋯</span>
                 {(selectedShift?.summary_data?.pending_interim_close || pendingSyncCount > 0) && (
@@ -1647,8 +1744,14 @@ export function OperationsDataTab({
                 </div>
               )}
 
-              {/* ── DANH SÁCH THẺ SẢN PHẨM SÁNG CHUẨN HÌNH 1 ── */}
-              <div className="bg-white border border-stone-200 rounded-2xl divide-y divide-stone-200 overflow-hidden shadow-xs">
+              {/* ── DANH SÁCH THẺ SẢN PHẨM SÁNG/TỐI CHUẨN HÌNH 1 ── */}
+              <div
+                className={`border rounded-2xl divide-y overflow-hidden shadow-xs ${
+                  isDark
+                    ? 'bg-[#1e293b] border-slate-700 divide-slate-700/80'
+                    : 'bg-white border-stone-200 divide-stone-200'
+                }`}
+              >
                 {displayedProducts.slice(0, productDisplayLimit).map((item, index) => {
                   const isAltRow = index % 2 === 1
                   const isPinned = pinnedIdsSet.has(item.id)
@@ -1668,17 +1771,25 @@ export function OperationsDataTab({
                     <div
                       key={item.id}
                       onClick={() => setNumPadTarget({ product: item, unit: defUnit })}
-                      className={`p-3 cursor-pointer transition-colors border-l-4 active:bg-indigo-50/70 ${
-                        isAltRow
-                          ? 'bg-amber-50/35 border-l-amber-500'
-                          : 'bg-white border-l-indigo-600'
+                      className={`p-3 cursor-pointer transition-colors border-l-4 ${
+                        isDark
+                          ? isAltRow
+                            ? 'bg-slate-800/50 border-l-amber-500 active:bg-slate-800'
+                            : 'bg-[#1e293b] border-l-indigo-500 active:bg-slate-800'
+                          : isAltRow
+                          ? 'bg-amber-50/35 border-l-amber-500 active:bg-indigo-50/70'
+                          : 'bg-white border-l-indigo-600 active:bg-indigo-50/70'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-start gap-2.5 min-w-0 flex-1">
                           <span
                             className={`w-6 h-6 rounded-lg text-[11px] font-black flex items-center justify-center shrink-0 mt-0.5 border ${
-                              isAltRow
+                              isDark
+                                ? isAltRow
+                                  ? 'bg-amber-950/70 text-amber-300 border-amber-700/60'
+                                  : 'bg-indigo-950/70 text-indigo-300 border-indigo-700/60'
+                                : isAltRow
                                 ? 'bg-amber-100 text-amber-800 border-amber-300'
                                 : 'bg-indigo-100 text-indigo-800 border-indigo-300'
                             }`}
@@ -1686,17 +1797,25 @@ export function OperationsDataTab({
                             {index + 1}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="text-[13px] font-bold text-stone-900 leading-snug break-words">
+                            <div
+                              className={`text-[13px] font-bold leading-snug break-words ${
+                                isDark ? 'text-slate-100' : 'text-stone-900'
+                              }`}
+                            >
                               {item.name}
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                               {item.sku && (
-                                <span className="text-[10px] font-mono text-stone-400">
+                                <span className={`text-[10px] font-mono ${isDark ? 'text-slate-400' : 'text-stone-400'}`}>
                                   {item.sku}
                                 </span>
                               )}
                               {item.aliases && (
-                                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-extrabold">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                                    isDark ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-800'
+                                  }`}
+                                >
                                   {item.aliases}
                                 </span>
                               )}
@@ -1712,7 +1831,11 @@ export function OperationsDataTab({
                               setHistoryProductTarget(item)
                             }}
                             title="Xem lịch sử sản phẩm này"
-                            className="w-8 h-8 rounded-full bg-stone-100 hover:bg-indigo-50 text-stone-500 hover:text-indigo-600 flex items-center justify-center transition"
+                            className={`w-8 h-8 rounded-full flex items-center justify-center transition ${
+                              isDark
+                                ? 'bg-[#0f172a] text-slate-300 hover:text-indigo-400'
+                                : 'bg-stone-100 text-stone-500 hover:bg-indigo-50 hover:text-indigo-600'
+                            }`}
                           >
                             <Eye className="w-4 h-4" />
                           </button>
@@ -1727,6 +1850,8 @@ export function OperationsDataTab({
                               className={`px-2.5 h-8 rounded-full text-[10px] font-extrabold flex items-center gap-1 border ${
                                 isPinned
                                   ? 'bg-amber-500 border-amber-500 text-white'
+                                  : isDark
+                                  ? 'bg-[#0f172a] border-slate-700 text-slate-300'
                                   : 'bg-stone-100 border-stone-200 text-stone-600'
                               }`}
                             >
@@ -1753,7 +1878,11 @@ export function OperationsDataTab({
                                 setNumPadTarget({ product: item, unit: u })
                               }}
                               className={`w-full px-3 py-1.5 rounded-full border flex items-center justify-between gap-2 text-left active:scale-[0.99] transition ${
-                                isDef
+                                isDark
+                                  ? isDef
+                                    ? 'bg-indigo-950/50 border-indigo-500/60'
+                                    : 'bg-[#0f172a] border-slate-700'
+                                  : isDef
                                   ? 'bg-indigo-50/90 border-indigo-300'
                                   : 'bg-stone-50 border-stone-200'
                               }`}
@@ -1761,7 +1890,13 @@ export function OperationsDataTab({
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <span
                                   className={`text-xs font-extrabold truncate ${
-                                    isDef ? 'text-indigo-700' : 'text-stone-700'
+                                    isDark
+                                      ? isDef
+                                        ? 'text-indigo-300'
+                                        : 'text-slate-300'
+                                      : isDef
+                                      ? 'text-indigo-700'
+                                      : 'text-stone-700'
                                   }`}
                                 >
                                   {u}
@@ -1771,11 +1906,31 @@ export function OperationsDataTab({
                                 )}
                               </div>
                               <div className="flex items-center gap-2.5 text-xs font-black tabular-nums shrink-0">
-                                <span className={inQ > 0 ? 'text-emerald-600' : 'text-stone-400'}>
+                                <span
+                                  className={
+                                    inQ > 0
+                                      ? isDark
+                                        ? 'text-emerald-400'
+                                        : 'text-emerald-600'
+                                      : isDark
+                                      ? 'text-slate-500'
+                                      : 'text-stone-400'
+                                  }
+                                >
                                   Nhập: +{inQ}
                                 </span>
-                                <span className="text-stone-300">|</span>
-                                <span className={outQ > 0 ? 'text-rose-600' : 'text-stone-400'}>
+                                <span className={isDark ? 'text-slate-600' : 'text-stone-300'}>|</span>
+                                <span
+                                  className={
+                                    outQ > 0
+                                      ? isDark
+                                        ? 'text-rose-400'
+                                        : 'text-rose-600'
+                                      : isDark
+                                      ? 'text-slate-500'
+                                      : 'text-stone-400'
+                                  }
+                                >
                                   Xuất: -{outQ}
                                 </span>
                               </div>

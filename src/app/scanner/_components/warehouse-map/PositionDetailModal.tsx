@@ -80,12 +80,12 @@ export function PositionDetailModal({
       onClick={() => setSelectedPosDetail(null)}
     >
       <div
-        className="w-full max-w-md bg-[#111827] border border-cyan-500/40 rounded-2xl shadow-2xl max-h-[84dvh] flex flex-col overflow-hidden"
+        className="w-full max-w-md bg-[#111827] border border-emerald-500/40 rounded-2xl shadow-2xl max-h-[84dvh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className="shrink-0 flex items-center justify-between border-b border-slate-800 px-4 py-3">
           <div className="flex items-center gap-2">
-            <MapPin size={18} className="text-cyan-400" />
+            <MapPin size={18} className="text-emerald-400" />
             <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">
               VỊ TRÍ: {selectedPosDetail.code}
             </h3>
@@ -147,7 +147,7 @@ export function PositionDetailModal({
                     >
                       <div className="min-w-0 flex-1">
                         {it.sku && (
-                          <span className="inline-block px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-800/50 text-cyan-300 font-mono text-[10px] font-bold mb-0.5">
+                          <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-800/50 text-emerald-300 font-mono text-[10px] font-bold mb-0.5">
                             {it.sku}
                           </span>
                         )}
@@ -190,7 +190,7 @@ export function PositionDetailModal({
             <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800 text-[11px]">
               <div>
                 <span className="text-slate-500 block text-[10px]">MÃ LOT:</span>
-                <strong className="text-cyan-300 font-mono font-bold text-xs">
+                <strong className="text-emerald-300 font-mono font-bold text-xs">
                   {selectedPosDetail.lot_code || '---'}
                 </strong>
               </div>

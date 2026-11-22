@@ -43,6 +43,8 @@ import {
   LogOut,
   Key,
   Sliders,
+  Sun,
+  Moon,
   CheckCheck,
   ArrowDownToLine,
   HelpCircle,
@@ -92,6 +94,7 @@ import WarehouseMapTab from './_components/WarehouseMapTab'
 import OperationsDataTab from './_components/OperationsDataTab'
 import InventoryTab from './_components/InventoryTab'
 import FullMenuModal from './_components/FullMenuModal'
+import { useScannerTheme } from './_components/ScannerThemeContext'
 import OperationWatermarkOverlay from './_components/OperationWatermarkOverlay'
 import ScannerLoginView, {
   getStoredScannerUser,
@@ -133,6 +136,7 @@ const normalizeAppTab = (tab: string): AppTab => {
 }
 
 export default function WebScannerPage() {
+  const { isDark, toggleTheme, setActiveThemeTab } = useScannerTheme()
   // ── Navigation & Active Tab ────────────────────────────────────
   const [activeTab, setActiveTabState] = useState<AppTab>('stamp')
   const [isFullMenuOpen, setIsFullMenuOpen] = useState<boolean>(false)
@@ -154,8 +158,9 @@ export default function WebScannerPage() {
   }, [])
 
   useEffect(() => {
+    setActiveThemeTab(activeTab)
     setVisitedTabs((prev) => (prev[activeTab] ? prev : { ...prev, [activeTab]: true }))
-  }, [activeTab])
+  }, [activeTab, setActiveThemeTab])
 
   // ── Current Pallet Session State (Empty by default like Mobile App) ──
   const [activePalletStt, setActivePalletStt] = useState<string>('')
@@ -2431,32 +2436,54 @@ export default function WebScannerPage() {
   }
 
   return (
-    <div className="scanner-app-shell fixed inset-0 flex flex-col max-w-md mx-auto w-full bg-[#0b1120] text-slate-100 select-none overflow-hidden z-10">
+    <div
+      className={`scanner-app-shell ${isDark ? 'scanner-theme-dark' : 'scanner-theme-light'} fixed inset-0 flex flex-col max-w-md mx-auto w-full select-none overflow-hidden z-10 ${
+        isDark ? 'bg-[#0b1120] text-slate-100' : 'bg-stone-50 text-stone-900'
+      }`}
+    >
       
-      {/* ── TOP USER & COMPANY HEADER (Match Mobile App App.tsx) ───────── */}
-      <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-[#0c1322] border-b border-[#1e293b] text-xs gap-2">
-        <div
-          className="flex items-center gap-1.5 px-2 py-0.5 rounded-[6px] truncate text-[#10b981] text-[11px] font-extrabold min-w-0"
-          style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)' }}
-        >
-          <Building2 size={13} className="shrink-0 text-[#10b981]" />
+      {/* ── TOP USER & COMPANY HEADER (THANH THƯƠNG HIỆU INDIGO - CẢ 2 THEME) ───────── */}
+      <div
+        className={`shrink-0 flex items-center justify-between px-3 py-1.5 border-b text-xs gap-2 ${
+          isDark
+            ? 'bg-[#1e1b4b] border-[#312e81]'
+            : 'bg-[#312e81] border-[#4338ca]'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-[6px] truncate text-[11px] font-extrabold min-w-0 bg-emerald-500/15 border border-emerald-200/30 text-emerald-200">
+          <Building2 size={13} className="shrink-0 text-emerald-200" />
           <span className="truncate">
             {userProfile?.companyCode || 'CTG'} · {userProfile?.companyName || 'Chánh Thu'}
           </span>
         </div>
-        <button
-          onClick={() => setActiveTab('settings')}
-          className="flex items-center gap-1 px-2 py-0.5 rounded-[6px] bg-[#1e293b] text-[#e2e8f0] text-[11px] font-bold hover:bg-slate-700 transition shrink-0 max-w-[160px] active:scale-95"
-          title="Mở Cài Đặt & Tài Khoản"
-        >
-          <User size={14} className="text-[#38bdf8] shrink-0" />
-          <span className="truncate">{userProfile?.fullName || 'Nhân viên kho'}</span>
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title={isDark ? 'Chuyển sang giao diện Sáng' : 'Chuyển sang giao diện Tối'}
+            className="w-7 h-7 rounded-lg border border-white/20 bg-white/10 hover:bg-white/20 flex items-center justify-center active:scale-95 transition"
+          >
+            {isDark ? <Sun size={14} color="#fcd34d" /> : <Moon size={14} color="#e0e7ff" />}
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className="flex items-center gap-1 px-2 py-0.5 rounded-[6px] border border-white/20 bg-white/10 hover:bg-white/20 text-[11px] font-bold transition shrink-0 max-w-[140px] active:scale-95"
+            style={{ color: '#ffffff' }}
+            title="Mở Cài Đặt & Tài Khoản"
+          >
+            <User size={14} color="#7dd3fc" className="shrink-0" />
+            <span className="truncate">{userProfile?.fullName || 'Nhân viên kho'}</span>
+          </button>
+        </div>
       </div>
 
       {/* ── PALLET SESSION TOOLBAR (Only shown for Quét Tem & Dấu Đóng) ── */}
       {(activeTab === 'label' || activeTab === 'stamp') && (
-        <header className="shrink-0 bg-[#0f172a] border-b border-slate-800/90 px-3 py-2 z-20 shadow-md">
+        <header className={`shrink-0 border-b px-3 py-2 z-20 ${
+          activeTab === 'stamp' && !isDark
+            ? 'bg-white border-slate-200 shadow-xs'
+            : 'bg-[#0f172a] border-slate-800/90 shadow-md'
+        }`}>
           <div className="flex items-center justify-between gap-2">
             {/* Pallet STT Selector Button */}
             {activePalletStt ? (
@@ -2468,18 +2495,26 @@ export default function WebScannerPage() {
                   setNewTargetQtyInput(targetQty)
                   setIsSwitchPalletModal(true)
                 }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 text-left transition active:scale-[0.98] min-w-0"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-left transition active:scale-[0.98] min-w-0 ${
+                  activeTab === 'stamp' && !isDark
+                    ? 'bg-emerald-50 hover:bg-emerald-100/80 border-emerald-200'
+                    : 'bg-slate-800/90 hover:bg-slate-800 border-slate-700/80'
+                }`}
               >
                 {activeTab === 'stamp' ? (
-                  <Fingerprint size={16} className="text-amber-400 shrink-0" />
+                  <Fingerprint size={16} className={`${!isDark ? 'text-emerald-600' : 'text-amber-400'} shrink-0`} />
                 ) : (
                   <Scan size={16} className="text-emerald-400 shrink-0" />
                 )}
-                <span className={`text-[10px] font-black uppercase tracking-wider shrink-0 ${activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                <span className={`text-[10px] font-black uppercase tracking-wider shrink-0 ${
+                  activeTab === 'stamp'
+                    ? (!isDark ? 'text-emerald-700 font-extrabold' : 'text-amber-400')
+                    : 'text-emerald-400'
+                }`}>
                   {activeTab === 'stamp' ? 'DẤU MỰC' : 'TEM THÙNG'}
                 </span>
-                <span className="text-xs font-bold text-white font-mono truncate">
-                  STT: <strong className="text-amber-400">{activePalletStt}</strong>
+                <span className={`text-xs font-bold font-mono truncate ${activeTab === 'stamp' && !isDark ? 'text-slate-900' : 'text-white'}`}>
+                  STT: <strong className={activeTab === 'stamp' && !isDark ? 'text-emerald-700' : 'text-amber-400'}>{activePalletStt}</strong>
                 </span>
                 {activePalletTag && (
                   <span className="bg-orange-600/30 text-orange-400 border border-orange-500/40 px-1 py-0.2 rounded text-[9px] font-bold font-mono shrink-0">
@@ -2491,11 +2526,13 @@ export default function WebScannerPage() {
                     📝
                   </span>
                 )}
-                <ChevronRight size={13} className="text-slate-400 shrink-0" />
+                <ChevronRight size={13} className={`${activeTab === 'stamp' && !isDark ? 'text-emerald-700' : 'text-slate-400'} shrink-0`} />
               </button>
             ) : (
               <div>
-                <span className="text-[10px] text-slate-400 font-bold tracking-wider block mb-0.5">STT PALLET HIỆN TẠI</span>
+                <span className={`text-[10px] font-bold tracking-wider block mb-0.5 ${activeTab === 'stamp' && !isDark ? 'text-emerald-800' : 'text-slate-400'}`}>
+                  STT PALLET HIỆN TẠI
+                </span>
                 <button
                   onClick={() => {
                     setNewSttInput('')
@@ -2504,9 +2541,13 @@ export default function WebScannerPage() {
                     setNewTargetQtyInput(30)
                     setIsSwitchPalletModal(true)
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-400 text-xs font-bold transition active:scale-95 shadow-xs"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition active:scale-95 shadow-xs ${
+                    activeTab === 'stamp' && !isDark
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
+                      : 'bg-emerald-950/80 hover:bg-emerald-900 border-emerald-500/50 text-emerald-400'
+                  }`}
                 >
-                  <Plus size={15} className="text-emerald-400 stroke-[2.5]" />
+                  <Plus size={15} className={`${activeTab === 'stamp' && !isDark ? 'text-white' : 'text-emerald-400'} stroke-[2.5]`} />
                   <span>Chọn / Nhập STT Pallet</span>
                 </button>
               </div>
@@ -2514,9 +2555,11 @@ export default function WebScannerPage() {
 
             {/* Right: Total Kg & Quick actions */}
             <div className="flex items-center gap-2 shrink-0">
-              <div className="bg-slate-900 border border-slate-800 px-3 py-1 rounded-xl text-right">
-                <span className="text-[9px] text-slate-500 block font-bold">TỔNG KG</span>
-                <span className="text-xs font-black font-mono text-sky-400">
+              <div className={`border px-3 py-1 rounded-xl text-right ${
+                activeTab === 'stamp' && !isDark ? 'bg-emerald-50/70 border-emerald-200' : 'bg-slate-900 border-slate-800'
+              }`}>
+                <span className={`text-[9px] block font-bold ${activeTab === 'stamp' && !isDark ? 'text-emerald-800' : 'text-slate-500'}`}>TỔNG KG</span>
+                <span className={`text-xs font-black font-mono ${activeTab === 'stamp' && !isDark ? 'text-emerald-700' : 'text-sky-400'}`}>
                   {activePalletStt ? currentTotalWeight.toFixed(1) : 0} Kg
                 </span>
               </div>
@@ -2527,7 +2570,7 @@ export default function WebScannerPage() {
                 className={`w-8 h-8 rounded-xl border flex items-center justify-center transition active:scale-95 ${
                   torchActive 
                     ? 'bg-amber-500/20 border-amber-500 text-amber-400' 
-                    : 'bg-slate-800/80 border-slate-700 text-slate-300'
+                    : (activeTab === 'stamp' && !isDark ? 'bg-white border-emerald-200 text-emerald-700' : 'bg-slate-800/80 border-slate-700 text-slate-300')
                 }`}
                 title="Bật/tắt đèn Flash"
               >
@@ -2541,34 +2584,34 @@ export default function WebScannerPage() {
             <div className="mt-1.5 space-y-1">
               <div className="flex items-center justify-between text-[11px]">
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-400">
-                    Tiến độ: <strong className={activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}>{currentBoxes.length}</strong> / {targetQty} thùng
+                  <span className={activeTab === 'stamp' && !isDark ? 'text-slate-600' : 'text-slate-400'}>
+                    Tiến độ: <strong className={activeTab === 'stamp' ? (!isDark ? 'text-emerald-700' : 'text-amber-400') : 'text-emerald-400'}>{currentBoxes.length}</strong> / {targetQty} thùng
                     {currentBoxes.length >= targetQty && (
-                      <span className="ml-1 text-[10px] text-emerald-400 font-bold">✓ Đủ chỉ tiêu</span>
+                      <span className="ml-1 text-[10px] text-emerald-600 font-bold">✓ Đủ chỉ tiêu</span>
                     )}
                   </span>
                   {currentBoxes.length > 0 && (
                     <button
                       onClick={() => handleResetActivePallet()}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/50 text-rose-400 text-[10px] font-bold hover:bg-rose-500/25 transition active:scale-95 shadow-xs"
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/50 text-rose-500 text-[10px] font-bold hover:bg-rose-500/25 transition active:scale-95 shadow-xs"
                       title="Xóa toàn bộ thùng của Pallet này để quét lại từ đầu"
                     >
-                      <RotateCw size={10} className="text-rose-400" />
+                      <RotateCw size={10} className="text-rose-500" />
                       <span>Làm mới</span>
                     </button>
                   )}
                 </div>
-                <span className="text-slate-400">
-                  Tổng: <strong className="text-white font-mono">{currentTotalWeight.toFixed(1)}</strong> Kg
+                <span className={activeTab === 'stamp' && !isDark ? 'text-slate-600' : 'text-slate-400'}>
+                  Tổng: <strong className={`font-mono ${activeTab === 'stamp' && !isDark ? 'text-slate-900' : 'text-white'}`}>{currentTotalWeight.toFixed(1)}</strong> Kg
                 </span>
               </div>
-              <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div className={`w-full h-1.5 rounded-full overflow-hidden ${activeTab === 'stamp' && !isDark ? 'bg-slate-200' : 'bg-slate-800'}`}>
                 <div
                   className={`h-full transition-all duration-300 rounded-full ${
                     currentBoxes.length >= targetQty
                       ? 'bg-emerald-500'
                       : activeTab === 'stamp'
-                      ? 'bg-amber-400'
+                      ? (!isDark ? 'bg-emerald-600' : 'bg-amber-400')
                       : 'bg-emerald-400'
                   }`}
                   style={{ width: `${Math.min(100, (currentBoxes.length / targetQty) * 100)}%` }}
@@ -2576,8 +2619,12 @@ export default function WebScannerPage() {
               </div>
             </div>
           ) : (
-            <div className="mt-1.5 flex items-center gap-1.5 bg-sky-500/10 border border-sky-500/25 px-2.5 py-1 rounded-lg text-sky-300 text-[11px]">
-              <Info size={13} className="shrink-0 text-sky-400" />
+            <div className={`mt-1.5 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] ${
+              activeTab === 'stamp' && !isDark
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-800 font-medium'
+                : 'bg-sky-500/10 border border-sky-500/25 text-sky-300'
+            }`}>
+              <Info size={13} className={`shrink-0 ${activeTab === 'stamp' && !isDark ? 'text-emerald-600' : 'text-sky-400'}`} />
               <span>Bạn chưa chọn Pallet. Hãy bấm chọn Pallet để bắt đầu.</span>
             </div>
           )}
@@ -2841,10 +2888,12 @@ export default function WebScannerPage() {
             TAB 2: DẤU ĐÓNG (MATCH MOBILE STAMP SCANNER SCREEN LAYOUT)
            ═══════════════════════════════════════════════════════════ */}
         {activeTab === 'stamp' && (
-          <div className="flex-1 min-h-0 flex flex-col bg-[#090d16]">
+          <div className={`flex-1 min-h-0 flex flex-col ${!isDark ? 'bg-white text-slate-800' : 'bg-[#090d16]'}`}>
             
             {/* 1. Compact Viewfinder Box (~210px matching Mobile App) */}
-            <div className="shrink-0 relative w-full h-[210px] bg-black overflow-hidden border-b border-slate-800">
+            <div className={`shrink-0 relative w-full h-[210px] bg-black overflow-hidden border-b ${
+              !isDark ? 'border-emerald-200' : 'border-slate-800'
+            }`}>
               <video
                 ref={videoRef}
                 playsInline
@@ -2855,45 +2904,61 @@ export default function WebScannerPage() {
 
               {/* Dual-line Reticle Guideline for Stamp */}
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-3">
-                <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-900/85 border border-amber-500/40 text-amber-300 text-[10px] font-bold mb-1.5 shadow-lg">
-                  <Fingerprint size={12} className="text-amber-400" />
+                <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] font-bold mb-1.5 shadow-lg ${
+                  !isDark
+                    ? 'bg-white/95 border-emerald-500/50 text-emerald-800'
+                    : 'bg-slate-900/85 border-amber-500/40 text-amber-300'
+                }`}>
+                  <Fingerprint size={12} className={!isDark ? 'text-emerald-600' : 'text-amber-400'} />
                   <span>Căn 2 dòng dấu mực vào khung dưới</span>
                 </div>
 
                 <div
                   ref={stampReticleRef}
-                  className="w-[88%] max-w-[300px] h-[115px] border-2 border-amber-400/80 rounded-xl relative shadow-[0_0_20px_rgba(245,158,11,0.25)] flex flex-col justify-between p-2.5 bg-amber-400/5"
+                  className={`w-[88%] max-w-[300px] h-[115px] border-2 rounded-xl relative flex flex-col justify-between p-2.5 ${
+                    !isDark
+                      ? 'border-emerald-500 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.25)]'
+                      : 'border-amber-400/80 bg-amber-400/5 shadow-[0_0_20px_rgba(245,158,11,0.25)]'
+                  }`}
                 >
-                  <div className="absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 border-amber-400 rounded-tl-md"></div>
-                  <div className="absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 border-amber-400 rounded-tr-md"></div>
-                  <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 border-amber-400 rounded-bl-md"></div>
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 border-amber-400 rounded-br-md"></div>
+                  <div className={`absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 rounded-tl-md ${!isDark ? 'border-emerald-500' : 'border-amber-400'}`}></div>
+                  <div className={`absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 rounded-tr-md ${!isDark ? 'border-emerald-500' : 'border-amber-400'}`}></div>
+                  <div className={`absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 rounded-bl-md ${!isDark ? 'border-emerald-500' : 'border-amber-400'}`}></div>
+                  <div className={`absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 rounded-br-md ${!isDark ? 'border-emerald-500' : 'border-amber-400'}`}></div>
 
-                  <div className="flex items-center justify-between border-b border-amber-500/30 pb-1 text-[9px]">
-                    <span className="font-black uppercase text-amber-300 bg-slate-900/80 px-1.5 py-0.2 rounded">DÒNG 1</span>
-                    <span className="font-mono text-slate-200">102010402001-0 (14 số)</span>
+                  <div className={`flex items-center justify-between border-b pb-1 text-[9px] ${!isDark ? 'border-emerald-300' : 'border-amber-500/30'}`}>
+                    <span className={`font-black uppercase px-1.5 py-0.2 rounded ${!isDark ? 'text-emerald-800 bg-white shadow-xs' : 'text-amber-300 bg-slate-900/80'}`}>DÒNG 1</span>
+                    <span className={`font-mono ${!isDark ? 'text-slate-800 font-bold' : 'text-slate-200'}`}>102010402001-0 (14 số)</span>
                   </div>
 
-                  <div className="flex items-center justify-between border-t border-amber-500/30 pt-1 text-[9px]">
-                    <span className="font-black uppercase text-emerald-300 bg-slate-900/80 px-1.5 py-0.2 rounded">DÒNG 2</span>
-                    <span className="font-mono text-slate-200">2151014102600066 (16 số)</span>
+                  <div className={`flex items-center justify-between border-t pt-1 text-[9px] ${!isDark ? 'border-emerald-300' : 'border-amber-500/30'}`}>
+                    <span className={`font-black uppercase px-1.5 py-0.2 rounded ${!isDark ? 'text-emerald-800 bg-white shadow-xs' : 'text-emerald-300 bg-slate-900/80'}`}>DÒNG 2</span>
+                    <span className={`font-mono ${!isDark ? 'text-slate-800 font-bold' : 'text-slate-200'}`}>2151014102600066 (16 số)</span>
                   </div>
                 </div>
 
-                <p className="text-[10px] text-slate-300 mt-1.5 px-2.5 py-0.5 rounded-lg bg-slate-900/80 text-center font-medium">
+                <p className={`text-[10px] mt-1.5 px-2.5 py-0.5 rounded-lg text-center font-medium ${
+                  !isDark ? 'text-emerald-900 bg-white/95 border border-emerald-200 shadow-xs' : 'text-slate-300 bg-slate-900/80'
+                }`}>
                   ⌨️ Bấm phím <strong>Space</strong> hoặc <strong>Enter</strong> để chụp quét nhanh
                 </p>
               </div>
 
               {/* OVERLAY WHEN NO PALLET SELECTED */}
               {!activePalletStt && (
-                <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex flex-col items-center justify-center p-4 z-20 text-center space-y-2">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg">
+                <div className={`absolute inset-0 flex flex-col items-center justify-center p-4 z-20 text-center space-y-2 ${
+                  !isDark ? 'bg-white' : 'bg-slate-950/85 backdrop-blur-xs'
+                }`}>
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md ${
+                    !isDark
+                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-600'
+                      : 'bg-amber-500/10 border border-amber-500/30 text-amber-400'
+                  }`}>
                     <Fingerprint size={26} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-white">Chưa chọn Pallet</h3>
-                    <p className="text-[11px] text-slate-400 max-w-xs mt-0.5">
+                    <h3 className={`text-sm font-black ${!isDark ? 'text-slate-900' : 'text-white'}`}>Chưa chọn Pallet</h3>
+                    <p className={`text-[11px] max-w-xs mt-0.5 ${!isDark ? 'text-slate-500' : 'text-slate-400'}`}>
                       Để tránh quét nhầm hàng, vui lòng chọn hoặc nhập số Pallet trước.
                     </p>
                   </div>
@@ -2905,7 +2970,7 @@ export default function WebScannerPage() {
                       setNewTargetQtyInput(30)
                       setIsSwitchPalletModal(true)
                     }}
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center gap-1.5 shadow-lg shadow-amber-500/30 active:scale-95 transition"
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 shadow-md shadow-emerald-600/30 active:scale-95 transition"
                   >
                     <Plus size={15} />
                     <span>Chọn / Nhập Pallet Ngay</span>
@@ -2915,7 +2980,7 @@ export default function WebScannerPage() {
 
               {isRecognizing && (
                 <div className="absolute inset-0 bg-black/75 backdrop-blur-xs flex flex-col items-center justify-center gap-2 z-30">
-                  <Loader2 size={32} className="text-amber-400 animate-spin" />
+                  <Loader2 size={32} className={`${!isDark ? 'text-emerald-400' : 'text-amber-400'} animate-spin`} />
                   <p className="text-xs font-bold text-white tracking-wide">Đang đọc dãy số con dấu...</p>
                 </div>
               )}
@@ -2958,25 +3023,29 @@ export default function WebScannerPage() {
                 e.target.value = ''
               }}
             />
-            <div className="shrink-0 bg-[#0f172a] border-b border-slate-800 px-2.5 py-2 flex items-center gap-1.5 justify-between z-10 shadow-sm overflow-x-auto scrollbar-none">
+            <div className={`shrink-0 border-b px-2.5 py-2 flex items-center gap-1.5 justify-between z-10 shadow-xs overflow-x-auto scrollbar-none ${
+              !isDark ? 'bg-white border-slate-200' : 'bg-[#0f172a] border-slate-800'
+            }`}>
+              {/* Nút 1: Chụp */}
               <button
                 onClick={handleCaptureAndRecognize}
                 disabled={isRecognizing}
-                className={`py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition shrink-0 ${
+                className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 whitespace-nowrap transition shrink-0 ${
                   !activePalletStt
-                    ? 'bg-amber-500/50 text-slate-900/60'
-                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/30 active:scale-[0.98]'
+                    ? (!isDark ? 'bg-emerald-600/60 text-white' : 'bg-amber-500/50 text-slate-900/60')
+                    : (!isDark ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs active:scale-[0.98]' : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/30 active:scale-[0.98]')
                 }`}
                 title="Chụp con dấu mực"
               >
                 {isRecognizing ? (
-                  <Loader2 size={16} className="animate-spin text-slate-950" />
+                  <Loader2 size={15} className={`animate-spin ${!isDark ? 'text-white' : 'text-slate-950'}`} />
                 ) : (
-                  <Camera size={16} className="text-slate-950" />
+                  <Camera size={15} className={!isDark ? 'text-white' : 'text-slate-950'} />
                 )}
                 <span>Chụp</span>
               </button>
 
+              {/* Nút 2: Tải Ảnh */}
               <button
                 onClick={() => {
                   if (!activePalletStt) {
@@ -2986,23 +3055,41 @@ export default function WebScannerPage() {
                   uploadStampInputRef.current?.click()
                 }}
                 disabled={isRecognizing}
-                className="py-2 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap shadow-md shadow-purple-600/30 active:scale-[0.98] transition shrink-0"
+                className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap transition shrink-0 ${
+                  !isDark
+                    ? (!activePalletStt
+                        ? 'bg-emerald-600/60 text-white'
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs active:scale-[0.98]')
+                    : 'bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-600/30 active:scale-[0.98]'
+                }`}
                 title="Tải ảnh con dấu từ máy & căn chỉnh cắt tâm"
               >
-                <Upload size={14} />
+                <Upload size={14} className="text-white" />
                 <span>Tải Ảnh</span>
               </button>
 
+              {/* Nút 3: Gửi Server / Gửi AI */}
               <button
                 onClick={handleCaptureStampPhotoForServer}
                 disabled={isRecognizing || uploadingStampPhoto}
-                className="py-2 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap shadow-md shadow-indigo-600/30 active:scale-[0.98] transition shrink-0"
-                title="Chụp ảnh gửi Server để giải mã & tạo thùng"
+                className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap transition shrink-0 ${
+                  !isDark
+                    ? (!activePalletStt
+                        ? 'bg-emerald-600/60 text-white'
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs active:scale-[0.98]')
+                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 active:scale-[0.98]'
+                }`}
+                title="Chụp ảnh con dấu lưu Pallet & gửi AI giải mã"
               >
-                <CloudUpload size={14} />
+                {uploadingStampPhoto ? (
+                  <Loader2 size={14} className="animate-spin text-white" />
+                ) : (
+                  <CloudUpload size={14} className="text-white" />
+                )}
                 <span>Gửi Server</span>
               </button>
 
+              {/* Nút 4: Nhập số */}
               <button
                 onClick={() => {
                   if (!activePalletStt) {
@@ -3013,16 +3100,28 @@ export default function WebScannerPage() {
                   setManualStampLine2('')
                   setIsManualStampModal(true)
                 }}
-                className="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap active:scale-[0.98] transition shrink-0"
+                className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap transition shrink-0 ${
+                  !isDark
+                    ? (!activePalletStt
+                        ? 'bg-emerald-600/60 text-white'
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs active:scale-[0.98]')
+                    : 'bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 active:scale-[0.98]'
+                }`}
+                title="Nhập số thủ công nếu con dấu quá mờ"
               >
-                <Fingerprint size={14} className="text-amber-400" />
+                <Fingerprint size={14} className={!isDark ? 'text-white' : 'text-amber-400'} />
                 <span>Nhập số</span>
               </button>
 
+              {/* Nút 5: Chốt Pallet (nếu có thùng) */}
               {activePalletStt && currentBoxes.length > 0 && (
                 <button
                   onClick={handleCompletePallet}
-                  className="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap shadow-md shadow-emerald-600/30 active:scale-[0.98] transition shrink-0"
+                  className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 whitespace-nowrap shadow-xs active:scale-[0.98] transition shrink-0 ${
+                    !isDark
+                      ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/30'
+                  }`}
                   title="Chốt hoàn thành Pallet"
                 >
                   <CheckCheck size={14} />
@@ -3032,20 +3131,24 @@ export default function WebScannerPage() {
             </div>
 
             {/* 3. Direct Scanned Boxes List (Matching Mobile App) */}
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#090d16]">
+            <div className={`flex-1 min-h-0 flex flex-col overflow-hidden ${!isDark ? 'bg-white' : 'bg-[#090d16]'}`}>
               {/* Header Row */}
-              <div className="shrink-0 px-3 py-2 border-b border-slate-800/80 flex items-center justify-between text-xs bg-[#0c1220]">
+              <div className={`shrink-0 px-3 py-2 border-b flex items-center justify-between text-xs ${
+                !isDark ? 'bg-white border-slate-200' : 'bg-[#0c1220] border-slate-800/80'
+              }`}>
                 <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-slate-300 uppercase tracking-wide text-[11px]">THÙNG HÀNG</span>
+                  <span className={`font-bold uppercase tracking-wide text-[11px] ${!isDark ? 'text-emerald-900 font-extrabold' : 'text-slate-300'}`}>THÙNG HÀNG</span>
                   {activePalletStt && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono text-[10px] font-bold">
+                    <span className={`px-1.5 py-0.2 rounded-full font-mono text-[10px] font-bold ${
+                      !isDark ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    }`}>
                       {currentBoxes.length}
                     </span>
                   )}
                 </div>
                 <button
                   onClick={() => setActiveTab('pallets')}
-                  className="text-sky-400 hover:text-sky-300 font-medium text-[11px] flex items-center gap-0.5"
+                  className={`font-medium text-[11px] flex items-center gap-0.5 ${!isDark ? 'text-emerald-700 hover:text-emerald-800 font-bold' : 'text-sky-400 hover:text-sky-300'}`}
                 >
                   <span>Xem tất cả Pallet</span>
                   <ChevronRight size={12} />
@@ -3056,24 +3159,28 @@ export default function WebScannerPage() {
               {activePalletStt && currentBoxes.length > 0 && currentBoxes.length < targetQty && (
                 <button
                   onClick={() => handleOpenCloneModal(currentBoxes[currentBoxes.length - 1])}
-                  className="shrink-0 bg-amber-950/70 border-b border-amber-500/30 px-3 py-2 flex items-center justify-between text-[11px] text-amber-300 hover:text-amber-200 transition active:scale-[0.99]"
+                  className={`shrink-0 border-b px-3 py-2 flex items-center justify-between text-[11px] transition active:scale-[0.99] ${
+                    !isDark
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100/80'
+                      : 'bg-amber-950/70 border-amber-500/30 text-amber-300 hover:text-amber-200'
+                  }`}
                 >
                   <div className="flex items-center gap-1.5 truncate">
-                    <Copy size={13} className="text-amber-400 shrink-0" />
+                    <Copy size={13} className={`${!isDark ? 'text-emerald-600' : 'text-amber-400'} shrink-0`} />
                     <span className="truncate">
                       ⚡ Nhân bản thùng #{currentBoxes[currentBoxes.length - 1].box_index} cho {targetQty - currentBoxes.length} thùng còn lại
                     </span>
                   </div>
-                  <ChevronRight size={14} className="text-amber-400 shrink-0 ml-1" />
+                  <ChevronRight size={14} className={`${!isDark ? 'text-emerald-600' : 'text-amber-400'} shrink-0 ml-1`} />
                 </button>
               )}
 
               {/* Scrollable Box Cards List */}
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {!activePalletStt ? (
-                  <div className="py-14 text-center text-slate-500 space-y-2.5">
-                    <Boxes size={36} className="mx-auto text-slate-600 stroke-[1.5]" />
-                    <p className="text-xs font-bold text-slate-400">Chưa có Pallet nào đang chọn</p>
+                  <div className="py-14 text-center space-y-2.5">
+                    <Boxes size={36} className={`mx-auto stroke-[1.5] ${!isDark ? 'text-emerald-600' : 'text-slate-600'}`} />
+                    <p className={`text-xs font-bold ${!isDark ? 'text-slate-800' : 'text-slate-400'}`}>Chưa có Pallet nào đang chọn</p>
                     <button
                       onClick={() => {
                         setNewSttInput('')
@@ -3082,16 +3189,16 @@ export default function WebScannerPage() {
                         setNewTargetQtyInput(30)
                         setIsSwitchPalletModal(true)
                       }}
-                      className="text-xs font-bold text-amber-400 hover:text-amber-300 transition"
+                      className={`text-xs font-bold transition ${!isDark ? 'text-emerald-700 hover:text-emerald-800' : 'text-amber-400 hover:text-amber-300'}`}
                     >
                       + Bấm để chọn hoặc nhập Pallet mới
                     </button>
                   </div>
                 ) : currentBoxes.length === 0 ? (
-                  <div className="py-12 text-center text-slate-500 space-y-2">
-                    <Fingerprint size={36} className="mx-auto text-slate-600 stroke-[1.5]" />
-                    <p className="text-xs font-medium text-slate-400">Chưa có thùng con dấu nào trong Pallet {activePalletStt}</p>
-                    <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                  <div className="py-12 text-center space-y-2">
+                    <Fingerprint size={36} className={`mx-auto stroke-[1.5] ${!isDark ? 'text-emerald-600' : 'text-slate-600'}`} />
+                    <p className={`text-xs font-medium ${!isDark ? 'text-slate-800 font-bold' : 'text-slate-400'}`}>Chưa có thùng con dấu nào trong Pallet {activePalletStt}</p>
+                    <p className={`text-[11px] max-w-xs mx-auto ${!isDark ? 'text-slate-500' : 'text-slate-500'}`}>
                       Bấm nút <strong>[Chụp Quét Dấu]</strong> hoặc phím <strong>Space / Enter</strong> để bắt đầu quét
                     </p>
                   </div>
@@ -3099,31 +3206,51 @@ export default function WebScannerPage() {
                   currentBoxes.map(b => (
                     <div
                       key={b.id}
-                      className="p-3 rounded-xl bg-[#111827] border border-slate-800 space-y-2 shadow-xs"
+                      className={`p-3 rounded-xl border space-y-2 shadow-xs ${
+                        !isDark
+                          ? 'bg-white border-slate-200 text-slate-800 shadow-xs'
+                          : 'bg-[#111827] border-slate-800'
+                      }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black font-mono">
+                          <span className={`px-2 py-0.5 rounded-md border text-xs font-black font-mono ${
+                            !isDark
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          }`}>
                             #{b.box_index}
                           </span>
-                          <span className="text-[11px] font-bold text-slate-300 font-mono">
+                          <span className={`text-[11px] font-bold font-mono ${!isDark ? 'text-slate-800' : 'text-slate-300'}`}>
                             {b.id.startsWith('aibox_') ? '📷 ĐỢT CHỤP AI' : `SKU: ${b.sku}`}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[10px] font-black font-mono">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black font-mono ${
+                            !isDark
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-blue-500/20 text-blue-300'
+                          }`}>
                             {b.quantity} {b.unit}
                           </span>
                           <button
                             onClick={() => handleOpenCloneModal(b)}
-                            className="p-1 rounded-md bg-slate-800 text-sky-400 hover:text-white"
+                            className={`p-1 rounded-md transition ${
+                              !isDark
+                                ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                : 'bg-slate-800 text-sky-400 hover:text-white'
+                            }`}
                             title="Nhân bản thùng này"
                           >
                             <Copy size={13} />
                           </button>
                           <button
                             onClick={() => handleDeleteBox(b.id)}
-                            className="p-1 rounded-md bg-slate-800 text-rose-400 hover:text-white"
+                            className={`p-1 rounded-md transition ${
+                              !isDark
+                                ? 'bg-rose-50 text-rose-500 hover:bg-rose-100'
+                                : 'bg-slate-800 text-rose-400 hover:text-white'
+                            }`}
                             title="Xóa thùng"
                           >
                             <Trash2 size={13} />
@@ -3272,7 +3399,11 @@ export default function WebScannerPage() {
 
       {/* ── BOTTOM NAVIGATION BAR (TINH GỌN 5 NÚT: MENU + 4 CHỨC NĂNG CHÍNH NHƯ APP.TSX ANDROID) ─────────── */}
       <nav
-        className="shrink-0 bg-[#1e293b] border-t border-[#334155] pt-2 flex items-center justify-around z-20 shadow-lg"
+        className={`shrink-0 border-t pt-2 flex items-center justify-around z-20 shadow-lg ${
+          isDark
+            ? 'bg-[#1e1b4b] border-[#312e81]'
+            : 'bg-[#312e81] border-[#4338ca]'
+        }`}
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 10px), 10px)' }}
       >
         {/* Nút 1: Menu Hamburger (Mở toàn bộ danh mục 7 chức năng) */}

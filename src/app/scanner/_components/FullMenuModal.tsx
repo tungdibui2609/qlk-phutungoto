@@ -14,7 +14,10 @@ import {
   CheckCircle2,
   ChevronRight,
   LogOut,
+  Sun,
+  Moon,
 } from 'lucide-react'
+import { useScannerTheme } from './ScannerThemeContext'
 
 export type FullMenuAppTab =
   | 'scanner'
@@ -148,39 +151,46 @@ export const FullMenuModal: React.FC<FullMenuModalProps> = ({
   userProfile,
   onLogout,
 }) => {
+  const { isDark, tabThemes, toggleTabTheme, setAllTabsTheme } = useScannerTheme()
   if (!visible) return null
 
   const handleSelect = (item: MenuItemConfig) => {
-    // Nếu đang truyền dạng 'stamp_scanner' hoặc 'scanner' ở nơi gọi thì vẫn tương thích,
-    // mặc định chuẩn hóa về id của page.tsx ('stamp' | 'label' | 'operations' | 'inventory' | 'warehouse_map' | 'pallets' | 'settings')
     onSelectTab(item.id)
     onClose()
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
       {/* Backdrop */}
       <div className="absolute inset-0" onClick={onClose} />
 
       {/* Sheet Container */}
       <div
-        className="relative z-10 w-full max-w-md mx-auto bg-[#0f172a] rounded-t-[24px] border-t border-[#334155] max-h-[88dvh] flex flex-col shadow-[0_-4px_24px_rgba(0,0,0,0.6)] overflow-hidden"
+        className={`relative z-10 w-full max-w-md mx-auto rounded-t-[24px] border-t max-h-[88dvh] flex flex-col shadow-[0_-4px_24px_rgba(0,0,0,0.35)] overflow-hidden ${
+          isDark
+            ? 'bg-[#0f172a] border-[#334155] text-[#f8fafc]'
+            : 'bg-stone-50 border-stone-200 text-stone-900'
+        }`}
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 12px), 12px)' }}
       >
         {/* Header Thông Tin Tài Khoản */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-[#1e293b] shrink-0">
+        <div
+          className={`flex items-center justify-between px-4 py-3.5 border-b shrink-0 ${
+            isDark ? 'border-[#1e293b]' : 'bg-white border-stone-200'
+          }`}
+        >
           <div className="flex items-center gap-2.5 min-w-0">
             <div
               className="w-[38px] h-[38px] rounded-xl flex items-center justify-center shrink-0"
               style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)' }}
             >
-              <User size={20} color="#38bdf8" />
+              <User size={20} color="#0284c7" />
             </div>
             <div className="min-w-0">
-              <div className="text-[14px] font-extrabold text-[#f8fafc] truncate">
+              <div className={`text-[14px] font-extrabold truncate ${isDark ? 'text-[#f8fafc]' : 'text-stone-900'}`}>
                 {userProfile?.fullName || 'Nhân viên kho'}
               </div>
-              <div className="text-[11px] font-semibold text-[#94a3b8] truncate max-w-[240px] mt-0.5">
+              <div className={`text-[11px] font-semibold truncate max-w-[240px] mt-0.5 ${isDark ? 'text-[#94a3b8]' : 'text-stone-500'}`}>
                 {userProfile?.companyName || 'Công Ty CP Tập Đoàn XNK Trái Cây Chánh Thu'}
               </div>
             </div>
@@ -189,7 +199,9 @@ export const FullMenuModal: React.FC<FullMenuModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[#94a3b8] hover:text-white active:scale-95 transition"
+            className={`p-1.5 rounded-lg active:scale-95 transition ${
+              isDark ? 'text-[#94a3b8] hover:text-white' : 'text-stone-500 hover:text-stone-900'
+            }`}
             aria-label="Đóng menu"
           >
             <X size={20} />
@@ -198,12 +210,45 @@ export const FullMenuModal: React.FC<FullMenuModalProps> = ({
 
         {/* Danh Sách Tất Cả Chức Năng */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-3.5 pb-6 space-y-4">
+          {/* Bộ chuyển đổi Giao Diện Sáng / Tối */}
+          <div>
+            <div className={`text-[10px] font-extrabold tracking-[0.8px] mb-2 ml-1 uppercase ${isDark ? 'text-[#64748b]' : 'text-stone-500'}`}>
+              GIAO DIỆN (CHẠM ☀️/🌙 Ở TỪNG MENU ĐỂ CHỈNH RIÊNG)
+            </div>
+            <div
+              className={`grid grid-cols-2 gap-1.5 p-1 rounded-2xl border ${
+                isDark ? 'bg-[#1e293b] border-[#334155]' : 'bg-white border-stone-200'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setAllTabsTheme('light')}
+                className="py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 bg-amber-500/15 text-amber-600 transition"
+              >
+                <Sun size={15} />
+                <span>Tất cả Sáng</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllTabsTheme('dark')}
+                className="py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 bg-indigo-500/15 text-indigo-600 transition"
+              >
+                <Moon size={15} />
+                <span>Tất cả Tối</span>
+              </button>
+            </div>
+          </div>
+
           {MENU_SECTIONS.map((sec) => (
             <div key={sec.title}>
-              <div className="text-[10px] font-extrabold text-[#64748b] tracking-[0.8px] mb-2 ml-1 uppercase">
+              <div className={`text-[10px] font-extrabold tracking-[0.8px] mb-2 ml-1 uppercase ${isDark ? 'text-[#64748b]' : 'text-stone-500'}`}>
                 {sec.title}
               </div>
-              <div className="bg-[#1e293b] rounded-2xl border border-[#334155] overflow-hidden">
+              <div
+                className={`rounded-2xl border overflow-hidden ${
+                  isDark ? 'bg-[#1e293b] border-[#334155]' : 'bg-white border-stone-200'
+                }`}
+              >
                 {sec.items.map((item, idx) => {
                   const isSelected = item.aliases.includes(currentTab)
                   const isLast = idx === sec.items.length - 1
@@ -214,12 +259,12 @@ export const FullMenuModal: React.FC<FullMenuModalProps> = ({
                       key={item.id}
                       type="button"
                       onClick={() => handleSelect(item)}
-                      className={`w-full flex items-center px-3.5 py-3 gap-3 text-left transition active: opacity-90 ${
-                        !isLast ? 'border-b border-[#334155]' : ''
+                      className={`w-full flex items-center px-3.5 py-3 gap-3 text-left transition active:opacity-90 ${
+                        !isLast ? (isDark ? 'border-b border-[#334155]' : 'border-b border-stone-100') : ''
                       }`}
                       style={
                         isSelected
-                          ? { backgroundColor: 'rgba(99, 102, 241, 0.12)' }
+                          ? { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.12)' : 'rgba(79, 70, 229, 0.08)' }
                           : undefined
                       }
                     >
@@ -233,7 +278,7 @@ export const FullMenuModal: React.FC<FullMenuModalProps> = ({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span
-                            className="text-[13px] font-bold text-[#f8fafc] truncate"
+                            className={`text-[13px] font-bold truncate ${isDark ? 'text-[#f8fafc]' : 'text-stone-900'}`}
                             style={
                               isSelected
                                 ? { color: item.color, fontWeight: 800 }
@@ -246,15 +291,15 @@ export const FullMenuModal: React.FC<FullMenuModalProps> = ({
                             <span
                               className="px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0"
                               style={{
-                                backgroundColor: 'rgba(99, 102, 241, 0.2)',
-                                color: '#818cf8',
+                                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.2)' : '#eef2ff',
+                                color: isDark ? '#818cf8' : '#4f46e5',
                               }}
                             >
                               Chính
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-[#94a3b8] truncate mt-0.5">
+                        <div className={`text-[11px] truncate mt-0.5 ${isDark ? 'text-[#94a3b8]' : 'text-stone-500'}`}>
                           {item.desc}
                         </div>
                       </div>

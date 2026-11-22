@@ -299,7 +299,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
     if (mode === 'code') return <Hash size={size} className="text-purple-400 shrink-0" />
     if (mode === 'tag') return <Tag size={size} className="text-amber-400 shrink-0" />
     if (mode === 'stt') return <Hash size={size} className="text-rose-400 shrink-0" />
-    return <Layers size={size} className="text-cyan-400 shrink-0" />
+    return <Layers size={size} className="text-emerald-400 shrink-0" />
   }
 
   const handleSubmit = (customTerm?: string) => {
@@ -312,7 +312,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   return (
     <div ref={containerRef} className="p-2.5 bg-[#0e1626] border-b border-slate-800/80 shrink-0 relative z-30">
       <div className="relative flex items-center gap-1.5">
-        <div className="relative flex-1 flex items-center bg-slate-900 border border-slate-700 rounded-xl focus-within:border-cyan-500 transition p-0.5 min-w-0">
+        <div className="relative flex-1 flex items-center bg-slate-900 border border-slate-700 rounded-xl focus-within:border-emerald-500 transition p-0.5 min-w-0">
           {/* Nút Chọn Chế Độ Tìm Kiếm (Chuẩn Server - Hình 1) */}
           <div className="relative shrink-0">
             <button
@@ -333,7 +333,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
             </button>
 
             {showModeMenu && (
-              <div className="absolute top-full left-0 mt-1.5 w-48 bg-[#0b1324] border border-cyan-500/40 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+              <div className="absolute top-full left-0 mt-1.5 w-48 bg-[#0b1324] border border-emerald-500/40 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150">
                 <div className="px-2.5 py-1.5 bg-slate-900/90 border-b border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   Chế độ tìm kiếm
                 </div>
@@ -347,7 +347,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                         onClick={() => handleSelectMode(mode.id)}
                         className={`w-full px-3 py-2 text-left flex items-center justify-between gap-2 text-xs transition cursor-pointer ${
                           isSelected
-                            ? 'bg-cyan-500/20 text-cyan-300 font-black'
+                            ? 'bg-emerald-500/20 text-emerald-300 font-black'
                             : 'text-slate-200 hover:bg-slate-800/80 font-semibold'
                         }`}
                       >
@@ -362,7 +362,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                             )}
                           </div>
                         </div>
-                        {isSelected && <Check size={14} className="text-cyan-400 shrink-0" />}
+                        {isSelected && <Check size={14} className="text-emerald-400 shrink-0" />}
                       </button>
                     )
                   })}
@@ -417,7 +417,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
         <button
           type="button"
           onClick={() => handleSubmit()}
-          className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition shadow-xs active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+          className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-xs active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
         >
           <Search size={13} />
           <span>Tìm</span>
@@ -429,7 +429,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
           className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 relative active:scale-95 cursor-pointer ${hasActiveFilters
               ? 'bg-amber-400 text-slate-950 font-black shadow-md shadow-amber-400/30'
               : isFilterOpen
-                ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
+                ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/30'
                 : 'bg-slate-900 border border-amber-500/60 text-amber-300 hover:bg-slate-800 hover:text-amber-200'
             }`}
           title="Mở bộ lọc ngày tháng & vùng miền"
@@ -495,8 +495,8 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
         <div className="mt-2.5 p-3 rounded-2xl bg-slate-900/95 border border-slate-700 shadow-2xl space-y-3 animate-in fade-in">
           {/* Header Drawer */}
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-            <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Filter size={13} className="text-cyan-400" />
+            <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Filter size={13} className="text-emerald-400" />
               <span>BỘ LỌC NGÀY THÁNG & VÙNG MIỀN</span>
             </span>
             <div className="flex items-center gap-2">
@@ -682,10 +682,10 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
 
       {/* ── DROPDOWN GỢI Ý TÌM KIẾM (STT + MÃ PHỤ + SẢN PHẨM) ── */}
       {showSuggestions && inputValue.trim().length > 0 && (
-        <div className="absolute top-full left-2.5 right-2.5 mt-1 bg-[#0b1324] border border-cyan-500/40 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150 backdrop-blur-md">
-          <div className="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-[11px] font-bold text-cyan-400">
+        <div className="absolute top-full left-2.5 right-2.5 mt-1 bg-[#0b1324] border border-emerald-500/40 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150 backdrop-blur-md">
+          <div className="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-[11px] font-bold text-emerald-400">
             <span className="flex items-center gap-1.5">
-              <Search size={13} className="text-cyan-400" />
+              <Search size={13} className="text-emerald-400" />
               <span>
                 {searchMode === 'name'
                   ? 'GỢI Ý TÊN & TÊN VIẾT TẮT'
@@ -718,7 +718,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                   <div
                     key={`stt-${sIdx}`}
                     onClick={() => handleSelectStt(s.stt)}
-                    className="p-3 hover:bg-cyan-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-cyan-900/50"
+                    className="p-3 hover:bg-emerald-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-emerald-900/50"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -730,7 +730,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                        <span className="text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/40">
+                        <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/40">
                           📍 {posPreview}
                         </span>
                         <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/40">
@@ -755,7 +755,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                   <div
                     key={`tag-${tIdx}`}
                     onClick={() => handleSelectTag(t.tag)}
-                    className="p-3 hover:bg-cyan-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-cyan-900/50"
+                    className="p-3 hover:bg-emerald-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-emerald-900/50"
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -769,7 +769,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                         )}
                       </div>
                       <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                        <span className="text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/40">
+                        <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/40">
                           📍 {t.positionCount} vị trí
                         </span>
                         <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/40">
@@ -787,7 +787,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                 <div
                   key={`prod-${idx}`}
                   onClick={() => handleSelect(item.product)}
-                  className="p-3 hover:bg-cyan-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-cyan-900/50"
+                  className="p-3 hover:bg-emerald-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-emerald-900/50"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -821,7 +821,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                       {item.product.sku && searchMode !== 'code' && (
                         <span className="text-slate-500 font-mono">SKU: {item.product.sku}</span>
                       )}
-                      <span className="text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/40">
+                      <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/40">
                         📍 {item.product.positionCount} vị trí
                       </span>
                       {item.product.unitsMap && (
@@ -831,14 +831,14 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                       )}
                     </p>
                   </div>
-                  <ArrowRight size={15} className="text-cyan-400 shrink-0" />
+                  <ArrowRight size={15} className="text-emerald-400 shrink-0" />
                 </div>
               ))}
             </div>
           ) : (
             <div className="p-3 text-center text-xs text-slate-400">
               Không có gợi ý nhanh cho &quot;{inputValue.trim()}&quot; trong chế độ{' '}
-              <span className="text-cyan-300 font-bold">{activeModeConfig.label}</span>.
+              <span className="text-emerald-300 font-bold">{activeModeConfig.label}</span>.
             </div>
           )}
 
@@ -848,12 +848,12 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
             className="p-2.5 bg-slate-900/90 border-t border-slate-800 hover:bg-slate-800/90 cursor-pointer transition flex items-center justify-between text-xs text-slate-300 font-medium"
           >
             <div className="flex items-center gap-2">
-              <Search size={13} className="text-cyan-400" />
+              <Search size={13} className="text-emerald-400" />
               <span>
                 Tìm [{activeModeConfig.label}] cho &quot;{inputValue.trim()}&quot;
               </span>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700 font-mono font-bold">
+            <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-emerald-300 border border-slate-700 font-mono font-bold">
               Tìm ngay ↵
             </span>
           </div>
