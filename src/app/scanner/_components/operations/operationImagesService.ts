@@ -295,12 +295,19 @@ export async function uploadOperationImages(params: {
     const d = String(now.getDate()).padStart(2, '0')
     const rand = Math.random().toString(36).slice(2, 8)
     const storagePath = `${baseSys}/${y}-${m}-${d}/${params.shiftId}/${Date.now()}_${rand}.jpg`
+    const clientImageId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = (Math.random() * 16) | 0
+            return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+          })
 
     try {
       const blob = img.blob || dataUrlToBlob(img.dataUrl)
       const { error: upErr } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(storagePath, blob, { contentType: 'image/jpeg', upsert: false })
+        .upload(storagePath, blob, { contentType: 'image/jpeg', upsert: true })
       if (upErr) throw upErr
 
       const { data: pubData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath)
@@ -310,6 +317,7 @@ export async function uploadOperationImages(params: {
         params.journalId && !params.journalId.startsWith('local_') ? params.journalId : null
 
       const insertRow = {
+        id: clientImageId,
         company_id: params.companyId || params.user?.company_id || null,
         system_code: baseSys,
         shift_id: params.shiftId,
@@ -351,7 +359,7 @@ export async function uploadOperationImages(params: {
     } catch (e) {
       console.warn('Upload operation image failed, saving offline:', e)
       const offlineRec: OperationImageRecord = {
-        id: `local_img_${Date.now()}_${rand}`,
+        id: clientImageId,
         company_id: params.companyId || params.user?.company_id || null,
         system_code: baseSys,
         shift_id: params.shiftId,
@@ -390,74 +398,122 @@ export async function uploadOperationImages(params: {
   return createdRecords
 }
 
-export async function syncOfflineOperationImages(): Promise<number> {
+export function getOfflineImagesCount(): number {
   try {
     const raw = localStorage.getItem(OFFLINE_IMAGES_KEY)
     if (!raw) return 0
     const queue: OperationImageRecord[] = JSON.parse(raw)
-    if (!queue.length) return 0
-
-    const remaining: OperationImageRecord[] = []
-    let synced = 0
-
-    for (const item of queue) {
-      if (!item.local_data_url) continue
-      try {
-        const blob = dataUrlToBlob(item.local_data_url)
-        const { error: upErr } = await supabase.storage
-          .from(STORAGE_BUCKET)
-          .upload(item.storage_path, blob, { contentType: 'image/jpeg', upsert: true })
-        if (upErr) throw upErr
-        const { data: pubData } = supabase.storage
-          .from(STORAGE_BUCKET)
-          .getPublicUrl(item.storage_path)
-
-        const validJournalId =
-          item.journal_id && !item.journal_id.startsWith('local_') ? item.journal_id : null
-        const validSubShiftId =
-          item.sub_shift_id && !item.sub_shift_id.startsWith('local_') ? item.sub_shift_id : null
-
-        const { error: dbErr } = await (supabase.from('operation_images') as any).insert([
-          {
-            company_id: item.company_id || null,
-            system_code: item.system_code,
-            shift_id: item.shift_id,
-            sub_shift_id: validSubShiftId,
-            journal_id: validJournalId,
-            folder_id: item.folder_id || null,
-            scope: item.scope,
-            direction: item.direction || null,
-            job_name: item.job_name || null,
-            item_name: item.item_name || null,
-            item_sku: item.item_sku || null,
-            quantity: item.quantity ?? null,
-            unit: item.unit || null,
-            storage_bucket: STORAGE_BUCKET,
-            storage_path: item.storage_path,
-            public_url: pubData?.publicUrl || '',
-            file_size: item.file_size || blob.size || null,
-            mime_type: 'image/jpeg',
-            notes: item.notes || null,
-            captured_by: item.captured_by || null,
-            captured_by_name: item.captured_by_name || 'Nhân viên',
-            captured_at: item.captured_at,
-          },
-        ])
-        if (dbErr) throw dbErr
-        synced++
-      } catch {
-        remaining.push(item)
-      }
-    }
-
-    if (remaining.length > 0) {
-      localStorage.setItem(OFFLINE_IMAGES_KEY, JSON.stringify(remaining))
-    } else {
-      localStorage.removeItem(OFFLINE_IMAGES_KEY)
-    }
-    return synced
+    return Array.isArray(queue) ? queue.length : 0
   } catch {
     return 0
+  }
+}
+
+let inFlightWebImageSyncPromise: Promise<number> | null = null
+
+export async function syncOfflineOperationImages(
+  shiftIdMap?: Record<string, string>
+): Promise<number> {
+  if (inFlightWebImageSyncPromise) {
+    return inFlightWebImageSyncPromise
+  }
+
+  inFlightWebImageSyncPromise = (async () => {
+    try {
+      const raw = localStorage.getItem(OFFLINE_IMAGES_KEY)
+      if (!raw) return 0
+      const queue: OperationImageRecord[] = JSON.parse(raw)
+      if (!queue.length) return 0
+
+      const remaining: OperationImageRecord[] = []
+      let synced = 0
+
+      for (const item of queue) {
+        if (!item.local_data_url) continue
+        const resolvedShiftId = shiftIdMap?.[item.shift_id] || item.shift_id
+        if (String(resolvedShiftId).startsWith('local_')) {
+          remaining.push(item)
+          continue
+        }
+        const resolvedItem: OperationImageRecord = {
+          ...item,
+          shift_id: resolvedShiftId,
+        }
+        try {
+          const blob = dataUrlToBlob(resolvedItem.local_data_url!)
+          const { error: upErr } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(resolvedItem.storage_path, blob, { contentType: 'image/jpeg', upsert: true })
+          if (upErr) throw upErr
+          const { data: pubData } = supabase.storage
+            .from(STORAGE_BUCKET)
+            .getPublicUrl(resolvedItem.storage_path)
+
+          const validJournalId =
+            resolvedItem.journal_id && !resolvedItem.journal_id.startsWith('local_')
+              ? resolvedItem.journal_id
+              : null
+          const validSubShiftId =
+            resolvedItem.sub_shift_id && !resolvedItem.sub_shift_id.startsWith('local_')
+              ? resolvedItem.sub_shift_id
+              : null
+
+          const isUuid =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              resolvedItem.id || ''
+            )
+          const { error: dbErr } = await (supabase.from('operation_images') as any).upsert(
+            [
+              {
+                ...(isUuid ? { id: resolvedItem.id } : {}),
+                company_id: resolvedItem.company_id || null,
+                system_code: resolvedItem.system_code,
+                shift_id: resolvedShiftId,
+                sub_shift_id: validSubShiftId,
+                journal_id: validJournalId,
+                folder_id: resolvedItem.folder_id || null,
+                scope: resolvedItem.scope,
+                direction: resolvedItem.direction || null,
+                job_name: resolvedItem.job_name || null,
+                item_name: resolvedItem.item_name || null,
+                item_sku: resolvedItem.item_sku || null,
+                quantity: resolvedItem.quantity ?? null,
+                unit: resolvedItem.unit || null,
+                storage_bucket: STORAGE_BUCKET,
+                storage_path: resolvedItem.storage_path,
+                public_url: pubData?.publicUrl || '',
+                file_size: resolvedItem.file_size || blob.size || null,
+                mime_type: 'image/jpeg',
+                notes: resolvedItem.notes || null,
+                captured_by: resolvedItem.captured_by || null,
+                captured_by_name: resolvedItem.captured_by_name || 'Nhân viên',
+                captured_at: resolvedItem.captured_at,
+              },
+            ],
+            { onConflict: 'id', ignoreDuplicates: true }
+          )
+          if (dbErr) throw dbErr
+          synced++
+        } catch {
+          remaining.push(resolvedItem)
+        }
+      }
+
+      if (remaining.length > 0) {
+        localStorage.setItem(OFFLINE_IMAGES_KEY, JSON.stringify(remaining))
+      } else {
+        localStorage.removeItem(OFFLINE_IMAGES_KEY)
+      }
+      return synced
+    } catch {
+      return 0
+    }
+  })()
+
+  try {
+    return await inFlightWebImageSyncPromise
+  } finally {
+    inFlightWebImageSyncPromise = null
   }
 }
 

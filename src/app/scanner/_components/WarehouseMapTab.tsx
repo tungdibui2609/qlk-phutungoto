@@ -2081,7 +2081,7 @@ export default function WarehouseMapTab() {
             ? 'border-amber-400/90 ring-1 ring-amber-400/50 bg-gradient-to-b from-amber-950/50 to-[#131d33] shadow-md shadow-amber-500/20'
             : isOccupied
             ? 'bg-[#131d33] border-emerald-500/50 hover:border-emerald-400'
-            : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
+            : 'bg-slate-900/60 border-dashed border-slate-700/80 hover:border-emerald-500/60'
         }`}
       >
         <div className="flex items-center justify-between gap-1 w-full">
@@ -2927,7 +2927,7 @@ export default function WarehouseMapTab() {
                       setSelectedSlotId(null)
                       setSelectedTierId(null)
                     }}
-                    className={`p-3 rounded-xl bg-[#111827] border text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group ${
+                    className={`p-3 rounded-xl bg-[#111827] border border-l-4 border-l-emerald-500 text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group ${
                       whMatchCount > 0
                         ? 'border-emerald-500/80 shadow-lg shadow-emerald-600/10'
                         : 'border-slate-800 hover:border-emerald-500/50'
@@ -3102,7 +3102,9 @@ export default function WarehouseMapTab() {
                       setSelectedSlotId(null)
                       setSelectedTierId(null)
                     }}
-                    className={`p-3.5 rounded-2xl bg-[#111827] border text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group cursor-pointer ${
+                    className={`p-3.5 rounded-2xl bg-[#111827] border border-l-4 ${
+                      isHall ? 'border-l-emerald-600' : 'border-l-emerald-500'
+                    } text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group cursor-pointer ${
                       aisleMatchCount > 0
                         ? 'border-emerald-500/80 shadow-lg shadow-emerald-600/10'
                         : 'border-slate-800 hover:border-emerald-500/50'
@@ -3327,7 +3329,7 @@ export default function WarehouseMapTab() {
                       setSelectedSlotId(slot.id)
                       setSelectedTierId(null)
                     }}
-                    className={`p-3.5 rounded-2xl bg-[#111827] border text-center transition hover:bg-slate-900 active:scale-[0.98] space-y-1.5 group shadow-sm flex flex-col items-center justify-between min-h-[112px] ${
+                    className={`p-3.5 rounded-2xl bg-[#111827] border border-l-4 border-l-emerald-500 text-center transition hover:bg-slate-900 active:scale-[0.98] space-y-1.5 group shadow-sm flex flex-col items-center justify-between min-h-[112px] ${
                       slotMatchCount > 0
                         ? 'border-emerald-500/80 shadow-md shadow-emerald-600/10'
                         : 'border-slate-800 hover:border-emerald-500/80'
@@ -3479,7 +3481,7 @@ export default function WarehouseMapTab() {
                   return (
                     <div
                       key={tier.id}
-                      className={`rounded-2xl bg-[#0f172a] border transition-all shadow-sm overflow-hidden ${
+                      className={`rounded-2xl bg-[#0f172a] border border-l-4 border-l-emerald-500 transition-all shadow-sm overflow-hidden ${
                         isExpanded
                           ? 'border-slate-800/90'
                           : 'border-slate-800/60 hover:border-slate-700'

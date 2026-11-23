@@ -476,12 +476,47 @@ async function fetchAndMergeShiftSummary(
   return { mergedSummary, serverStatus: serverShift?.status }
 }
 
+let inFlightWebOpsSyncPromise: Promise<{
+  syncedCount: number
+  remainingCount: number
+  syncedImagesCount?: number
+}> | null = null
+
 export async function syncOperationsOfflineQueue(): Promise<{
   syncedCount: number
   remainingCount: number
+  syncedImagesCount?: number
 }> {
+  if (inFlightWebOpsSyncPromise) {
+    return inFlightWebOpsSyncPromise
+  }
+
+  inFlightWebOpsSyncPromise = _runSyncOperationsOfflineQueue()
+  try {
+    return await inFlightWebOpsSyncPromise
+  } finally {
+    inFlightWebOpsSyncPromise = null
+  }
+}
+
+async function _runSyncOperationsOfflineQueue(): Promise<{
+  syncedCount: number
+  remainingCount: number
+  syncedImagesCount?: number
+}> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return { syncedCount: 0, remainingCount: getOfflineQueue().length, syncedImagesCount: 0 }
+  }
+
   const queue = getOfflineQueue()
-  if (queue.length === 0) return { syncedCount: 0, remainingCount: 0 }
+  if (queue.length === 0) {
+    let syncedImgs = 0
+    try {
+      const { syncOfflineOperationImages } = await import('./operationImagesService')
+      syncedImgs = await syncOfflineOperationImages()
+    } catch {}
+    return { syncedCount: 0, remainingCount: 0, syncedImagesCount: syncedImgs }
+  }
 
   const shiftIdMap: Record<string, string> = {}
   const remaining: OfflineAction[] = []
@@ -508,16 +543,44 @@ export async function syncOperationsOfflineQueue(): Promise<{
         }
         syncedCount++
       } else if (action.type === 'CREATE_JOURNAL') {
-        const { insertRow, shiftId } = p
+        const { insertRow, shiftId, localId } = p
         const realShiftId = shiftIdMap[shiftId] || shiftId
         const updatedNotes = String(insertRow.notes || '').replace(
           /\[CV_ID:\s*[^\]]+\]/,
           `[CV_ID: ${realShiftId}]`
         )
-        const { error } = await (supabase.from('delivery_journal') as any).insert([
-          { ...insertRow, notes: updatedNotes },
-        ])
+        const { data: insertedRows, error } = await (supabase.from('delivery_journal') as any)
+          .upsert([{ ...insertRow, notes: updatedNotes }], {
+            onConflict: 'id',
+            ignoreDuplicates: true,
+          })
+          .select('*')
         if (error) throw error
+        const insertedRow = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows
+        // Xóa bản ghi tạm local_j_... khỏi cache của ca để tuyệt đối không bị nhân đôi
+        const shiftKeysToClean = Array.from(new Set([shiftId, realShiftId].filter(Boolean)))
+        for (const sKey of shiftKeysToClean) {
+          const cKey = `${CACHE_KEYS.JOURNALS_PREFIX}${sKey}`
+          const cachedList = getStorageJson<JournalRecord[]>(cKey, [])
+          if (cachedList.length > 0) {
+            const filtered = cachedList.filter(j => {
+              if (localId && j.id === localId) return false
+              if (
+                (j.id.startsWith('local_') || j.is_offline) &&
+                j.item_name === insertRow.item_name &&
+                Number(j.quantity_sent) === Number(insertRow.quantity_sent) &&
+                j.sent_at === insertRow.sent_at
+              ) {
+                return false
+              }
+              return true
+            })
+            if (insertedRow && sKey === realShiftId && !filtered.some(x => x.id === insertedRow.id)) {
+              filtered.unshift({ ...insertedRow, direction: parseDirectionFromRow(insertedRow) })
+            }
+            setStorageJson(cKey, filtered)
+          }
+        }
         if (realShiftId) touchedShiftIds.add(String(realShiftId))
         syncedCount++
       } else if (action.type === 'UPDATE_JOURNAL') {
@@ -607,7 +670,15 @@ export async function syncOperationsOfflineQueue(): Promise<{
   }
 
   saveOfflineQueue(remaining)
-  return { syncedCount, remainingCount: remaining.length }
+
+  // Đồng bộ ảnh chụp offline kèm bản đồ đổi ID ca tạm -> ID thật
+  let syncedImagesCount = 0
+  try {
+    const { syncOfflineOperationImages } = await import('./operationImagesService')
+    syncedImagesCount = await syncOfflineOperationImages(shiftIdMap)
+  } catch {}
+
+  return { syncedCount, remainingCount: remaining.length, syncedImagesCount }
 }
 
 // ── SHIFTS CRUD ───────────────────────────────────────────────
@@ -1335,10 +1406,40 @@ export async function getShiftJournals(
         direction: parseDirectionFromRow(r),
       }))
 
-    const cached = getStorageJson<JournalRecord[]>(cacheKey, [])
-    const localOnly = cached.filter(
-      j => !hidden.has(j.id) && (j.id.startsWith('local_') || j.is_offline) && !remoteRows.some(r => r.id === j.id)
+    // Chỉ giữ lại các bản ghi local thực sự CÒN đang nằm trong offlineQueue (tránh nhân đôi sau khi đã sync lên server)
+    const pendingQueue = getOfflineQueue()
+    const pendingJournalActions = pendingQueue.filter(
+      a => a.type === 'CREATE_JOURNAL' && a.payload?.shiftId === shift.id
     )
+    const pendingLocalIds = new Set(
+      pendingJournalActions.map(a => a.payload?.localId).filter(Boolean)
+    )
+    const pendingSignatures = new Set(
+      pendingJournalActions
+        .map(a => a.payload?.insertRow)
+        .filter(Boolean)
+        .map((r: any) => `${r.item_name}__${Number(r.quantity_sent)}__${r.sent_at}`)
+    )
+
+    const cached = getStorageJson<JournalRecord[]>(cacheKey, [])
+    const localOnly = cached.filter(j => {
+      if (hidden.has(j.id)) return false
+      if (!(j.id.startsWith('local_') || j.is_offline)) return false
+      if (remoteRows.some(r => r.id === j.id)) return false
+      // Nếu bản ghi đã đồng bộ lên server rồi (khớp item + qty + sent_at) -> loại bỏ bản tạm
+      const alreadyOnServer = remoteRows.some(
+        r =>
+          r.item_name === j.item_name &&
+          Number(r.quantity_sent) === Number(j.quantity_sent) &&
+          r.sent_at &&
+          j.sent_at &&
+          Math.abs(new Date(r.sent_at).getTime() - new Date(j.sent_at).getTime()) < 5000
+      )
+      if (alreadyOnServer) return false
+      // Chỉ giữ nếu thực sự vẫn đang chờ trong offlineQueue
+      const sig = `${j.item_name}__${Number(j.quantity_sent)}__${j.sent_at}`
+      return pendingLocalIds.has(j.id) || pendingSignatures.has(sig)
+    })
     const merged = [...localOnly, ...remoteRows]
     setStorageJson(cacheKey, merged)
     return merged
@@ -1424,8 +1525,17 @@ export async function createShiftJournalEntry(params: {
   const userNotePart = notes?.trim() ? ` - ${notes.trim()}` : ''
   const fullNotes = `[CV_ID: ${shift.id}]${productId ? ` [PID: ${productId}]` : ''}${productSku ? ` [SKU: ${productSku}]` : ''} [CV: ${jobName}] ${dirLabel}${userNotePart}`
 
+  const clientJournalId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = (Math.random() * 16) | 0
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+        })
+
   const deliveryCode = `GN-${Date.now().toString().slice(-6)}-${Math.floor(10 + Math.random() * 89)}`
   const insertRow = {
+    id: clientJournalId,
     delivery_code: deliveryCode,
     company_id: shift.company_id || user?.company_id || null,
     system_code: shiftSys,
@@ -1449,13 +1559,13 @@ export async function createShiftJournalEntry(params: {
 
   if (shift.id.startsWith('local_')) {
     const localRec: JournalRecord = {
-      id: `local_j_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       ...insertRow,
+      id: `local_j_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       direction,
       is_offline: true,
     }
     setStorageJson(cacheKey, [localRec, ...existing])
-    enqueueOfflineAction('CREATE_JOURNAL', { shiftId: shift.id, insertRow })
+    enqueueOfflineAction('CREATE_JOURNAL', { shiftId: shift.id, localId: localRec.id, insertRow })
     return localRec
   }
 
@@ -1470,13 +1580,13 @@ export async function createShiftJournalEntry(params: {
     return created
   } catch {
     const localRec: JournalRecord = {
-      id: `local_j_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       ...insertRow,
+      id: `local_j_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       direction,
       is_offline: true,
     }
     setStorageJson(cacheKey, [localRec, ...existing])
-    enqueueOfflineAction('CREATE_JOURNAL', { shiftId: shift.id, insertRow })
+    enqueueOfflineAction('CREATE_JOURNAL', { shiftId: shift.id, localId: localRec.id, insertRow })
     return localRec
   }
 }

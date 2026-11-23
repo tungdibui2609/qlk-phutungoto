@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { useScannerTheme } from '../ScannerThemeContext'
 import {
   X,
   Check,
@@ -119,6 +120,7 @@ export function OperationNumberPadModal({
     photos?: PickedOperationPhoto[]
   }) => Promise<void>
 }) {
+  const { isDark } = useScannerTheme()
   const [valueStr, setValueStr] = useState<string>('')
   const [selectedUnit, setSelectedUnit] = useState<string>(unit || '')
   const [notes, setNotes] = useState<string>('')
@@ -141,15 +143,21 @@ export function OperationNumberPadModal({
     })
   }, [availableUnits, product, unit])
 
+  const productId = product?.id || null
+  const initUnitRef = useRef({ unit, unitsList, product })
+  initUnitRef.current = { unit, unitsList, product }
+
+  // Chỉ reset khi MỞ modal hoặc ĐỔI sản phẩm, không reset khi parent re-render (chụp ảnh / chọn thư viện / realtime)
   useEffect(() => {
-    if (!visible) return
+    if (!visible || !productId) return
+    const { unit: u, unitsList: uList, product: p } = initUnitRef.current
     setValueStr('')
-    setSelectedUnit(unit || unitsList[0] || product?.defaultUnit || product?.unit || '')
+    setSelectedUnit(u || uList[0] || p?.defaultUnit || p?.unit || '')
     setNotes('')
     setShowNotes(false)
     setPhotos([])
     setSubmittingDir(null)
-  }, [visible, product, unit, unitsList])
+  }, [visible, productId])
 
   const parsedQty = useMemo(() => {
     const n = parseFloat(valueStr)
@@ -234,20 +242,44 @@ export function OperationNumberPadModal({
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
-      <div className="w-full max-w-md bg-[#0f172a] border-t sm:border border-slate-700 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-[2px] p-0 sm:p-4">
+      <div
+        className={`w-full max-w-md border-t sm:border rounded-t-3xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[92vh] shadow-2xl ${
+          isDark
+            ? 'bg-[#0f172a] border-slate-700'
+            : 'bg-white border-slate-200'
+        }`}
+      >
         {/* Header */}
-        <div className="flex items-start justify-between px-4 py-3 bg-[#1e293b] border-b border-slate-700 gap-2">
+        <div
+          className={`flex items-start justify-between px-4 py-3 border-b gap-2 ${
+            isDark
+              ? 'bg-[#1e293b] border-slate-700'
+              : 'bg-slate-50/90 border-slate-200'
+          }`}
+        >
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-extrabold text-white line-clamp-2 leading-snug">
+            <div
+              className={`text-sm font-extrabold line-clamp-2 leading-snug ${
+                isDark ? 'text-white' : 'text-slate-900'
+              }`}
+            >
               {product.name}
             </div>
             <div className="flex items-center flex-wrap gap-1.5 mt-1">
               {product.sku && (
-                <span className="text-[11px] font-bold text-indigo-400">SKU: {product.sku}</span>
+                <span className={`text-[11px] font-bold ${isDark ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                  SKU: {product.sku}
+                </span>
               )}
               {product.aliases && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                <span
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                    isDark
+                      ? 'bg-amber-500/20 border-amber-500/30 text-amber-300'
+                      : 'bg-amber-50 border-amber-200 text-amber-700'
+                  }`}
+                >
                   {product.aliases}
                 </span>
               )}
@@ -256,7 +288,11 @@ export function OperationNumberPadModal({
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 shrink-0"
+            className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition ${
+              isDark
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                : 'bg-slate-200/80 hover:bg-slate-200 text-slate-600'
+            }`}
           >
             <X className="w-4 h-4" />
           </button>
@@ -265,7 +301,9 @@ export function OperationNumberPadModal({
         <div className="p-3 overflow-y-auto overscroll-contain space-y-2.5">
           {/* Chọn ĐVT (Đơn vị tính thực tế của sản phẩm) */}
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-extrabold text-slate-400 shrink-0">ĐVT:</span>
+            <span className={`text-[11px] font-extrabold shrink-0 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              ĐVT:
+            </span>
             <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar flex-1">
               {unitsList.map(u => {
                 const active = selectedUnit === u
@@ -274,10 +312,12 @@ export function OperationNumberPadModal({
                     key={u}
                     type="button"
                     onClick={() => setSelectedUnit(u)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap border transition ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap border transition ${
                       active
-                        ? 'bg-indigo-600 border-indigo-400 text-white shadow-sm'
-                        : 'bg-[#1e293b] border-slate-700 text-slate-300 hover:border-slate-500'
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                        : isDark
+                        ? 'bg-[#1e293b] border-slate-700 text-slate-300 hover:border-slate-500'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
                     {u}
@@ -288,14 +328,30 @@ export function OperationNumberPadModal({
           </div>
 
           {/* Màn hình hiển thị số lượng */}
-          <div className="rounded-xl px-3.5 py-2.5 bg-[#1e293b] border border-slate-700 flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-400 shrink-0">Số lượng:</span>
+          <div
+            className={`rounded-2xl px-4 py-2.5 border-2 flex items-center justify-between gap-2 ${
+              isDark
+                ? 'bg-[#1e293b] border-indigo-500/60'
+                : 'bg-indigo-50/70 border-indigo-200'
+            }`}
+          >
+            <span className={`text-xs font-bold shrink-0 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Số lượng:
+            </span>
             <div className="flex items-baseline gap-1.5 min-w-0 justify-end">
-              <span className="text-3xl font-black tracking-tight text-white truncate">
+              <span
+                className={`text-3xl font-black tracking-tight truncate ${
+                  !valueStr
+                    ? isDark ? 'text-slate-500' : 'text-slate-400'
+                    : isDark ? 'text-white' : 'text-slate-900'
+                }`}
+              >
                 {valueStr || '0'}
               </span>
               {selectedUnit && (
-                <span className="text-xs font-bold text-indigo-300 shrink-0">{selectedUnit}</span>
+                <span className={`text-xs font-extrabold shrink-0 ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                  {selectedUnit}
+                </span>
               )}
             </div>
           </div>
@@ -307,7 +363,11 @@ export function OperationNumberPadModal({
                 key={delta}
                 type="button"
                 onClick={() => handleQuickAdd(delta)}
-                className="flex-1 py-2 rounded-lg bg-[#1e293b] hover:bg-slate-800 active:scale-95 border border-slate-700 text-indigo-300 font-extrabold text-xs transition"
+                className={`flex-1 py-2 rounded-xl active:scale-95 border font-extrabold text-xs transition ${
+                  isDark
+                    ? 'bg-[#1e293b] hover:bg-slate-800 border-slate-700 text-indigo-300'
+                    : 'bg-indigo-50/60 hover:bg-indigo-100 border-indigo-200/80 text-indigo-700'
+                }`}
               >
                 +{delta}
               </button>
@@ -316,10 +376,14 @@ export function OperationNumberPadModal({
               type="button"
               onClick={() => setShowNotes(prev => !prev)}
               title="Ghi chú"
-              className={`px-3 py-2 rounded-lg border flex items-center justify-center transition relative ${
+              className={`px-3 py-2 rounded-xl border flex items-center justify-center transition relative ${
                 showNotes || notes.trim()
-                  ? 'bg-indigo-600/20 border-indigo-400 text-indigo-300'
-                  : 'bg-[#1e293b] border-slate-700 text-slate-400 hover:text-slate-200'
+                  ? isDark
+                    ? 'bg-indigo-600/20 border-indigo-400 text-indigo-300'
+                    : 'bg-indigo-100 border-indigo-400 text-indigo-700'
+                  : isDark
+                  ? 'bg-[#1e293b] border-slate-700 text-slate-400 hover:text-slate-200'
+                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
               }`}
             >
               <MessageSquare className="w-4 h-4" />
@@ -337,7 +401,11 @@ export function OperationNumberPadModal({
               onChange={e => setNotes(e.target.value)}
               placeholder="Nhập ghi chú đợt nhập/xuất..."
               autoFocus
-              className="w-full px-3 py-2 rounded-xl bg-[#1e293b] border border-indigo-500/50 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+              className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none ${
+                isDark
+                  ? 'bg-[#1e293b] border-indigo-500/50 text-white placeholder-slate-500 focus:border-indigo-400'
+                  : 'bg-white border-indigo-300 text-slate-900 placeholder-slate-400 focus:border-indigo-500'
+              }`}
             />
           )}
 
@@ -347,7 +415,11 @@ export function OperationNumberPadModal({
               <button
                 type="button"
                 onClick={handleCamera}
-                className="flex-1 py-2 px-3 rounded-xl bg-sky-900/30 hover:bg-sky-900/40 border border-sky-500/40 text-sky-300 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] ${
+                  isDark
+                    ? 'bg-sky-900/30 hover:bg-sky-900/40 border-sky-500/40 text-sky-300'
+                    : 'bg-sky-50 hover:bg-sky-100 border-sky-200 text-sky-700'
+                }`}
               >
                 <Camera className="w-3.5 h-3.5" />
                 <span>Chụp ảnh</span>
@@ -355,7 +427,11 @@ export function OperationNumberPadModal({
               <button
                 type="button"
                 onClick={handleLibrary}
-                className="flex-1 py-2 px-3 rounded-xl bg-indigo-900/30 hover:bg-indigo-900/40 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                className={`flex-1 py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.98] ${
+                  isDark
+                    ? 'bg-indigo-900/30 hover:bg-indigo-900/40 border-indigo-500/40 text-indigo-300'
+                    : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700'
+                }`}
               >
                 <ImageIcon className="w-3.5 h-3.5" />
                 <span>Thư viện ({photos.length})</span>
@@ -365,7 +441,7 @@ export function OperationNumberPadModal({
             {photos.length > 0 && (
               <div className="flex items-center gap-2 overflow-x-auto py-1">
                 {photos.map((p, idx) => (
-                  <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-600 shrink-0">
+                  <div key={idx} className={`relative w-12 h-12 rounded-lg overflow-hidden border shrink-0 ${isDark ? 'border-slate-600' : 'border-slate-200'}`}>
                     <img src={p.dataUrl} alt="proof" className="w-full h-full object-cover" />
                     <button
                       type="button"
@@ -381,7 +457,7 @@ export function OperationNumberPadModal({
           </div>
 
           {/* Bàn phím số 3x4 */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className={`grid grid-cols-3 gap-2 p-2 rounded-2xl ${isDark ? 'bg-slate-900/60' : 'bg-slate-100/90 border border-slate-200/70'}`}>
             {keypadRows.flat().map(k => (
               <button
                 key={k}
@@ -389,8 +465,12 @@ export function OperationNumberPadModal({
                 onClick={() => handleKey(k)}
                 className={`h-12 rounded-xl font-extrabold text-lg flex items-center justify-center active:scale-95 transition ${
                   k === 'BS'
-                    ? 'bg-indigo-950/70 text-indigo-300 border border-indigo-700/40 hover:bg-indigo-950'
-                    : 'bg-[#1e293b] text-white border border-slate-700 hover:bg-slate-800'
+                    ? isDark
+                      ? 'bg-rose-950/60 text-rose-300 border border-rose-800/60 hover:bg-rose-950'
+                      : 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 shadow-2xs'
+                    : isDark
+                    ? 'bg-[#1e293b] text-white border border-slate-700 hover:bg-slate-800'
+                    : 'bg-white text-slate-900 border border-slate-200/90 hover:bg-slate-50 shadow-2xs'
                 }`}
               >
                 {k === 'BS' ? '⌫' : k}
@@ -406,8 +486,10 @@ export function OperationNumberPadModal({
               onClick={() => handleSubmit('in')}
               className={`py-3 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition ${
                 parsedQty <= 0 || submittingDir !== null
-                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-                  : 'bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white shadow-lg shadow-emerald-950/50'
+                  ? isDark
+                    ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                    : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                  : 'bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white shadow-md shadow-emerald-600/25'
               }`}
             >
               {submittingDir === 'in' ? (
@@ -424,8 +506,10 @@ export function OperationNumberPadModal({
               onClick={() => handleSubmit('out')}
               className={`py-3 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition ${
                 parsedQty <= 0 || submittingDir !== null
-                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-                  : 'bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white shadow-lg shadow-rose-950/50'
+                  ? isDark
+                    ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                    : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                  : 'bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white shadow-md shadow-rose-600/25'
               }`}
             >
               {submittingDir === 'out' ? (
@@ -1354,6 +1438,7 @@ export function ProductHistoryModal({
   visible,
   product,
   journals,
+  images = [],
   onClose,
   onEditJournal,
   onDeleteJournal,
@@ -1361,15 +1446,46 @@ export function ProductHistoryModal({
   visible: boolean
   product: ShiftProductItem | null
   journals: JournalRecord[]
+  images?: OperationImageRecord[]
   onClose: () => void
   onEditJournal: (j: JournalRecord) => void
   onDeleteJournal: (j: JournalRecord) => void
 }) {
+  const { isDark } = useScannerTheme()
+  const [previewImg, setPreviewImg] = useState<OperationImageRecord | null>(null)
+
   if (!visible || !product) return null
 
   const prodJournals = journals.filter(
     j => (j.item_name || '').trim().toLowerCase() === (product.name || '').trim().toLowerCase()
   )
+
+  const pSku = (product.sku || '').trim().toLowerCase()
+  const pName = (product.name || '').trim().toLowerCase()
+  const prodImages = images.filter(img => {
+    const iSku = (img.item_sku || '').trim().toLowerCase()
+    const iName = (img.item_name || '').trim().toLowerCase()
+    if (pSku && iSku && pSku === iSku) return true
+    if (pName && iName && pName === iName) return true
+    return false
+  })
+
+  const getImagesForJournal = (j: JournalRecord): OperationImageRecord[] => {
+    if (!prodImages.length) return []
+    const exact = prodImages.filter(img => img.journal_id && img.journal_id === j.id)
+    if (exact.length > 0) return exact
+    const recTs = j.sent_at ? new Date(j.sent_at).getTime() : 0
+    return prodImages.filter(img => {
+      if (img.journal_id) return false
+      if (img.direction && img.direction !== j.direction) return false
+      if (img.quantity != null && Number(img.quantity) !== Number(j.quantity_sent)) return false
+      if (recTs > 0 && img.captured_at) {
+        const imgTs = new Date(img.captured_at).getTime()
+        if (Math.abs(imgTs - recTs) > 3 * 60 * 1000) return false
+      }
+      return true
+    })
+  }
 
   const totalIn = prodJournals
     .filter(j => j.direction === 'in')
@@ -1379,19 +1495,39 @@ export function ProductHistoryModal({
     .reduce((acc, j) => acc + (Number(j.quantity_sent) || 0), 0)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-      <div className="w-full max-w-md bg-[#0f172a] border border-slate-700 rounded-2xl overflow-hidden flex flex-col max-h-[85vh]">
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1e293b] border-b border-slate-700">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isDark ? 'bg-black/75' : 'bg-slate-900/50 backdrop-blur-[2px]'}`}>
+      <div
+        className={`w-full max-w-md border rounded-2xl overflow-hidden flex flex-col max-h-[85vh] shadow-2xl ${
+          isDark ? 'bg-[#0f172a] border-slate-700' : 'bg-white border-slate-200'
+        }`}
+      >
+        <div
+          className={`flex items-center justify-between px-4 py-3 border-b ${
+            isDark ? 'bg-[#1e293b] border-slate-700' : 'bg-slate-50 border-slate-200'
+          }`}
+        >
           <div className="min-w-0 flex-1 pr-2">
-            <div className="text-sm font-extrabold text-white truncate">{product.name}</div>
-            <div className="text-[11px] text-slate-400">
+            <div className={`text-sm font-extrabold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              {product.name}
+            </div>
+            <div className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               {prodJournals.length} đợt • Nhập:{' '}
-              <b className="text-emerald-400">+{Number(totalIn.toFixed(2))}</b> • Xuất:{' '}
-              <b className="text-rose-400">-{Number(totalOut.toFixed(2))}</b>
+              <b className={isDark ? 'text-emerald-400' : 'text-emerald-600'}>+{Number(totalIn.toFixed(2))}</b> • Xuất:{' '}
+              <b className={isDark ? 'text-rose-400' : 'text-rose-600'}>-{Number(totalOut.toFixed(2))}</b>
+              {prodImages.length > 0 && (
+                <>
+                  {' '}• <b className={isDark ? 'text-sky-400' : 'text-sky-600'}>📷 {prodImages.length} ảnh</b>
+                </>
+              )}
             </div>
           </div>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white">
-            <X className="w-5 h-5" />
+          <button
+            onClick={onClose}
+            className={`p-1.5 rounded-full transition ${
+              isDark ? 'text-slate-400 hover:text-white bg-slate-800' : 'text-slate-500 hover:text-slate-900 bg-slate-200/80'
+            }`}
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -1404,53 +1540,115 @@ export function ProductHistoryModal({
             prodJournals.map(j => {
               const isIn = j.direction === 'in'
               const cleanNote = extractCleanUserNote(j.notes)
+              const rowImgs = getImagesForJournal(j)
               return (
                 <div
                   key={j.id}
-                  className="p-2.5 rounded-xl bg-[#1e293b] border border-slate-700 flex items-center justify-between gap-2"
+                  className={`p-2.5 rounded-xl border space-y-2 ${
+                    isDark ? 'bg-[#1e293b] border-slate-700' : 'bg-slate-50/80 border-slate-200'
+                  }`}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs font-extrabold ${
-                          isIn
-                            ? 'bg-emerald-500/20 text-emerald-400'
-                            : 'bg-rose-500/20 text-rose-400'
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs font-extrabold ${
+                            isIn
+                              ? isDark
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'bg-emerald-100 text-emerald-700'
+                              : isDark
+                              ? 'bg-rose-500/20 text-rose-400'
+                              : 'bg-rose-100 text-rose-700'
+                          }`}
+                        >
+                          {isIn ? '+' : '-'}
+                          {j.quantity_sent} {j.unit}
+                        </span>
+                        <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          {formatDateTime(j.sent_at)} • {j.sent_by_name || 'NV'}
+                        </span>
+                      </div>
+                      {cleanNote && (
+                        <div className={`text-[11px] mt-1 italic ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>
+                          📝 {cleanNote}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onEditJournal(j)}
+                        className={`p-1.5 rounded-lg transition ${
+                          isDark ? 'bg-slate-800 text-slate-300' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
-                        {isIn ? '+' : '-'}
-                        {j.quantity_sent} {j.unit}
-                      </span>
-                      <span className="text-[11px] text-slate-400">
-                        {formatDateTime(j.sent_at)} • {j.sent_by_name || 'NV'}
-                      </span>
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteJournal(j)}
+                        className={`p-1.5 rounded-lg transition ${
+                          isDark ? 'bg-rose-950/50 text-rose-400' : 'bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100'
+                        }`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                    {cleanNote && (
-                      <div className="text-[11px] text-amber-300 mt-1 italic">📝 {cleanNote}</div>
-                    )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => onEditJournal(j)}
-                      className="p-1.5 rounded-lg bg-slate-800 text-slate-300"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteJournal(j)}
-                      className="p-1.5 rounded-lg bg-rose-950/50 text-rose-400"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+
+                  {rowImgs.length > 0 && (
+                    <div className="flex items-center gap-2 overflow-x-auto pb-0.5 no-scrollbar">
+                      {rowImgs.map(img => (
+                        <button
+                          key={img.id}
+                          type="button"
+                          onClick={() => setPreviewImg(img)}
+                          className={`w-12 h-12 rounded-lg overflow-hidden border shrink-0 transition hover:opacity-90 ${
+                            isDark ? 'border-slate-600 bg-slate-900' : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          <img
+                            src={img.public_url || img.local_data_url || ''}
+                            alt="ảnh đợt"
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )
             })
           )}
         </div>
       </div>
+
+      {previewImg && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/90 flex flex-col items-center justify-center p-4"
+          onClick={() => setPreviewImg(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewImg(null)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <img
+            src={previewImg.public_url || previewImg.local_data_url || ''}
+            alt="preview"
+            className="max-w-full max-h-[80vh] object-contain rounded-xl"
+            onClick={e => e.stopPropagation()}
+          />
+          <div className="text-xs text-slate-300 mt-3 text-center">
+            {previewImg.direction === 'in' ? 'NHẬP' : previewImg.direction === 'out' ? 'XUẤT' : ''}
+            {previewImg.quantity != null ? ` • ${previewImg.quantity} ${previewImg.unit || ''}` : ''}
+            {previewImg.captured_at ? ` • ${formatDateTime(previewImg.captured_at)}` : ''}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2606,6 +2804,7 @@ export function ReconcileTabView({
   user?: any
   onImagesChanged?: () => void
 }) {
+  const { isDark } = useScannerTheme()
   const [selectedKey, setSelectedKey] = useState<string>('')
   const [shiftImages, setShiftImages] = useState<OperationImageRecord[]>([])
   const [uploadingPhase, setUploadingPhase] = useState<'start' | 'end' | null>(null)
@@ -2942,24 +3141,39 @@ export function ReconcileTabView({
       <div
         className={`p-3 rounded-xl border flex items-center justify-between ${
           diff === 0
-            ? 'bg-emerald-950/30 border-emerald-500/40'
-            : 'bg-amber-950/30 border-amber-500/40'
+            ? isDark
+              ? 'bg-emerald-950/30 border-emerald-500/40'
+              : 'bg-emerald-50 border-emerald-300'
+            : isDark
+            ? 'bg-amber-950/30 border-amber-500/40'
+            : 'bg-amber-50 border-amber-300'
         }`}
       >
         <div className="text-xs space-y-0.5">
-          <div className="text-slate-300">
-            Thực tế ghi nhận: <b className="text-white">{actualTotal}</b> • Tham chiếu:{' '}
-            <b className="text-sky-400">{refTotal}</b>
+          <div className={isDark ? 'text-slate-300' : 'text-slate-600'}>
+            Thực tế ghi nhận:{' '}
+            <b className={isDark ? 'text-white' : 'text-slate-900'}>{actualTotal}</b> • Tham chiếu:{' '}
+            <b className={isDark ? 'text-sky-400' : 'text-sky-600'}>{refTotal}</b>
           </div>
           <div
-            className={`font-extrabold ${diff === 0 ? 'text-emerald-400' : 'text-amber-300'}`}
+            className={`font-extrabold ${
+              diff === 0
+                ? isDark ? 'text-emerald-400' : 'text-emerald-700'
+                : isDark ? 'text-amber-300' : 'text-amber-700'
+            }`}
           >
             {diff === 0
               ? '✓ Khớp tuyệt đối (Chênh lệch: 0)'
               : `⚠ Lệch: ${diff > 0 ? `+${diff}` : diff} ${currentTarget?.unit || ''}`}
           </div>
         </div>
-        <Scale className={`w-5 h-5 ${diff === 0 ? 'text-emerald-400' : 'text-amber-400'}`} />
+        <Scale
+          className={`w-5 h-5 ${
+            diff === 0
+              ? isDark ? 'text-emerald-400' : 'text-emerald-600'
+              : isDark ? 'text-amber-400' : 'text-amber-600'
+          }`}
+        />
       </div>
 
       {/* Ảnh tham chiếu ĐẦU / CUỐI */}
@@ -3068,6 +3282,7 @@ export function QuickSnapQueueModal({
     }
   ) => void
 }) {
+  const { isDark } = useScannerTheme()
   const [selectedId, setSelectedId] = useState<string>('')
   const [query, setQuery] = useState<string>('')
   const [selectedProduct, setSelectedProduct] = useState<ShiftProductItem | null>(null)
@@ -3246,21 +3461,23 @@ export function QuickSnapQueueModal({
   const isTypingSearch = isSearchFocused || query.trim().length > 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4">
+    <div className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 ${isDark ? 'bg-black/80' : 'bg-slate-900/55 backdrop-blur-[2px]'}`}>
       <div
-        className="w-full max-w-md bg-[#0f172a] border-t sm:border border-slate-700 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[92dvh]"
+        className={`w-full max-w-md border-t sm:border rounded-t-3xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[92dvh] shadow-2xl ${
+          isDark ? 'bg-[#0f172a] border-slate-700' : 'bg-white border-slate-200'
+        }`}
         style={viewportHeight ? { maxHeight: `${Math.round(viewportHeight * 0.94)}px` } : undefined}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1e293b] border-b border-slate-700">
+        <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? 'bg-[#1e293b] border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
           <div>
-            <div className="text-sm font-extrabold text-white flex items-center gap-2">
+            <div className={`text-sm font-extrabold flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
               <span>Ảnh Chụp Nhanh Chờ Gán</span>
-              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black">
+              <span className={`px-2 py-0.5 rounded-full text-xs font-black ${isDark ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
                 {snaps.length}
               </span>
             </div>
-            <div className="text-[11px] text-slate-400">
+            <div className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               Chụp trước lúc bận — gán SP &amp; số lượng khi giãn nhịp
             </div>
           </div>
@@ -3268,7 +3485,11 @@ export function QuickSnapQueueModal({
             <button
               type="button"
               onClick={() => void onCaptureMore()}
-              className="px-2.5 py-1.5 rounded-lg bg-sky-500/20 border border-sky-400/40 text-sky-300 text-xs font-extrabold flex items-center gap-1"
+              className={`px-2.5 py-1.5 rounded-lg border text-xs font-extrabold flex items-center gap-1 transition ${
+                isDark
+                  ? 'bg-sky-500/20 border-sky-400/40 text-sky-300'
+                  : 'bg-sky-50 border-sky-200 text-sky-700 hover:bg-sky-100'
+              }`}
             >
               <Camera className="w-3.5 h-3.5" />
               <span>Chụp thêm</span>
@@ -3276,7 +3497,9 @@ export function QuickSnapQueueModal({
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300"
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition ${
+                isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-200/80 text-slate-600 hover:bg-slate-200'
+              }`}
             >
               <X className="w-4 h-4" />
             </button>
@@ -3285,7 +3508,7 @@ export function QuickSnapQueueModal({
 
         {snaps.length === 0 ? (
           <div className="p-8 text-center space-y-3">
-            <div className="text-xs font-semibold text-slate-400">
+            <div className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               Không còn ảnh nào trong hàng chờ.
             </div>
             <button
@@ -3316,7 +3539,11 @@ export function QuickSnapQueueModal({
                       key={s.id}
                       onClick={() => setSelectedId(s.id)}
                       className={`relative shrink-0 w-20 rounded-xl overflow-hidden border-2 cursor-pointer transition ${
-                        isSel ? 'border-amber-400 ring-2 ring-amber-400/30' : 'border-slate-700 opacity-75'
+                        isSel
+                          ? 'border-amber-500 ring-2 ring-amber-400/30'
+                          : isDark
+                          ? 'border-slate-700 opacity-75'
+                          : 'border-slate-200 opacity-85'
                       }`}
                     >
                       <img
@@ -3324,10 +3551,10 @@ export function QuickSnapQueueModal({
                         alt={`snap-${idx}`}
                         className="w-20 h-16 object-cover"
                       />
-                      <div className="bg-[#1e293b] text-[10px] font-bold text-slate-300 text-center py-0.5">
+                      <div className={`text-[10px] font-bold text-center py-0.5 ${isDark ? 'bg-[#1e293b] text-slate-300' : 'bg-slate-50 text-slate-700'}`}>
                         {t}
                       </div>
-                      <div className="bg-[#0f172a] text-[9px] font-extrabold text-indigo-300 text-center px-1 pb-0.5 truncate">
+                      <div className={`text-[9px] font-extrabold text-center px-1 pb-0.5 truncate ${isDark ? 'bg-[#0f172a] text-indigo-300' : 'bg-white text-indigo-600'}`}>
                         {s.jobName || 'Công việc'}
                       </div>
                       <button
@@ -3350,17 +3577,21 @@ export function QuickSnapQueueModal({
             {/* Công việc của ảnh đang chọn + Đổi CV + Lưu thẳng Album */}
             {!isTypingSearch && activeSnap && (
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#1e293b] border border-indigo-500/40">
+                <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border ${isDark ? 'bg-[#1e293b] border-indigo-500/40' : 'bg-indigo-50/70 border-indigo-200'}`}>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[10px] font-bold text-slate-400">THUỘC CÔNG VIỆC:</div>
-                    <div className="text-xs font-extrabold text-indigo-200 truncate">
+                    <div className={`text-[10px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>THUỘC CÔNG VIỆC:</div>
+                    <div className={`text-xs font-extrabold truncate ${isDark ? 'text-indigo-200' : 'text-indigo-900'}`}>
                       {activeSnap.jobName || 'Công việc'}
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => onSaveToShiftAlbum(activeSnap)}
-                    className="px-2.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-300 text-[11px] font-extrabold flex items-center gap-1 shrink-0"
+                    className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-extrabold flex items-center gap-1 shrink-0 transition ${
+                      isDark
+                        ? 'bg-sky-500/20 hover:bg-sky-500/30 border-sky-400/40 text-sky-300'
+                        : 'bg-sky-50 hover:bg-sky-100 border-sky-200 text-sky-700'
+                    }`}
                   >
                     <ImageIcon className="w-3.5 h-3.5" />
                     <span>Lưu thẳng Album</span>
@@ -3369,7 +3600,7 @@ export function QuickSnapQueueModal({
 
                 {openShifts.length > 1 && (
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                    <span className="text-[10px] font-bold text-slate-500 shrink-0">Đổi CV:</span>
+                    <span className={`text-[10px] font-bold shrink-0 ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>Đổi CV:</span>
                     {openShifts.map(sh => {
                       const isCur = sh.id === activeSnap.shiftId
                       const shName = sh.summary_data?.job_name || sh.notes || 'Công việc'
@@ -3380,8 +3611,10 @@ export function QuickSnapQueueModal({
                           onClick={() => void onChangeSnapShift(activeSnap.id, sh)}
                           className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap border transition ${
                             isCur
-                              ? 'bg-indigo-600 border-indigo-400 text-white'
-                              : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                              ? 'bg-indigo-600 border-indigo-600 text-white'
+                              : isDark
+                              ? 'bg-[#1e293b] border-slate-700 text-slate-300'
+                              : 'bg-slate-50 border-slate-200 text-slate-700'
                           }`}
                         >
                           {shName}
@@ -3396,9 +3629,9 @@ export function QuickSnapQueueModal({
             {/* Xem lớn ảnh đang chọn (ẩn khi đang gõ tìm kiếm, thu gọn khi đã chọn SP) */}
             {!isTypingSearch && activeSnap && (
               <div
-                className={`rounded-xl overflow-hidden border border-slate-700 bg-black/50 flex items-center justify-center transition-all ${
-                  selectedProduct ? 'max-h-28' : 'max-h-44'
-                }`}
+                className={`rounded-xl overflow-hidden border flex items-center justify-center transition-all ${
+                  isDark ? 'border-slate-700 bg-black/50' : 'border-slate-200 bg-slate-100'
+                } ${selectedProduct ? 'max-h-28' : 'max-h-44'}`}
               >
                 <img
                   src={activeSnap.photo.dataUrl}
@@ -3411,7 +3644,7 @@ export function QuickSnapQueueModal({
             {/* Chọn nhanh SP theo Công việc của ảnh */}
             {!isTypingSearch && quickPickProducts.length > 0 && (
               <div className="space-y-1">
-                <div className="text-[11px] font-bold text-slate-400">
+                <div className={`text-[11px] font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                   {shiftPinnedProducts.length > 0
                     ? `Sản phẩm của công việc (${shiftPinnedProducts.length}):`
                     : 'Chọn nhanh sản phẩm vừa làm:'}
@@ -3430,8 +3663,10 @@ export function QuickSnapQueueModal({
                         }}
                         className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
                           active
-                            ? 'bg-indigo-600 border-indigo-400 text-white'
-                            : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : isDark
+                            ? 'bg-[#1e293b] border-slate-700 text-slate-300'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                         }`}
                       >
                         {rp.aliases ? `${rp.aliases} • ` : ''}
@@ -3446,7 +3681,13 @@ export function QuickSnapQueueModal({
             {/* Tìm SP với Autocomplete (hiển thị gợi ý ngay phía trên ô gõ để không bị bàn phím che) */}
             <div className="relative space-y-1">
               {suggestions.length > 0 && (
-                <div className="rounded-xl bg-[#1e293b] border border-indigo-500/40 max-h-56 overflow-y-auto divide-y divide-slate-700/60 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div
+                  className={`rounded-xl border max-h-56 overflow-y-auto divide-y [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] ${
+                    isDark
+                      ? 'bg-[#1e293b] border-indigo-500/40 divide-slate-700/60'
+                      : 'bg-white border-indigo-200 divide-slate-100 shadow-sm'
+                  }`}
+                >
                   {suggestions.map(p => (
                     <button
                       key={p.id}
@@ -3458,28 +3699,44 @@ export function QuickSnapQueueModal({
                         setIsSearchFocused(false)
                         searchInputRef.current?.blur()
                       }}
-                      className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between gap-2"
+                      className={`w-full px-3 py-2 text-left flex items-center justify-between gap-2 transition ${
+                        isDark ? 'hover:bg-slate-800' : 'hover:bg-indigo-50/50'
+                      }`}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-white break-words leading-snug">{p.name}</div>
+                        <div className={`text-xs font-bold break-words leading-snug ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                          {p.name}
+                        </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           {p.aliases && (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-extrabold">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                                isDark ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}
+                            >
                               {p.aliases}
                             </span>
                           )}
                           {p.sku && (
-                            <span className="text-[10px] font-bold text-indigo-400">{p.sku}</span>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                              {p.sku}
+                            </span>
                           )}
                         </div>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-400 shrink-0">Chọn</span>
+                      <span className={`text-[10px] font-extrabold shrink-0 ${isDark ? 'text-slate-400' : 'text-indigo-600'}`}>
+                        Chọn
+                      </span>
                     </button>
                   ))}
                 </div>
               )}
 
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#1e293b] border border-slate-700 focus-within:border-indigo-500">
+              <div
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl border focus-within:border-indigo-500 ${
+                  isDark ? 'bg-[#1e293b] border-slate-700' : 'bg-white border-slate-300'
+                }`}
+              >
                 <Search className="w-4 h-4 text-slate-400 shrink-0" />
                 <input
                   ref={searchInputRef}
@@ -3489,14 +3746,16 @@ export function QuickSnapQueueModal({
                   onBlur={() => setTimeout(() => setIsSearchFocused(false), 120)}
                   onChange={e => setQuery(e.target.value)}
                   placeholder="Gõ tên viết tắt (alias), SKU, tên SP..."
-                  className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
+                  className={`w-full bg-transparent text-xs focus:outline-none ${
+                    isDark ? 'text-white placeholder-slate-500' : 'text-slate-900 placeholder-slate-400'
+                  }`}
                 />
                 {query && (
                   <button
                     type="button"
                     onMouseDown={e => e.preventDefault()}
                     onClick={() => setQuery('')}
-                    className="text-slate-400 hover:text-white"
+                    className={`transition ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-400 hover:text-slate-700'}`}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -3506,21 +3765,23 @@ export function QuickSnapQueueModal({
 
             {/* SP đang chọn + ĐVT + Số lượng */}
             {selectedProduct && (
-              <div className="rounded-xl p-3 bg-[#1e293b] border border-indigo-500/40 space-y-2.5">
-                <div className="text-xs font-extrabold text-white">{selectedProduct.name}</div>
+              <div className={`rounded-xl p-3 border space-y-2.5 ${isDark ? 'bg-[#1e293b] border-indigo-500/40' : 'bg-slate-50 border-indigo-200'}`}>
+                <div className={`text-xs font-extrabold ${isDark ? 'text-white' : 'text-slate-900'}`}>{selectedProduct.name}</div>
 
                 {unitOptions.length > 0 && (
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                    <span className="text-[11px] font-bold text-slate-400 shrink-0">ĐVT:</span>
+                    <span className={`text-[11px] font-bold shrink-0 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>ĐVT:</span>
                     {unitOptions.map(u => (
                       <button
                         key={u}
                         type="button"
                         onClick={() => setSelectedUnit(u)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border ${
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
                           selectedUnit === u
-                            ? 'bg-indigo-600 border-indigo-400 text-white'
-                            : 'bg-[#0f172a] border-slate-700 text-slate-300'
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : isDark
+                            ? 'bg-[#0f172a] border-slate-700 text-slate-300'
+                            : 'bg-white border-slate-200 text-slate-700'
                         }`}
                       >
                         {u}
@@ -3536,7 +3797,11 @@ export function QuickSnapQueueModal({
                     value={qtyStr}
                     onChange={e => setQtyStr(e.target.value)}
                     placeholder="Nhập số lượng..."
-                    className="min-w-0 flex-1 px-3 py-2 rounded-xl bg-[#0f172a] border border-slate-700 text-sm font-black text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+                    className={`min-w-0 flex-1 px-3 py-2 rounded-xl border text-sm font-black focus:outline-none focus:border-indigo-500 ${
+                      isDark
+                        ? 'bg-[#0f172a] border-slate-700 text-white placeholder-slate-500'
+                        : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                    }`}
                   />
                   {[1, 5, 10, 20].map(d => (
                     <button
@@ -3548,7 +3813,11 @@ export function QuickSnapQueueModal({
                           return String(Math.round((c + d) * 100) / 100)
                         })
                       }
-                      className="shrink-0 px-2 py-2 rounded-lg bg-[#0f172a] border border-slate-700 text-indigo-300 text-xs font-extrabold"
+                      className={`shrink-0 px-2 py-2 rounded-lg border text-xs font-extrabold transition ${
+                        isDark
+                          ? 'bg-[#0f172a] border-slate-700 text-indigo-300'
+                          : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                      }`}
                     >
                       +{d}
                     </button>
@@ -3560,21 +3829,27 @@ export function QuickSnapQueueModal({
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
                   placeholder="Ghi chú (tùy chọn)..."
-                  className="w-full px-3 py-1.5 rounded-xl bg-[#0f172a] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none"
+                  className={`w-full px-3 py-1.5 rounded-xl border text-xs focus:outline-none ${
+                    isDark
+                      ? 'bg-[#0f172a] border-slate-700 text-white placeholder-slate-500'
+                      : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                  }`}
                 />
               </div>
             )}
           </div>
           {selectedProduct && (
-            <div className="grid grid-cols-2 gap-2 px-3 py-2.5 bg-[#0f172a] border-t border-slate-800 shrink-0">
+            <div className={`grid grid-cols-2 gap-2 px-3 py-2.5 border-t shrink-0 ${isDark ? 'bg-[#0f172a] border-slate-800' : 'bg-white border-slate-200'}`}>
               <button
                 type="button"
                 disabled={validQty <= 0}
                 onClick={() => handleAssign('in')}
-                className={`py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 ${
+                className={`py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition ${
                   validQty <= 0
-                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                    ? isDark
+                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                      : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
                 }`}
               >
                 <ArrowDownCircle className="w-4 h-4" />
@@ -3584,10 +3859,12 @@ export function QuickSnapQueueModal({
                 type="button"
                 disabled={validQty <= 0}
                 onClick={() => handleAssign('out')}
-                className={`py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 ${
+                className={`py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 transition ${
                   validQty <= 0
-                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    : 'bg-rose-600 hover:bg-rose-500 text-white'
+                    ? isDark
+                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                      : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                    : 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm'
                 }`}
               >
                 <ArrowUpCircle className="w-4 h-4" />

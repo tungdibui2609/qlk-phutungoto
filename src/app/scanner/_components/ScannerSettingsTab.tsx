@@ -107,6 +107,7 @@ export function ScannerSettingsTab({
 }: ScannerSettingsTabProps) {
   const { isDark, tabThemes, setTabTheme, setAllTabsTheme } = useScannerTheme()
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false)
+  const [showIosGuide, setShowIosGuide] = useState(false)
   // Đồng bộ All-in-One trước ca làm việc
   const [syncingAll, setSyncingAll] = useState(false)
   const [syncAllStatus, setSyncAllStatus] = useState<string | null>(null)
@@ -292,536 +293,445 @@ export function ScannerSettingsTab({
 
   if (activeTab !== 'settings') return null
 
+  const lightTabsCount = SCANNER_THEME_TAB_META.filter(t => tabThemes[t.key] === 'light').length
+  const darkTabsCount = SCANNER_THEME_TAB_META.filter(t => tabThemes[t.key] === 'dark').length
+
+  const cardCls = isDark
+    ? 'bg-[#111827] border-slate-800'
+    : 'bg-white border-stone-200 shadow-xs'
+  const dividerCls = isDark ? 'border-slate-800' : 'border-stone-200/80'
+  const textPrimary = isDark ? 'text-slate-100' : 'text-stone-900'
+  const textMuted = isDark ? 'text-slate-400' : 'text-stone-500'
+  const subSurface = isDark
+    ? 'bg-[#0f172a] border-slate-700/80'
+    : 'bg-stone-50 border-stone-200'
+
   return (
-    <div className="flex-1 overflow-y-auto overscroll-contain bg-[#0b0f19] p-4 space-y-4">
-      {/* 0. Nút mở Cài đặt Giao diện (Theme) riêng cho từng Menu */}
-      <button
-        type="button"
-        onClick={() => setIsThemeModalOpen(true)}
-        className="w-full p-4 rounded-2xl bg-[#111827] border border-slate-800 flex items-center justify-between gap-3 text-left active:scale-[0.99] transition"
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center shrink-0 text-indigo-400">
-            <Palette size={20} />
-          </div>
-          <div className="min-w-0">
-            <div className="text-xs font-extrabold text-slate-100">
-              Cài Đặt Giao Diện (Theme) Từng Menu
-            </div>
-            <div className="text-[11px] text-slate-400 mt-0.5 truncate">
-              Tùy chỉnh Sáng / Tối riêng cho từng tab ({SCANNER_THEME_TAB_META.filter(t => tabThemes[t.key] === 'light').length} Sáng · {SCANNER_THEME_TAB_META.filter(t => tabThemes[t.key] === 'dark').length} Tối)
-            </div>
-          </div>
-        </div>
-        <ChevronRight size={18} className="text-slate-400 shrink-0" />
-      </button>
-
-      {/* Modal Tùy Chỉnh Theme Sáng / Tối Cho Từng Menu */}
-      {isThemeModalOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-xs">
-          <div className="absolute inset-0" onClick={() => setIsThemeModalOpen(false)} />
-          <div className="relative z-10 w-full max-w-md mx-auto rounded-t-3xl bg-[#111827] border-t border-slate-800 p-4 pb-7 max-h-[85dvh] flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Palette size={18} className="text-indigo-400" />
-                <span className="text-sm font-extrabold text-slate-100">
-                  Giao Diện Sáng / Tối Theo Từng Menu
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsThemeModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 my-3">
-              <button
-                type="button"
-                onClick={() => setAllTabsTheme('light')}
-                className="py-2 px-3 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-300 text-xs font-extrabold flex items-center justify-center gap-1.5"
-              >
-                <Sun size={14} />
-                <span>Đặt tất cả Sáng</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAllTabsTheme('dark')}
-                className="py-2 px-3 rounded-xl bg-indigo-500/15 border border-indigo-500/35 text-indigo-300 text-xs font-extrabold flex items-center justify-center gap-1.5"
-              >
-                <Moon size={14} />
-                <span>Đặt tất cả Tối</span>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
-              {SCANNER_THEME_TAB_META.map(item => {
-                const curMode = tabThemes[item.key] || 'light'
-                const itemIsDark = curMode === 'dark'
-                return (
-                  <div
-                    key={item.key}
-                    className="p-2.5 rounded-2xl bg-[#1e293b] border border-slate-700 flex items-center justify-between gap-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-extrabold text-slate-100 truncate">
-                        {item.label}
-                      </div>
-                      <div className="text-[10px] text-slate-400 truncate mt-0.5">
-                        {item.desc}
-                      </div>
-                    </div>
-
-                    <div className="flex bg-[#0f172a] p-1 rounded-xl border border-slate-700 gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setTabTheme(item.key, 'light')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition ${
-                          !itemIsDark
-                            ? 'bg-amber-500 text-white shadow-xs'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        <Sun size={12} />
-                        <span>Sáng</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTabTheme(item.key, 'dark')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition ${
-                          itemIsDark
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        <Moon size={12} />
-                        <span>Tối</span>
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 1. User Profile Card (Matching SettingsScreen.tsx) */}
-      <div className="p-4 rounded-2xl bg-[#111827] border border-slate-800 space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-black uppercase tracking-wider text-sky-400">
-            👤 Tài Khoản Đăng Nhập
-          </span>
-          {userProfile?.roleName && (
-            <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[10px] font-bold">
-              {userProfile.roleName}
-            </span>
-          )}
-        </div>
-
+    <div
+      className={`flex-1 overflow-y-auto overscroll-contain p-3.5 pb-10 space-y-4 ${
+        isDark ? 'bg-[#0b0f19]' : 'bg-stone-100/90'
+      }`}
+    >
+      {/* ── 1. THẺ TÀI KHOẢN GỌN ── */}
+      <div className={`p-3.5 rounded-2xl border ${cardCls}`}>
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-sky-600 to-emerald-500 flex items-center justify-center text-white font-black text-lg shadow-md shrink-0">
+          <div
+            className={`w-11 h-11 rounded-full flex items-center justify-center font-black text-base shrink-0 border ${
+              isDark
+                ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
+                : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+            }`}
+          >
             {userProfile?.fullName ? userProfile.fullName.charAt(0).toUpperCase() : 'U'}
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-bold text-white truncate">
-              {userProfile?.fullName || 'Nhân viên Kho'}
-            </h3>
-            <p className="text-[11px] text-slate-400 font-mono truncate">
+            <div className="flex items-center gap-1.5">
+              <h3 className={`text-sm font-extrabold truncate ${textPrimary}`}>
+                {userProfile?.fullName || 'Nhân viên Kho'}
+              </h3>
+              {userProfile?.roleName && (
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                    isDark ? 'bg-sky-500/20 text-sky-300' : 'bg-sky-50 text-sky-700'
+                  }`}
+                >
+                  {userProfile.roleName}
+                </span>
+              )}
+            </div>
+            <p className={`text-[11px] font-mono truncate ${textMuted}`}>
               {userProfile?.email || 'Chưa cập nhật email'}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={async () => {
+              const ok = await scannerConfirm({
+                title: 'Đăng xuất tài khoản?',
+                message: 'Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này không?',
+                confirmText: 'Đăng xuất',
+                cancelText: 'Huỷ',
+                variant: 'danger',
+              })
+              if (ok) {
+                await supabase.auth.signOut()
+                window.location.href = '/login'
+              }
+            }}
+            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 shrink-0 transition active:scale-[0.98] ${
+              isDark
+                ? 'bg-rose-500/15 border-rose-500/35 text-rose-300'
+                : 'bg-rose-50 border-rose-200 text-rose-600'
+            }`}
+          >
+            <LogOut size={13} />
+            <span>Đăng xuất</span>
+          </button>
         </div>
 
-        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs">
-          <span className="text-slate-400">🏢 Công ty trực thuộc:</span>
-          <strong className="text-amber-400 font-bold truncate ml-2">
+        <div className={`mt-2.5 pt-2.5 border-t flex items-center justify-between gap-2 text-xs ${dividerCls}`}>
+          <span className={textMuted}>Công ty:</span>
+          <strong className={`truncate font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
             {userProfile?.companyName || 'Chánh Thu Group'}
           </strong>
         </div>
-
-        <button
-          type="button"
-          onClick={async () => {
-            const ok = await scannerConfirm({
-              title: 'Đăng xuất tài khoản?',
-              message: 'Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này không?',
-              confirmText: 'Đăng xuất',
-              cancelText: 'Huỷ',
-              variant: 'danger',
-            })
-            if (ok) {
-              await supabase.auth.signOut()
-              window.location.href = '/login'
-            }
-          }}
-          className="w-full py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.99]"
-        >
-          <LogOut size={14} />
-          <span>🚪 Đăng xuất khỏi thiết bị</span>
-        </button>
       </div>
 
-      {/* 2. ALL-IN-ONE OFFLINE SYNC CARD (TRƯỚC CA LÀM VIỆC - Khớp SettingsScreen.tsx) */}
-      <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/60 via-[#0f291e] to-[#111827] border-2 border-emerald-500/60 space-y-3 shadow-lg shadow-emerald-950/30">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-emerald-400">
-            <Zap size={18} className="fill-emerald-400" />
-            <h3 className="text-xs font-black uppercase tracking-wider text-emerald-300">
-              Đồng Bộ Nhanh Trước Ca Làm Việc
-            </h3>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-black">
-            ALL-IN-ONE
-          </span>
+      {/* ── 2. GIAO DIỆN & TIỆN ÍCH ── */}
+      <div>
+        <div className={`text-[11px] font-extrabold uppercase tracking-wider mb-1.5 px-1 ${textMuted}`}>
+          Giao diện & Tiện ích
         </div>
-
-        <p className="text-[11px] text-emerald-100/90 leading-relaxed">
-          Chỉ cần bấm <strong>1 nút duy nhất</strong> khi đang có Wifi để tải trọn bộ:{' '}
-          <strong>Quy tắc con dấu + Danh sách LOT & Tên gõ tắt + Sơ đồ 6 kho</strong> về máy trước
-          khi bước vào kho lạnh.
-        </p>
-
-        {syncAllStatus && (
-          <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/40 text-[11px] text-emerald-200 leading-relaxed">
-            {syncAllStatus}
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={handleSyncAllOffline}
-          disabled={syncingAll || syncingStamp || isSyncingLots || syncingMap}
-          className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 text-xs font-black uppercase tracking-wide transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 active:scale-[0.98]"
-        >
-          {syncingAll ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              <span>Đang tải toàn bộ dữ liệu kho...</span>
-            </>
-          ) : (
-            <>
-              <CloudDownload size={16} />
-              <span>⚡ TẢI TOÀN BỘ DỮ LIỆU KHO (ALL-IN-ONE)</span>
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* 3. Offline Stamp Rules & Decode Dictionary Card */}
-      <div className="p-4 rounded-2xl bg-[#111827] border border-slate-800 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Barcode size={18} className="text-purple-400" />
-            <h3 className="text-xs font-black uppercase tracking-wider text-purple-400">
-              Quy Tắc Giải Mã Dấu Đóng (Offline)
-            </h3>
-          </div>
-          <span className="text-xs font-black text-sky-400 font-mono">
-            {stampRulesCount} quy tắc
-          </span>
-        </div>
-
-        <p className="text-[11px] text-slate-400 leading-relaxed">
-          Lưu trong bộ nhớ máy để tự động giải mã 2 dòng dấu đóng (21 số) ngay cả khi không có mạng
-          wifi trong kho lạnh.
-        </p>
-
-        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1 text-[11px]">
-          <div className="flex justify-between">
-            <span className="text-slate-400">Số quy tắc trong máy:</span>
-            <strong className="text-emerald-400 font-mono">
-              {stampRulesCount > 0 ? `${stampRulesCount} mã quy tắc` : 'Đang dùng bộ mã mặc định'}
-            </strong>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Cập nhật lần cuối:</span>
-            <span className="text-slate-300 font-mono">{formatTimeVi(lastStampSync)}</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className={`rounded-2xl border overflow-hidden divide-y ${cardCls} ${isDark ? 'divide-slate-800' : 'divide-stone-200/80'}`}>
           <button
             type="button"
-            onClick={handleSyncStampRules}
-            disabled={syncingStamp || syncingAll}
-            className="py-2.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/20 active:scale-[0.98]"
+            onClick={() => setIsThemeModalOpen(true)}
+            className="w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left transition active:opacity-80"
           >
-            {syncingStamp ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                <span>Đang tải...</span>
-              </>
-            ) : (
-              <>
-                <CloudDownload size={14} />
-                <span>Tải / Cập nhật quy tắc</span>
-              </>
-            )}
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  isDark ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-50 text-indigo-600'
+                }`}
+              >
+                <Palette size={18} />
+              </div>
+              <div className="min-w-0">
+                <div className={`text-[13px] font-bold ${textPrimary}`}>
+                  Giao diện Sáng / Tối từng Menu
+                </div>
+                <div className={`text-[11px] mt-0.5 ${textMuted}`}>
+                  {lightTabsCount} Sáng · {darkTabsCount} Tối
+                </div>
+              </div>
+            </div>
+            <ChevronRight size={17} className={textMuted} />
           </button>
+
+          <div className="px-3.5 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  isDark ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-50 text-emerald-600'
+                }`}
+              >
+                {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+              </div>
+              <div className="min-w-0">
+                <div className={`text-[13px] font-bold ${textPrimary}`}>Âm thanh khi quét</div>
+                <div className={`text-[11px] mt-0.5 ${textMuted}`}>Phát tiếng bíp khi quét thành công</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              className={`w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 ${
+                soundEnabled ? 'bg-emerald-500' : isDark ? 'bg-slate-700' : 'bg-stone-300'
+              }`}
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
+                  soundEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
 
           <button
             type="button"
             onClick={() => setShowDictModal(true)}
-            className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-purple-500/40 text-purple-300 text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-[0.98]"
+            className="w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left transition active:opacity-80"
           >
-            <BookOpen size={14} />
-            <span>📖 Tra Cứu Từ Điển Giải Mã</span>
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  isDark ? 'bg-purple-500/20 text-purple-300' : 'bg-purple-50 text-purple-600'
+                }`}
+              >
+                <BookOpen size={18} />
+              </div>
+              <div className="min-w-0">
+                <div className={`text-[13px] font-bold ${textPrimary}`}>Từ điển giải mã dấu đóng</div>
+                <div className={`text-[11px] mt-0.5 ${textMuted}`}>Tra cứu mã 21 số Dòng 1 & Dòng 2</div>
+              </div>
+            </div>
+            <ChevronRight size={17} className={textMuted} />
           </button>
         </div>
       </div>
 
-      {/* 4. Offline LOT Data Sync Card */}
-      <div className="p-4 rounded-2xl bg-[#111827] border border-slate-800 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Database size={18} className="text-sky-400" />
-            <h3 className="text-xs font-black uppercase tracking-wider text-white">
-              Dữ Liệu LOT Xem Ngoại Tuyến (Offline)
-            </h3>
-          </div>
-          <span className="text-xs font-black text-emerald-400 font-mono">
-            {offlineLotsCount} LOT
-          </span>
+      {/* ── 3. QUÉT PALLET & PHÂN HỆ KHO ── */}
+      <div>
+        <div className={`text-[11px] font-extrabold uppercase tracking-wider mb-1.5 px-1 ${textMuted}`}>
+          Quét Pallet & Kho
         </div>
-
-        <p className="text-[11px] text-slate-400 leading-relaxed">
-          Tải toàn bộ danh sách LOT, vị trí kệ/ô và từ điển tên gõ tắt (aliases) từ máy chủ về máy
-          để tìm kiếm, lọc và xem chi tiết khi vào kho lạnh mất sóng.
-        </p>
-
-        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2 text-[11px]">
-          <div className="flex justify-between">
-            <span className="text-slate-400">Số LOT lưu trong máy:</span>
-            <strong className="text-sky-400 font-mono">
-              {offlineLotsCount > 0 ? `${offlineLotsCount} LOT` : 'Chưa tải về máy'}
-            </strong>
+        <div className={`p-3.5 rounded-2xl border space-y-3 ${cardCls}`}>
+          <div>
+            <label className={`text-[11px] font-bold block mb-1 ${textMuted}`}>Phân hệ kho làm việc</label>
+            <select
+              value={systemCode}
+              onChange={e => setSystemCode(e.target.value)}
+              className={`w-full px-3 py-2 rounded-xl border text-xs font-semibold ${subSurface} ${textPrimary}`}
+            >
+              <option value="KHO_DONG_LANH">Kho Đông Lạnh (KHO_DONG_LANH)</option>
+              <option value="KHO_NGUYEN_LIEU">Kho Nguyên Liệu (KHO_NGUYEN_LIEU)</option>
+              <option value="KHO_THANH_PHAM">Kho Thành Phẩm (KHO_THANH_PHAM)</option>
+              <option value="KHO_BAO_BI">Kho Bao Bì (KHO_BAO_BI)</option>
+            </select>
           </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Đồng bộ lần cuối:</span>
-            <span className="text-slate-300 font-mono">{formatTimeVi(lastLotsSync)}</span>
+
+          <div className={`pt-2.5 border-t ${dividerCls}`}>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className={`text-[13px] font-bold ${textPrimary}`}>Số thùng mặc định / Pallet</div>
+                <div className={`text-[11px] ${textMuted}`}>Dùng khi tạo Pallet mới</div>
+              </div>
+              <input
+                type="number"
+                value={targetQty}
+                onChange={e => {
+                  const val = parseInt(e.target.value, 10) || 30
+                  setTargetQty(val)
+                  try { localStorage.setItem('config_default_target_box_qty', String(val)) } catch {}
+                }}
+                className={`w-20 px-2 py-1.5 rounded-xl border text-center text-sm font-black font-mono ${subSurface} ${textPrimary}`}
+              />
+            </div>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {[20, 24, 30, 36, 40, 50].map(q => (
+                <button
+                  type="button"
+                  key={q}
+                  onClick={() => {
+                    setTargetQty(q)
+                    try { localStorage.setItem('config_default_target_box_qty', String(q)) } catch {}
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${
+                    targetQty === q
+                      ? isDark
+                        ? 'bg-indigo-500/25 border-indigo-400 text-indigo-300'
+                        : 'bg-indigo-50 border-indigo-500 text-indigo-700'
+                      : `${subSurface} ${textMuted}`
+                  }`}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+
+          <div className={`pt-2.5 border-t flex items-center justify-between gap-2 ${dividerCls}`}>
             <div>
-              <p className="text-xs font-bold text-slate-200">Tự động tải ngầm khi có mạng</p>
-              <p className="text-[10px] text-slate-400">
-                Tự làm mới dữ liệu khi mở ứng dụng ở nơi có Wifi/4G
-              </p>
+              <div className={`text-[13px] font-bold ${textPrimary}`}>
+                Tự động chốt khi đủ {targetQty} thùng
+              </div>
+              <div className={`text-[11px] ${textMuted}`}>Tự hoàn thành Pallet khi đủ chỉ tiêu</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAutoCompleteOnFull?.(!autoCompleteOnFull)}
+              className={`w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 ${
+                autoCompleteOnFull ? 'bg-emerald-500' : isDark ? 'bg-slate-700' : 'bg-stone-300'
+              }`}
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
+                  autoCompleteOnFull ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 4. DỮ LIỆU NGOẠI TUYẾN (GOM 1 KHỐI GỌN) ── */}
+      <div>
+        <div className={`text-[11px] font-extrabold uppercase tracking-wider mb-1.5 px-1 ${textMuted}`}>
+          Dữ liệu ngoại tuyến (Kho lạnh)
+        </div>
+        <div className={`rounded-2xl border overflow-hidden divide-y ${cardCls} ${isDark ? 'divide-slate-800' : 'divide-stone-200/80'}`}>
+          <div className="p-3.5 space-y-2">
+            <button
+              type="button"
+              onClick={handleSyncAllOffline}
+              disabled={syncingAll || syncingStamp || isSyncingLots || syncingMap}
+              className="w-full py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-extrabold transition flex items-center justify-center gap-2 active:scale-[0.99]"
+            >
+              {syncingAll ? (
+                <>
+                  <Loader2 size={15} className="animate-spin" />
+                  <span>Đang tải toàn bộ dữ liệu...</span>
+                </>
+              ) : (
+                <>
+                  <CloudDownload size={16} />
+                  <span>Tải toàn bộ dữ liệu làm việc</span>
+                </>
+              )}
+            </button>
+            {syncAllStatus && (
+              <div
+                className={`p-2 rounded-xl border text-[11px] leading-relaxed ${
+                  isDark
+                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                }`}
+              >
+                {syncAllStatus}
+              </div>
+            )}
+          </div>
+
+          {/* Sơ đồ kho */}
+          <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <MapIcon size={17} className="text-emerald-600 shrink-0" />
+              <div className="min-w-0">
+                <div className={`text-[12.5px] font-bold truncate ${textPrimary}`}>
+                  Sơ đồ kho · {mapOfflineInfo.count.toLocaleString('vi-VN')} vị trí
+                  {mapOfflineInfo.warehousesCount > 0 ? ` (${mapOfflineInfo.warehousesCount} kho)` : ''}
+                </div>
+                <div className={`text-[10.5px] ${textMuted}`}>{formatTimeVi(mapOfflineInfo.lastSyncedAt)}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSyncMapOffline}
+              disabled={syncingMap || syncingAll}
+              title="Tải lại sơ đồ kho"
+              className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${subSurface} ${textPrimary}`}
+            >
+              {syncingMap ? <Loader2 size={14} className="animate-spin" /> : <CloudDownload size={14} />}
+            </button>
+          </div>
+
+          {/* Danh sách LOT */}
+          <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Database size={17} className="text-sky-600 shrink-0" />
+              <div className="min-w-0">
+                <div className={`text-[12.5px] font-bold truncate ${textPrimary}`}>
+                  Danh sách LOT · {offlineLotsCount.toLocaleString('vi-VN')} LOT
+                </div>
+                <div className={`text-[10.5px] ${textMuted}`}>{formatTimeVi(lastLotsSync)}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSyncLotsOffline}
+              disabled={isSyncingLots || syncingAll}
+              title="Tải lại danh sách LOT"
+              className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${subSurface} ${textPrimary}`}
+            >
+              {isSyncingLots ? <Loader2 size={14} className="animate-spin" /> : <CloudDownload size={14} />}
+            </button>
+          </div>
+
+          {/* Quy tắc dấu đóng */}
+          <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Barcode size={17} className="text-purple-600 shrink-0" />
+              <div className="min-w-0">
+                <div className={`text-[12.5px] font-bold truncate ${textPrimary}`}>
+                  Quy tắc dấu đóng · {stampRulesCount} quy tắc
+                </div>
+                <div className={`text-[10.5px] ${textMuted}`}>{formatTimeVi(lastStampSync)}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSyncStampRules}
+              disabled={syncingStamp || syncingAll}
+              title="Tải lại quy tắc dấu đóng"
+              className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${subSurface} ${textPrimary}`}
+            >
+              {syncingStamp ? <Loader2 size={14} className="animate-spin" /> : <CloudDownload size={14} />}
+            </button>
+          </div>
+
+          {/* Tự động tải ngầm */}
+          <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+            <div>
+              <div className={`text-[12.5px] font-bold ${textPrimary}`}>Tự động tải ngầm khi có Wi-Fi</div>
+              <div className={`text-[10.5px] ${textMuted}`}>Cập nhật dữ liệu khi mở ứng dụng</div>
             </div>
             <button
               type="button"
               onClick={() => handleToggleAutoSync(!autoSyncEnabled)}
-              className={`w-11 h-6 rounded-full transition-colors p-0.5 ${
-                autoSyncEnabled ? 'bg-sky-500' : 'bg-slate-700'
+              className={`w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 ${
+                autoSyncEnabled ? 'bg-indigo-600' : isDark ? 'bg-slate-700' : 'bg-stone-300'
               }`}
             >
               <div
-                className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
                   autoSyncEnabled ? 'translate-x-5' : 'translate-x-0'
                 }`}
               />
             </button>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={handleSyncLotsOffline}
-          disabled={isSyncingLots || syncingAll}
-          className="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-sky-600/20 active:scale-[0.98]"
-        >
-          {isSyncingLots ? (
-            <>
-              <Loader2 size={15} className="animate-spin" />
-              <span>Đang tải danh sách LOT về máy...</span>
-            </>
-          ) : (
-            <>
-              <CloudDownload size={15} />
-              <span>🔄 Tải / Cập nhật danh sách LOT về máy</span>
-            </>
-          )}
-        </button>
       </div>
 
-      {/* 5. Offline Warehouse Map Sync Card (Khớp SettingsScreen.tsx) */}
-      <div className="p-4 rounded-2xl bg-[#111827] border border-slate-800 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <MapIcon size={18} className="text-cyan-400" />
-            <h3 className="text-xs font-black uppercase tracking-wider text-cyan-400">
-              🗺️ Sơ Đồ Kho Xem Ngoại Tuyến (Offline)
-            </h3>
-          </div>
-          <span className="text-xs font-black text-cyan-300 font-mono">
-            {mapOfflineInfo.warehousesCount} kho
-          </span>
-        </div>
-
-        <p className="text-[11px] text-slate-400 leading-relaxed">
-          Tải trước sơ đồ tất cả các kho (Kho 1, 2, 3, 4, 5, Kho chờ đông) về bộ nhớ máy để xem sơ
-          đồ vị trí và tra cứu kệ hàng ngay lập tức trong kho lạnh.
-        </p>
-
-        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1 text-[11px]">
-          <div className="flex justify-between">
-            <span className="text-slate-400">Dữ liệu sơ đồ trong máy:</span>
-            <strong className="text-cyan-400 font-mono">
-              {mapOfflineInfo.count > 0
-                ? `${mapOfflineInfo.count} vị trí (${mapOfflineInfo.warehousesCount} kho)`
-                : 'Chưa tải sơ đồ kho'}
-            </strong>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Đồng bộ lần cuối:</span>
-            <span className="text-slate-300 font-mono">
-              {formatTimeVi(mapOfflineInfo.lastSyncedAt)}
+      {/* ── 5. HƯỚNG DẪN CÀI ĐẶT IPHONE (THU GỌN MẶC ĐỊNH) ── */}
+      <div className={`rounded-2xl border overflow-hidden ${cardCls}`}>
+        <button
+          type="button"
+          onClick={() => setShowIosGuide(s => !s)}
+          className="w-full px-3.5 py-3 flex items-center justify-between gap-3 text-left"
+        >
+          <div className="flex items-center gap-2.5">
+            <Smartphone size={17} className="text-indigo-500" />
+            <span className={`text-[13px] font-bold ${textPrimary}`}>
+              Hướng dẫn cài App trên iPhone (iOS)
             </span>
           </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleSyncMapOffline}
-          disabled={syncingMap || syncingAll}
-          className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/20 active:scale-[0.98]"
-        >
-          {syncingMap ? (
-            <>
-              <Loader2 size={15} className="animate-spin" />
-              <span>Đang tải sơ đồ kho về máy...</span>
-            </>
-          ) : (
-            <>
-              <CloudDownload size={15} />
-              <span>🔄 Tải / Cập nhật Sơ Đồ Kho về máy</span>
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* 6. General Scanner Preferences */}
-      <div className="p-4 rounded-2xl bg-[#111827] border border-slate-800 space-y-3">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">
-          ⚙️ Cấu Hình Máy Quét
-        </h3>
-
-        <div>
-          <label className="text-[11px] text-slate-400 block mb-1">Mã hệ thống kho:</label>
-          <select
-            value={systemCode}
-            onChange={e => setSystemCode(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
-          >
-            <option value="KHO_DONG_LANH">Kho Đông Lạnh (KHO_DONG_LANH)</option>
-            <option value="KHO_NGUYEN_LIEU">Kho Nguyên Liệu (KHO_NGUYEN_LIEU)</option>
-            <option value="KHO_THANH_PHAM">Kho Thành Phẩm (KHO_THANH_PHAM)</option>
-            <option value="KHO_BAO_BI">Kho Bao Bì (KHO_BAO_BI)</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="text-[11px] text-slate-400 block mb-1">
-            Số lượng thùng chuẩn / Pallet:
-          </label>
-          <input
-            type="number"
-            value={targetQty}
-            onChange={e => {
-              const val = parseInt(e.target.value, 10) || 30
-              setTargetQty(val)
-              try { localStorage.setItem('config_default_target_box_qty', String(val)) } catch {}
-            }}
-            className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono"
+          <ChevronRight
+            size={17}
+            className={`${textMuted} transition-transform ${showIosGuide ? 'rotate-90' : ''}`}
           />
-          <div className="flex flex-wrap gap-1.5 mt-1.5">
-            {[20, 25, 30, 35, 40, 50].map(q => (
-              <button
-                type="button"
-                key={q}
-                onClick={() => {
-                  setTargetQty(q)
-                  try { localStorage.setItem('config_default_target_box_qty', String(q)) } catch {}
-                }}
-                className={`px-2.5 py-1 rounded-md text-[10px] font-bold border transition ${
-                  targetQty === q
-                    ? 'bg-sky-600/30 border-sky-500 text-sky-300'
-                    : 'bg-slate-900 border-slate-800 text-slate-400'
-                }`}
-              >
-                {q} thùng
-              </button>
-            ))}
+        </button>
+        {showIosGuide && (
+          <div className={`px-3.5 pb-3.5 pt-2 border-t text-xs space-y-1.5 ${dividerCls} ${textMuted}`}>
+            <p>1. Mở trang này trên trình duyệt <strong className={textPrimary}>Safari</strong>.</p>
+            <p>
+              2. Bấm biểu tượng <strong className={textPrimary}>Chia sẻ</strong> (<Share2 size={12} className="inline text-sky-500" />).
+            </p>
+            <p>
+              3. Chọn <strong className={textPrimary}>&quot;Thêm vào MH chính&quot;</strong> → bấm <strong className={textPrimary}>Thêm</strong>.
+            </p>
           </div>
-        </div>
-
-        <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-          <div>
-            <span className="text-xs text-slate-300 block font-bold">Tự động chốt khi đủ số thùng:</span>
-            <span className="text-[10px] text-slate-400 block">Đạt chỉ tiêu ({targetQty} thùng) sẽ tự động chốt Pallet</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setAutoCompleteOnFull?.(!autoCompleteOnFull)}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition ${
-              autoCompleteOnFull
-                ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
-                : 'bg-slate-800 border-slate-700 text-slate-500'
-            }`}
-          >
-            {autoCompleteOnFull ? 'BẬT' : 'TẮT'}
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-          <span className="text-xs text-slate-300">Âm thanh khi quét thành công:</span>
-          <button
-            type="button"
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            className={`p-2 rounded-lg border transition ${
-              soundEnabled
-                ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
-                : 'bg-slate-800 border-slate-700 text-slate-500'
-            }`}
-          >
-            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* 7. Technician Mode Card (Easter Egg: unlocked by tapping version 5 times) */}
+      {/* ── 6. CẤU HÌNH KỸ THUẬT VIÊN (CHẠM 5 LẦN VÀO PHIÊN BẢN) ── */}
       {showTechnicianConfig && (
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/40 to-slate-900 border border-amber-500/40 space-y-3 animate-in fade-in duration-200">
-          <div className="flex items-center gap-2 text-amber-400">
-            <ShieldCheck size={18} />
+        <div className={`p-3.5 rounded-2xl border border-amber-500/60 space-y-2.5 ${cardCls}`}>
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <ShieldCheck size={17} />
             <h3 className="text-xs font-black uppercase tracking-wider">
-              🔓 Cấu Hình Máy Chủ (Dành Cho Kỹ Thuật Viên)
+              Cấu hình máy chủ (Kỹ thuật)
             </h3>
           </div>
 
           <div>
-            <label className="text-[10px] text-slate-400 block mb-1">
-              Supabase URL (VD: https://api.chanhthu.click):
-            </label>
+            <label className={`text-[11px] font-bold block mb-1 ${textMuted}`}>Supabase URL</label>
             <input
               type="text"
               value={technicianUrl}
               onChange={e => setTechnicianUrl(e.target.value)}
-              className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
+              className={`w-full px-3 py-2 rounded-xl border text-xs font-mono ${subSurface} ${textPrimary}`}
             />
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-[10px] text-slate-400">Supabase Anon Key (Tùy chọn):</label>
+              <label className={`text-[11px] font-bold ${textMuted}`}>Supabase Anon Key</label>
               <button
                 type="button"
                 onClick={() => setShowAnonKey(!showAnonKey)}
-                className="text-[10px] text-sky-400 font-bold flex items-center gap-1"
+                className="text-[11px] text-indigo-500 font-bold flex items-center gap-1"
               >
-                {showAnonKey ? <EyeOff size={11} /> : <Eye size={11} />}
+                {showAnonKey ? <EyeOff size={12} /> : <Eye size={12} />}
                 <span>{showAnonKey ? 'Ẩn mã' : 'Hiện mã'}</span>
               </button>
             </div>
@@ -829,13 +739,13 @@ export function ScannerSettingsTab({
               type={showAnonKey ? 'text' : 'password'}
               value={anonKeyInput}
               onChange={e => setAnonKeyInput(e.target.value)}
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-              className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
+              placeholder="eyJhbGciOi..."
+              className={`w-full px-3 py-2 rounded-xl border text-xs font-mono ${subSurface} ${textPrimary}`}
             />
           </div>
 
           {testResult && (
-            <div className="p-2 rounded-lg bg-slate-900 text-xs font-mono border border-slate-800">
+            <div className={`p-2 rounded-xl border text-xs font-mono ${subSurface} ${textPrimary}`}>
               {testResult}
             </div>
           )}
@@ -845,9 +755,9 @@ export function ScannerSettingsTab({
               type="button"
               onClick={handleTestConnection}
               disabled={testingConnection}
-              className="flex-1 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-bold hover:bg-amber-400 transition"
+              className={`flex-1 py-2 rounded-xl border text-xs font-bold ${subSurface} ${textPrimary}`}
             >
-              {testingConnection ? 'Đang kiểm tra...' : '🔌 Kiểm tra kết nối'}
+              {testingConnection ? 'Đang kiểm tra...' : 'Kiểm tra kết nối'}
             </button>
             <button
               type="button"
@@ -864,119 +774,188 @@ export function ScannerSettingsTab({
                   })
                 } catch {}
               }}
-              className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition flex items-center justify-center gap-1"
+              className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold flex items-center justify-center gap-1"
             >
               <Check size={14} />
-              <span>💾 Lưu cài đặt</span>
+              <span>Lưu cấu hình</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* 8. iOS PWA Installation Guide */}
-      <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/40 to-slate-900 border border-indigo-500/30 space-y-3">
-        <div className="flex items-center gap-2 text-indigo-400">
-          <Smartphone size={20} />
-          <h3 className="text-xs font-black uppercase tracking-wider text-white">
-            📲 Hướng Dẫn Cài Đặt Trên iPhone (iOS)
-          </h3>
-        </div>
-        <p className="text-[11px] text-slate-300 leading-relaxed">
-          Nhân viên dùng iPhone không cần qua App Store. Chỉ cần làm theo 3 bước để biến trang này
-          thành App toàn màn hình:
-        </p>
-
-        <ol className="text-xs text-slate-300 space-y-2 list-decimal list-inside pl-1 font-medium">
-          <li>
-            Mở trang này trên trình duyệt <strong>Safari</strong> của iPhone.
-          </li>
-          <li>
-            Bấm vào biểu tượng <strong>Chia sẻ (Share)</strong> ở thanh dưới cùng của Safari (
-            <Share2 size={12} className="inline text-blue-400" />
-            ).
-          </li>
-          <li>
-            Cuộn xuống chọn <strong>&quot;Thêm vào MH chính&quot; (Add to Home Screen)</strong> ➔
-            Bấm <strong>Thêm (Add)</strong>.
-          </li>
-        </ol>
-      </div>
-
-      {/* Version Text (Tap 5 times to unlock Technician Mode) */}
+      {/* Phiên bản */}
       <div
         onClick={handleVersionTap}
-        className="text-center text-[11px] text-slate-500 pt-2 pb-6 cursor-pointer select-none hover:text-slate-400 transition"
-        title="Chạm 5 lần để mở khóa chế độ kỹ thuật viên"
+        className={`text-center text-[11px] pt-1 pb-4 cursor-pointer select-none ${textMuted}`}
       >
-        Phiên bản Web Scanner v2.0 • Chánh Thu Warehouse System
-        {!showTechnicianConfig && (
-          <span className="block text-[10px] text-slate-600 mt-0.5">
-            (Chạm 5 lần vào đây để mở cài đặt máy chủ cho kỹ thuật viên)
-          </span>
-        )}
+        Web Scanner v2.0 · Chánh Thu WMS
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════
-          MODAL: TỪ ĐIỂN GIẢI MÃ DẤU ĐÓNG (STAMP DECODE DICTIONARY)
-         ═══════════════════════════════════════════════════════════ */}
+      {/* Modal Tùy Chỉnh Theme Sáng / Tối Cho Từng Menu */}
+      {isThemeModalOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/55 backdrop-blur-xs">
+          <div className="absolute inset-0" onClick={() => setIsThemeModalOpen(false)} />
+          <div
+            className={`relative z-10 w-full max-w-md mx-auto rounded-t-3xl border-t p-4 pb-7 max-h-[85dvh] flex flex-col shadow-2xl ${
+              isDark ? 'bg-[#111827] border-slate-800' : 'bg-white border-stone-200'
+            }`}
+          >
+            <div className={`flex items-center justify-between pb-3 border-b ${dividerCls}`}>
+              <div className="flex items-center gap-2">
+                <Palette size={18} className="text-indigo-500" />
+                <span className={`text-sm font-extrabold ${textPrimary}`}>
+                  Giao diện Sáng / Tối từng Menu
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsThemeModalOpen(false)}
+                className={`p-1 ${textMuted}`}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 my-3">
+              <button
+                type="button"
+                onClick={() => setAllTabsTheme('light')}
+                className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 ${
+                  isDark
+                    ? 'bg-amber-500/15 border-amber-500/35 text-amber-300'
+                    : 'bg-amber-50 border-amber-200 text-amber-700'
+                }`}
+              >
+                <Sun size={14} />
+                <span>Đặt tất cả Sáng</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllTabsTheme('dark')}
+                className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 ${
+                  isDark
+                    ? 'bg-indigo-500/15 border-indigo-500/35 text-indigo-300'
+                    : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                }`}
+              >
+                <Moon size={14} />
+                <span>Đặt tất cả Tối</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
+              {SCANNER_THEME_TAB_META.map(item => {
+                const curMode = tabThemes[item.key] || 'light'
+                const itemIsDark = curMode === 'dark'
+                return (
+                  <div
+                    key={item.key}
+                    className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 ${subSurface}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className={`text-xs font-extrabold truncate ${textPrimary}`}>
+                        {item.label}
+                      </div>
+                      <div className={`text-[10px] truncate mt-0.5 ${textMuted}`}>
+                        {item.desc}
+                      </div>
+                    </div>
+
+                    <div
+                      className={`flex p-1 rounded-xl border gap-1 shrink-0 ${
+                        isDark ? 'bg-[#111827] border-slate-700' : 'bg-white border-stone-200'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setTabTheme(item.key, 'light')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition ${
+                          !itemIsDark ? 'bg-amber-500 text-white shadow-xs' : textMuted
+                        }`}
+                      >
+                        <Sun size={12} />
+                        <span>Sáng</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTabTheme(item.key, 'dark')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition ${
+                          itemIsDark ? 'bg-indigo-600 text-white shadow-xs' : textMuted
+                        }`}
+                      >
+                        <Moon size={12} />
+                        <span>Tối</span>
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TỪ ĐIỂN GIẢI MÃ DẤU ĐÓNG */}
       {showDictModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-[#111827] border border-purple-500/40 rounded-2xl p-4 space-y-3 shadow-2xl max-h-[88vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 shrink-0">
-              <div className="flex items-center gap-2 text-purple-400">
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-3">
+          <div
+            className={`w-full max-w-lg border rounded-2xl p-4 space-y-3 shadow-2xl max-h-[88vh] flex flex-col ${
+              isDark ? 'bg-[#111827] border-slate-700' : 'bg-white border-stone-200'
+            }`}
+          >
+            <div className={`flex items-center justify-between border-b pb-2.5 shrink-0 ${dividerCls}`}>
+              <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
                 <BookOpen size={18} />
                 <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                    📖 Từ Điển Giải Mã Dấu Đóng ({filteredDictEntries.length} mã)
+                  <h3 className={`text-xs font-black uppercase tracking-wider ${textPrimary}`}>
+                    Từ Điển Giải Mã Dấu Đóng ({filteredDictEntries.length} mã)
                   </h3>
-                  <p className="text-[10px] text-slate-400">
-                    Tra cứu nhanh ý nghĩa các cặp số trên Dòng 1 (14 số) & Dòng 2 (7 số)
+                  <p className={`text-[10px] ${textMuted}`}>
+                    Tra cứu mã trên Dòng 1 (14 số) & Dòng 2 (7 số)
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowDictModal(false)}
-                className="text-slate-400 hover:text-white"
+                className={textMuted}
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* Ô tìm kiếm mã hoặc tên giải mã */}
             <div className="space-y-2 shrink-0">
               <div className="relative">
                 <Search
                   size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  className={`absolute left-3 top-1/2 -translate-y-1/2 ${textMuted}`}
                 />
                 <input
                   type="text"
                   value={dictSearch}
                   onChange={e => setDictSearch(e.target.value)}
-                  placeholder="Nhập mã số (VD: 01, 06, 010301010402) hoặc tên (VD: Ri6, Dona)..."
-                  className="w-full pl-8 pr-8 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-purple-500"
+                  placeholder="Nhập mã số (VD: 01, 06) hoặc tên (VD: Ri6, Dona)..."
+                  className={`w-full pl-8 pr-8 py-2 rounded-xl border text-xs focus:outline-hidden focus:border-purple-500 ${subSurface} ${textPrimary}`}
                 />
                 {dictSearch && (
                   <button
                     type="button"
                     onClick={() => setDictSearch('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                    className={`absolute right-2.5 top-1/2 -translate-y-1/2 ${textMuted}`}
                   >
                     <X size={14} />
                   </button>
                 )}
               </div>
 
-              {/* Chip lọc nhóm danh mục */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                 <button
                   type="button"
                   onClick={() => setSelectedDictCategory('all')}
                   className={`px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 border transition ${
                     selectedDictCategory === 'all'
-                      ? 'bg-purple-600 border-purple-400 text-white'
-                      : 'bg-slate-900 border-slate-800 text-slate-400'
+                      ? 'bg-purple-600 border-purple-500 text-white'
+                      : `${subSurface} ${textMuted}`
                   }`}
                 >
                   Tất cả
@@ -988,8 +967,8 @@ export function ScannerSettingsTab({
                     onClick={() => setSelectedDictCategory(cat.key)}
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 border transition ${
                       selectedDictCategory === cat.key
-                        ? 'bg-purple-600 border-purple-400 text-white'
-                        : 'bg-slate-900 border-slate-800 text-slate-400'
+                        ? 'bg-purple-600 border-purple-500 text-white'
+                        : `${subSurface} ${textMuted}`
                     }`}
                   >
                     {cat.label}
@@ -998,28 +977,35 @@ export function ScannerSettingsTab({
               </div>
             </div>
 
-            {/* Danh sách mã quy tắc */}
             <div className="flex-1 overflow-y-auto overscroll-contain space-y-1.5 pr-1">
               {filteredDictEntries.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 text-xs">
+                <div className={`p-8 text-center text-xs ${textMuted}`}>
                   Không tìm thấy mã quy tắc nào khớp với &quot;{dictSearch}&quot;
                 </div>
               ) : (
                 filteredDictEntries.map(item => (
                   <div
                     key={`${item.categoryKey}-${item.code}`}
-                    className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-2 text-xs"
+                    className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs ${subSurface}`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono font-black text-xs">
+                        <span
+                          className={`px-2 py-0.5 rounded font-mono font-black text-xs ${
+                            isDark ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
                           {item.code}
                         </span>
-                        <span className="font-bold text-white truncate">{item.name}</span>
+                        <span className={`font-bold truncate ${textPrimary}`}>{item.name}</span>
                       </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{item.categoryLabel}</p>
+                      <p className={`text-[10px] mt-0.5 ${textMuted}`}>{item.categoryLabel}</p>
                     </div>
-                    <span className="px-1.5 py-0.5 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300 font-mono text-[10px] shrink-0">
+                    <span
+                      className={`px-1.5 py-0.5 rounded font-mono text-[10px] shrink-0 ${
+                        isDark ? 'bg-purple-500/15 text-purple-300' : 'bg-purple-50 text-purple-700'
+                      }`}
+                    >
                       {item.badge}
                     </span>
                   </div>
@@ -1027,11 +1013,11 @@ export function ScannerSettingsTab({
               )}
             </div>
 
-            <div className="pt-2 border-t border-slate-800 flex gap-2 shrink-0">
+            <div className={`pt-2 border-t flex gap-2 shrink-0 ${dividerCls}`}>
               <button
                 type="button"
                 onClick={() => setShowDictModal(false)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold"
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold border ${subSurface} ${textPrimary}`}
               >
                 Đóng từ điển
               </button>

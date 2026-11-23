@@ -80,6 +80,7 @@ import {
   uploadOperationImages,
   getShiftOperationImages,
   syncOfflineOperationImages,
+  getOfflineImagesCount,
   getOperationImageDisplayUrl,
   getDriveSettings,
   listOperationFolders,
@@ -270,8 +271,11 @@ export function OperationsDataTab({
 
   // ── LOAD DATA ──
   const refreshPendingQueueCount = useCallback(async () => {
-    const c = await getOfflineQueueCount()
-    setPendingSyncCount(c)
+    const opsCount = await getOfflineQueueCount()
+    const imgCount = getOfflineImagesCount()
+    const total = opsCount + imgCount
+    setPendingSyncCount(total)
+    return total
   }, [])
 
   const loadInitialData = useCallback(async () => {
@@ -351,6 +355,10 @@ export function OperationsDataTab({
         () => {
           void getOpenShifts(activeSysCode).then(shifts => {
             setOpenShifts(shifts)
+            const fresh = shifts.find(s => s.id === shiftId)
+            if (fresh) {
+              void loadSelectedShiftDetails(fresh)
+            }
           })
         }
       )
@@ -367,7 +375,8 @@ export function OperationsDataTab({
         { event: '*', schema: 'public', table: 'delivery_journal' },
         (payload: any) => {
           const notesStr = String(payload?.new?.notes || payload?.old?.notes || '')
-          if (notesStr.includes(`[CV_ID: ${shiftId}]`)) {
+          // DELETE mặc định của Postgres chỉ gửi old.id (không gửi notes), nên luôn reload khi DELETE
+          if (payload?.eventType === 'DELETE' || notesStr.includes(`[CV_ID: ${shiftId}]`)) {
             void loadSelectedShiftDetails(selectedShift)
           }
         }
@@ -379,17 +388,36 @@ export function OperationsDataTab({
     }
   }, [selectedShift, activeSysCode, loadSelectedShiftDetails])
 
-  // ── TỰ ĐỘNG ĐỒNG BỘ NGẦM ẢNH OFFLINE & GOOGLE DRIVE KHI CÓ MẠNG ──
+  // ── TỰ ĐỘNG ĐỒNG BỘ NGẦM SỐ LIỆU, ẢNH OFFLINE & GOOGLE DRIVE KHI CÓ MẠNG ──
   const bgImageSyncLockRef = useRef(false)
   const runBackgroundImageSync = useCallback(async () => {
     if (bgImageSyncLockRef.current) return
     if (typeof navigator !== 'undefined' && !navigator.onLine) return
     bgImageSyncLockRef.current = true
     try {
-      await syncOperationsOfflineQueue().catch(() => {})
-      const syncedOffline = await syncOfflineOperationImages().catch(() => 0)
-      if (syncedOffline > 0) {
-        await refreshPendingQueueCount()
+      const opsRes = await syncOperationsOfflineQueue().catch(() => ({
+        syncedCount: 0,
+        remainingCount: 0,
+        syncedImagesCount: 0,
+      }))
+      const extraImgs = await syncOfflineOperationImages().catch(() => 0)
+      const totalSyncedOps = opsRes.syncedCount || 0
+      const totalSyncedImgs = (opsRes.syncedImagesCount || 0) + extraImgs
+
+      await refreshPendingQueueCount()
+
+      if (totalSyncedOps > 0) {
+        // Cập nhật lại danh sách ca & nhật ký ngầm sau khi đẩy số liệu offline lên server
+        const [openList, pastList] = await Promise.all([
+          getOpenShifts(activeSysCode).catch(() => null),
+          getPastShifts(60, activeSysCode).catch(() => null),
+        ])
+        if (openList) setOpenShifts(openList)
+        if (pastList) setPastShifts(pastList)
+        if (selectedShift) {
+          const matched = openList?.find(s => s.id === selectedShift.id) || selectedShift
+          await loadSelectedShiftDetails(matched).catch(() => {})
+        }
       }
 
       if (selectedShift) {
@@ -417,23 +445,33 @@ export function OperationsDataTab({
             }
           }
         }
+      } else if (totalSyncedImgs > 0) {
+        await refreshPendingQueueCount()
       }
     } finally {
       bgImageSyncLockRef.current = false
     }
-  }, [selectedShift, refreshPendingQueueCount, userObj.company_id])
+  }, [selectedShift, activeSysCode, loadSelectedShiftDetails, refreshPendingQueueCount, userObj.company_id])
 
   useEffect(() => {
     void runBackgroundImageSync()
     const handleOnline = () => {
       void runBackgroundImageSync()
     }
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        void runBackgroundImageSync()
+      }
+    }
     window.addEventListener('online', handleOnline)
+    document.addEventListener('visibilitychange', handleVisibility)
+    // Retry mỗi 15 giây nếu còn dữ liệu/ảnh offline chờ đồng bộ
     const timer = setInterval(() => {
       void runBackgroundImageSync()
-    }, 45000)
+    }, 15000)
     return () => {
       window.removeEventListener('online', handleOnline)
+      document.removeEventListener('visibilitychange', handleVisibility)
       clearInterval(timer)
     }
   }, [runBackgroundImageSync])
@@ -732,7 +770,17 @@ export function OperationsDataTab({
       .slice(0, 8)
   }, [allProducts, recentProductOrder])
 
-  // Danh sách sản phẩm hiển thị chính
+  // Sản phẩm vừa nhập/xuất gần nhất (để tô màu nền nhận diện thay vì đẩy lên dòng 1)
+  const latestJournalInfo = useMemo(() => {
+    const first = allJournals[0]
+    if (!first || !first.item_name) return null
+    return {
+      nameKey: first.item_name.trim().toLowerCase(),
+      isImport: first.to_department === 'Kho',
+    }
+  }, [allJournals])
+
+  // Danh sách sản phẩm hiển thị chính (giữ cố định thứ tự đã ghim, không tự đẩy lên dòng 1)
   const displayedProducts = useMemo(() => {
     const baseList =
       searchMode === 'pin'
@@ -740,16 +788,6 @@ export function OperationsDataTab({
         : pinnedProducts
 
     if (!searchQuery.trim()) {
-      if (searchMode === 'filter' && recentProductOrder.size > 0) {
-        return [...baseList].sort((a, b) => {
-          const ia = recentProductOrder.get(a.name.trim().toLowerCase())
-          const ib = recentProductOrder.get(b.name.trim().toLowerCase())
-          if (ia !== undefined && ib !== undefined) return ia - ib
-          if (ia !== undefined) return -1
-          if (ib !== undefined) return 1
-          return 0
-        })
-      }
       return baseList
     }
 
@@ -767,7 +805,7 @@ export function OperationsDataTab({
       .filter(x => x.score > 0)
       .sort((a, b) => b.score - a.score)
       .map(x => x.item)
-  }, [searchMode, allProducts, pinnedProducts, searchQuery, matchProductMultiKeyword, recentProductOrder])
+  }, [searchMode, allProducts, pinnedProducts, searchQuery, matchProductMultiKeyword])
 
   useEffect(() => {
     void getAllQuickSnaps().then(setQuickSnaps)
@@ -1755,6 +1793,10 @@ export function OperationsDataTab({
                 {displayedProducts.slice(0, productDisplayLimit).map((item, index) => {
                   const isAltRow = index % 2 === 1
                   const isPinned = pinnedIdsSet.has(item.id)
+                  const isLatest =
+                    !!latestJournalInfo &&
+                    latestJournalInfo.nameKey === item.name.trim().toLowerCase()
+                  const latestIsImport = latestJournalInfo?.isImport !== false
                   const defUnit =
                     item.defaultUnit ||
                     pickDefaultProductUnit(item.units || [], item.unit) ||
@@ -1772,7 +1814,15 @@ export function OperationsDataTab({
                       key={item.id}
                       onClick={() => setNumPadTarget({ product: item, unit: defUnit })}
                       className={`p-3 cursor-pointer transition-colors border-l-4 ${
-                        isDark
+                        isLatest
+                          ? latestIsImport
+                            ? isDark
+                              ? 'bg-emerald-950/60 border-l-emerald-400 active:bg-emerald-950/80'
+                              : 'bg-emerald-100/80 border-l-emerald-600 active:bg-emerald-100'
+                            : isDark
+                            ? 'bg-rose-950/60 border-l-rose-400 active:bg-rose-950/80'
+                            : 'bg-rose-100/80 border-l-rose-600 active:bg-rose-100'
+                          : isDark
                           ? isAltRow
                             ? 'bg-slate-800/50 border-l-amber-500 active:bg-slate-800'
                             : 'bg-[#1e293b] border-l-indigo-500 active:bg-slate-800'
@@ -1785,7 +1835,11 @@ export function OperationsDataTab({
                         <div className="flex items-start gap-2.5 min-w-0 flex-1">
                           <span
                             className={`w-6 h-6 rounded-lg text-[11px] font-black flex items-center justify-center shrink-0 mt-0.5 border ${
-                              isDark
+                              isLatest
+                                ? latestIsImport
+                                  ? 'bg-emerald-600 text-white border-emerald-600'
+                                  : 'bg-rose-600 text-white border-rose-600'
+                                : isDark
                                 ? isAltRow
                                   ? 'bg-amber-950/70 text-amber-300 border-amber-700/60'
                                   : 'bg-indigo-950/70 text-indigo-300 border-indigo-700/60'
@@ -1817,6 +1871,21 @@ export function OperationsDataTab({
                                   }`}
                                 >
                                   {item.aliases}
+                                </span>
+                              )}
+                              {isLatest && (
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                                    latestIsImport
+                                      ? isDark
+                                        ? 'bg-emerald-500/25 text-emerald-300'
+                                        : 'bg-emerald-600 text-white'
+                                      : isDark
+                                      ? 'bg-rose-500/25 text-rose-300'
+                                      : 'bg-rose-600 text-white'
+                                  }`}
+                                >
+                                  {latestIsImport ? 'Vừa nhập' : 'Vừa xuất'}
                                 </span>
                               )}
                             </div>
@@ -2038,7 +2107,13 @@ export function OperationsDataTab({
                 )}
 
                 {/* 3 Tabs Header */}
-                <div className="grid grid-cols-3 border-b border-slate-700 bg-[#0f172a]/60">
+                <div
+                  className={`grid grid-cols-3 border-b ${
+                    isDark
+                      ? 'border-slate-700 bg-[#0f172a]/60'
+                      : 'border-slate-200 bg-slate-50/90'
+                  }`}
+                >
                   {[
                     { k: 'history', label: `Lịch sử (${allJournals.length})` },
                     { k: 'report', label: 'Báo cáo' },
@@ -2052,8 +2127,12 @@ export function OperationsDataTab({
                         onClick={() => setFooterTab(t.k as any)}
                         className={`py-2.5 text-xs font-extrabold border-b-2 transition ${
                           active
-                            ? 'border-indigo-500 text-indigo-400 bg-indigo-500/10'
-                            : 'border-transparent text-slate-400'
+                            ? isDark
+                              ? 'border-indigo-500 text-indigo-400 bg-indigo-500/10'
+                              : 'border-indigo-600 text-indigo-600 bg-white'
+                            : isDark
+                            ? 'border-transparent text-slate-400'
+                            : 'border-transparent text-slate-500 hover:text-slate-700'
                         }`}
                       >
                         {t.label}
@@ -2065,7 +2144,11 @@ export function OperationsDataTab({
                 {/* Tab 1: Lịch sử đợt */}
                 {footerTab === 'history' && (
                   <div className="p-3 space-y-2.5">
-                    <div className="grid grid-cols-3 gap-1.5 bg-[#0f172a] p-1 rounded-xl">
+                    <div
+                      className={`grid grid-cols-3 gap-1.5 p-1 rounded-xl ${
+                        isDark ? 'bg-[#0f172a]' : 'bg-slate-100 border border-slate-200/70'
+                      }`}
+                    >
                       {[
                         { k: 'all', label: 'Tất cả' },
                         { k: 'in', label: '↓ Nhập (+)' },
@@ -2075,14 +2158,18 @@ export function OperationsDataTab({
                           key={f.k}
                           type="button"
                           onClick={() => setHistoryFilter(f.k as any)}
-                          className={`py-1.5 rounded-lg text-[11px] font-extrabold ${
+                          className={`py-1.5 rounded-lg text-[11px] font-extrabold transition ${
                             historyFilter === f.k
                               ? f.k === 'in'
                                 ? 'bg-emerald-600 text-white'
                                 : f.k === 'out'
                                   ? 'bg-rose-600 text-white'
-                                  : 'bg-slate-700 text-white'
-                              : 'text-slate-400'
+                                  : isDark
+                                  ? 'bg-slate-700 text-white'
+                                  : 'bg-indigo-600 text-white shadow-2xs'
+                              : isDark
+                              ? 'text-slate-400'
+                              : 'text-slate-600 hover:text-slate-900'
                           }`}
                         >
                           {f.label}
@@ -2183,81 +2270,99 @@ export function OperationsDataTab({
                         return (
                           <div
                             key={j.id}
-                            className="p-2.5 rounded-xl bg-[#0f172a] border border-slate-700 flex items-center justify-between gap-2"
+                            className={`px-2.5 py-2 rounded-xl border space-y-1.5 transition ${
+                              isDark
+                                ? 'bg-[#0f172a] border-slate-700'
+                                : 'bg-white border-slate-200/90 shadow-2xs'
+                            }`}
                           >
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-bold text-white truncate">
+                            {/* Hàng 1: Tên sản phẩm + 3 nút thao tác nhỏ gọn */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div
+                                className={`text-[11.5px] font-bold leading-snug truncate flex-1 min-w-0 ${
+                                  isDark ? 'text-white' : 'text-slate-900'
+                                }`}
+                                title={j.item_name}
+                              >
                                 {j.item_name}
                               </div>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span
-                                  className={`px-2 py-0.5 rounded text-xs font-black ${
-                                    isIn
-                                      ? 'bg-emerald-500/20 text-emerald-400'
-                                      : 'bg-rose-500/20 text-rose-400'
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={openJournalImages}
+                                  className={`relative w-7 h-7 rounded-lg flex items-center justify-center transition ${
+                                    isDark
+                                      ? 'bg-sky-500/15 text-sky-300 hover:bg-sky-500/25'
+                                      : 'bg-sky-50 border border-sky-200 text-sky-600 hover:bg-sky-100'
                                   }`}
                                 >
-                                  {isIn ? '+' : '-'}
-                                  {j.quantity_sent} {j.unit}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {formatDateTime(j.sent_at)} • {j.sent_by_name || 'NV'}
-                                </span>
+                                  <Camera className="w-3.5 h-3.5" />
+                                  {jImages.length > 0 && (
+                                    <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-sky-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-1 ring-white dark:ring-slate-900">
+                                      {jImages.length}
+                                    </span>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditJournalTarget(j)}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${
+                                    isDark
+                                      ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                      : 'bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteJournal(j)}
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${
+                                    isDark
+                                      ? 'bg-rose-950/60 text-rose-400 hover:bg-rose-950'
+                                      : 'bg-rose-50 border border-rose-200 text-rose-500 hover:bg-rose-100'
+                                  }`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
                               </div>
-                              {cleanNote && (
-                                <div className="text-[11px] text-amber-300 mt-1 italic">
-                                  📝 {cleanNote}
-                                </div>
-                              )}
-                              {jImages.length > 0 && (
-                                <div className="flex items-center gap-1.5 mt-1.5 overflow-x-auto no-scrollbar">
-                                  {jImages.map(img => (
-                                    <button
-                                      key={img.id}
-                                      type="button"
-                                      onClick={openJournalImages}
-                                      className="relative w-11 h-11 rounded-lg overflow-hidden border border-slate-600 shrink-0 bg-slate-800"
-                                      title="Xem ảnh chứng minh"
-                                    >
-                                      <img
-                                        src={getOperationImageDisplayUrl(img)}
-                                        alt="proof"
-                                        className="w-full h-full object-cover"
-                                      />
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
                             </div>
 
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={openJournalImages}
-                                className="relative p-1.5 rounded-lg bg-sky-500/15 text-sky-300"
+                            {/* Hàng 2: Pill số lượng 1 dòng + Thời gian & Nhân viên */}
+                            <div className="flex items-center justify-between gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10.5px] font-extrabold whitespace-nowrap shrink-0 ${
+                                  isIn
+                                    ? isDark
+                                      ? 'bg-emerald-500/20 text-emerald-400'
+                                      : 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                                    : isDark
+                                    ? 'bg-rose-500/20 text-rose-400'
+                                    : 'bg-rose-50 border border-rose-200 text-rose-700'
+                                }`}
                               >
-                                <Camera className="w-3.5 h-3.5" />
-                                {jImages.length > 0 && (
-                                  <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-sky-500 text-white text-[9px] font-extrabold flex items-center justify-center">
-                                    {jImages.length}
-                                  </span>
-                                )}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditJournalTarget(j)}
-                                className="p-1.5 rounded-lg bg-slate-800 text-slate-300"
+                                {isIn ? '+' : '-'}
+                                {j.quantity_sent} {j.unit}
+                              </span>
+                              <span
+                                className={`text-[10px] truncate text-right ${
+                                  isDark ? 'text-slate-400' : 'text-slate-500'
+                                }`}
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteJournal(j)}
-                                className="p-1.5 rounded-lg bg-rose-950/60 text-rose-400"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                                {formatDateTime(j.sent_at)} • {j.sent_by_name || 'NV'}
+                              </span>
                             </div>
+
+                            {cleanNote && (
+                              <div
+                                className={`text-[10.5px] italic truncate ${
+                                  isDark ? 'text-amber-300' : 'text-amber-700'
+                                }`}
+                              >
+                                📝 {cleanNote}
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -3160,6 +3265,7 @@ export function OperationsDataTab({
         visible={!!historyProductTarget}
         product={historyProductTarget}
         journals={allJournals}
+        images={shiftImages}
         onClose={() => setHistoryProductTarget(null)}
         onEditJournal={j => {
           setHistoryProductTarget(null)

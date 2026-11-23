@@ -467,22 +467,29 @@ body::before {
  * LIGHT THEME SCOPED 100% TRONG /scanner (.scanner-app-shell.scanner-theme-light)
  * Không ảnh hưởng tới bất kỳ trang Dashboard hay phân hệ Kho Đông Lạnh nào.
  * ============================================================================ */
+
+/* Nền trang chính dịu mắt (xám-xanh rất nhẹ) */
 .scanner-app-shell.scanner-theme-light .bg-\[\#060b16\],
 .scanner-app-shell.scanner-theme-light .bg-\[\#070c17\],
 .scanner-app-shell.scanner-theme-light .bg-\[\#080e1a\],
+.scanner-app-shell.scanner-theme-light .bg-\[\#090d16\],
 .scanner-app-shell.scanner-theme-light .bg-\[\#0a0f1d\],
 .scanner-app-shell.scanner-theme-light .bg-\[\#0b1120\],
 .scanner-app-shell.scanner-theme-light .bg-\[\#0b0f19\],
-.scanner-app-shell.scanner-theme-light .bg-\[\#0c1322\],
-.scanner-app-shell.scanner-theme-light .bg-\[\#0f172a\],
 .scanner-app-shell.scanner-theme-light .bg-slate-950,
+.scanner-app-shell.scanner-theme-light .bg-slate-950\/40,
 .scanner-app-shell.scanner-theme-light .bg-slate-900,
 .scanner-app-shell.scanner-theme-light .bg-slate-900\/95,
 .scanner-app-shell.scanner-theme-light .bg-slate-900\/90,
-.scanner-app-shell.scanner-theme-light .bg-slate-900\/80 {
-  background-color: #f1f5f9 !important;
+.scanner-app-shell.scanner-theme-light .bg-slate-900\/80,
+.scanner-app-shell.scanner-theme-light .bg-slate-900\/60 {
+  background-color: #f4f7f5 !important;
 }
 
+/* Header, thanh breadcrumb và các thẻ nổi màu trắng tinh tế */
+.scanner-app-shell.scanner-theme-light .bg-\[\#0f172a\],
+.scanner-app-shell.scanner-theme-light .bg-\[\#0c1220\],
+.scanner-app-shell.scanner-theme-light .bg-\[\#0c1322\],
 .scanner-app-shell.scanner-theme-light .bg-\[\#0b1324\],
 .scanner-app-shell.scanner-theme-light .bg-\[\#0c1424\],
 .scanner-app-shell.scanner-theme-light .bg-\[\#0c1629\],
@@ -505,78 +512,168 @@ body::before {
   background-color: #ffffff !important;
 }
 
+/* Nền nút/chip xám nhẹ & thanh progress bar rõ nét */
 .scanner-app-shell.scanner-theme-light .bg-slate-700,
 .scanner-app-shell.scanner-theme-light .bg-slate-700\/80,
 .scanner-app-shell.scanner-theme-light .bg-slate-700\/60 {
-  background-color: #f5f5f4 !important;
+  background-color: #f1f5f9 !important;
 }
 
+.scanner-app-shell.scanner-theme-light .h-1\.5.bg-slate-800,
+.scanner-app-shell.scanner-theme-light .h-2.bg-slate-800 {
+  background-color: #e2e8f0 !important;
+}
+
+/* Nút xanh tối (như nút tải Offline trên header Sơ Đồ Kho) -> pastel xanh lá dịu */
+.scanner-app-shell.scanner-theme-light .bg-emerald-950\/70,
+.scanner-app-shell.scanner-theme-light .bg-emerald-950\/60,
+.scanner-app-shell.scanner-theme-light .bg-emerald-950\/50,
+.scanner-app-shell.scanner-theme-light .bg-emerald-950\/40,
+.scanner-app-shell.scanner-theme-light .bg-emerald-900\/90 {
+  background-color: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+}
+
+/* Toàn bộ viền tối -> viền xám mảnh nhẹ nhàng (xóa sạch đường kẻ đen thô) */
 .scanner-app-shell.scanner-theme-light .border-slate-800,
 .scanner-app-shell.scanner-theme-light .border-slate-800\/90,
+.scanner-app-shell.scanner-theme-light .border-slate-800\/80,
+.scanner-app-shell.scanner-theme-light .border-slate-800\/70,
+.scanner-app-shell.scanner-theme-light .border-slate-800\/60,
+.scanner-app-shell.scanner-theme-light .border-slate-800\/50,
 .scanner-app-shell.scanner-theme-light .border-slate-700,
+.scanner-app-shell.scanner-theme-light .border-slate-700\/90,
 .scanner-app-shell.scanner-theme-light .border-slate-700\/80,
 .scanner-app-shell.scanner-theme-light .border-slate-700\/60,
+.scanner-app-shell.scanner-theme-light .border-slate-700\/50,
 .scanner-app-shell.scanner-theme-light .border-\[\#334155\],
 .scanner-app-shell.scanner-theme-light .border-\[\#1e293b\] {
-  border-color: #e7e5e4 !important;
+  border-color: #e2e8f0 !important;
 }
 
 .scanner-app-shell.scanner-theme-light .divide-slate-800 > :not([hidden]) ~ :not([hidden]),
 .scanner-app-shell.scanner-theme-light .divide-slate-700 > :not([hidden]) ~ :not([hidden]) {
-  border-color: #e7e5e4 !important;
+  border-color: #e2e8f0 !important;
 }
 
+/* Thẻ Kho / Dãy đổ bóng cực nhẹ trên nền sáng */
+.scanner-app-shell.scanner-theme-light .bg-\[\#111827\] {
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+
+/* Đồng bộ 100% Zone (Kho, Dãy, Ô kệ, Sảnh, Tầng) sang tông Xanh Lá Cây giống App Android */
+.scanner-app-shell.scanner-theme-light .bg-\[\#111827\].border-l-emerald-500 {
+  background-color: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+  border-left-color: #10b981 !important;
+}
+
+.scanner-app-shell.scanner-theme-light .bg-\[\#111827\].border-l-emerald-600 {
+  background-color: #ecfdf5 !important;
+  border-color: #6ee7b7 !important;
+  border-left-color: #059669 !important;
+}
+
+/* Khung Accordion Tầng (TẦNG 1, TẦNG 2...): viền xanh lá + header nền xanh lá dịu */
+.scanner-app-shell.scanner-theme-light .bg-\[\#0f172a\].border-l-emerald-500 {
+  background-color: #ffffff !important;
+  border-color: #bbf7d0 !important;
+  border-left-color: #10b981 !important;
+}
+
+.scanner-app-shell.scanner-theme-light .bg-\[\#0f172a\].border-l-emerald-500 > button,
+.scanner-app-shell.scanner-theme-light .bg-slate-900\/40 {
+  background-color: #f0fdf4 !important;
+  border-bottom-color: #bbf7d0 !important;
+}
+
+/* Thanh progress bar trong thẻ Zone xanh lá */
+.scanner-app-shell.scanner-theme-light .border-l-emerald-500 .h-1\.5.bg-slate-800,
+.scanner-app-shell.scanner-theme-light .border-l-emerald-600 .h-1\.5.bg-slate-800 {
+  background-color: #dcfce7 !important;
+}
+
+/* Thẻ Vị trí có hàng trên Sơ Đồ Kho (Theme Sáng): nền xanh lá dịu nổi bật khỏi ô trống */
+.scanner-app-shell.scanner-theme-light .bg-\[\#131d33\].border-emerald-500\/50 {
+  background-color: #ecfdf5 !important;
+  border-color: #34d399 !important;
+}
+
+/* Thẻ Vị trí trống trên Sơ Đồ Kho (Theme Sáng): nền trắng viền nét đứt xanh lá nhạt */
+.scanner-app-shell.scanner-theme-light .border-dashed.bg-slate-900\/60 {
+  background-color: #ffffff !important;
+  border-color: #a7f3d0 !important;
+}
+
+/* Chữ chính & chữ phụ rõ ràng, độ tương phản dễ chịu */
 .scanner-app-shell.scanner-theme-light .text-slate-100,
 .scanner-app-shell.scanner-theme-light .text-slate-200,
 .scanner-app-shell.scanner-theme-light .text-\[\#f8fafc\],
 .scanner-app-shell.scanner-theme-light .text-\[\#e2e8f0\] {
-  color: #1c1917 !important;
+  color: #0f172a !important;
 }
 
 .scanner-app-shell.scanner-theme-light .text-slate-300 {
-  color: #44403c !important;
+  color: #334155 !important;
 }
 
 .scanner-app-shell.scanner-theme-light .text-slate-400,
+.scanner-app-shell.scanner-theme-light .text-slate-400\/90,
 .scanner-app-shell.scanner-theme-light .text-\[\#94a3b8\] {
-  color: #57534e !important;
+  color: #64748b !important;
 }
 
 .scanner-app-shell.scanner-theme-light .text-slate-500 {
-  color: #78716c !important;
+  color: #64748b !important;
 }
 
-/* Giữ chữ trắng trên các nút/badge có nền màu đậm; chỉ chuyển text-white trên nền sáng sang màu tối */
+/* Sửa triệt để chữ trắng trên nền trắng (Tên kho, số Tổng, tên Dãy/Kệ/Ô...) */
+.scanner-app-shell.scanner-theme-light .bg-\[\#0a0f1d\] .text-white,
 .scanner-app-shell.scanner-theme-light .bg-\[\#0b1120\] .text-white,
+.scanner-app-shell.scanner-theme-light .bg-\[\#0c1424\] .text-white,
+.scanner-app-shell.scanner-theme-light .bg-\[\#0d1729\] .text-white,
+.scanner-app-shell.scanner-theme-light .bg-\[\#0e182b\] .text-white,
 .scanner-app-shell.scanner-theme-light .bg-\[\#0f172a\] .text-white,
+.scanner-app-shell.scanner-theme-light .bg-\[\#111827\] .text-white,
 .scanner-app-shell.scanner-theme-light .bg-\[\#1e293b\] .text-white,
 .scanner-app-shell.scanner-theme-light .bg-slate-900 .text-white,
 .scanner-app-shell.scanner-theme-light .bg-slate-800 .text-white,
 .scanner-app-shell.scanner-theme-light input.text-white,
 .scanner-app-shell.scanner-theme-light textarea.text-white,
 .scanner-app-shell.scanner-theme-light select.text-white {
-  color: #1c1917;
+  color: #0f172a !important;
 }
 
+/* Giữ nguyên chữ trắng trên các nút & badge màu đậm */
 .scanner-app-shell.scanner-theme-light .bg-indigo-600,
 .scanner-app-shell.scanner-theme-light .bg-indigo-600 *,
 .scanner-app-shell.scanner-theme-light .bg-indigo-500,
 .scanner-app-shell.scanner-theme-light .bg-indigo-500 *,
 .scanner-app-shell.scanner-theme-light .bg-emerald-600,
 .scanner-app-shell.scanner-theme-light .bg-emerald-600 *,
+.scanner-app-shell.scanner-theme-light .bg-emerald-500,
+.scanner-app-shell.scanner-theme-light .bg-emerald-500 *,
 .scanner-app-shell.scanner-theme-light .bg-rose-600,
 .scanner-app-shell.scanner-theme-light .bg-rose-600 *,
 .scanner-app-shell.scanner-theme-light .bg-amber-600,
 .scanner-app-shell.scanner-theme-light .bg-amber-600 *,
+.scanner-app-shell.scanner-theme-light .bg-amber-500,
+.scanner-app-shell.scanner-theme-light .bg-amber-500 *,
 .scanner-app-shell.scanner-theme-light .bg-sky-600,
 .scanner-app-shell.scanner-theme-light .bg-sky-600 *,
 .scanner-app-shell.scanner-theme-light .bg-blue-600,
 .scanner-app-shell.scanner-theme-light .bg-blue-600 *,
 .scanner-app-shell.scanner-theme-light .bg-cyan-600,
-.scanner-app-shell.scanner-theme-light .bg-cyan-600 * {
+.scanner-app-shell.scanner-theme-light .bg-cyan-600 *,
+.scanner-app-shell.scanner-theme-light .bg-purple-600,
+.scanner-app-shell.scanner-theme-light .bg-purple-600 *,
+.scanner-app-shell.scanner-theme-light .bg-\[\#312e81\],
+.scanner-app-shell.scanner-theme-light .bg-\[\#312e81\] .text-white {
   color: #ffffff !important;
 }
 
+/* Bảng màu điểm nhấn dịu, sắc nét trên nền sáng */
+.scanner-app-shell.scanner-theme-light .text-amber-400,
 .scanner-app-shell.scanner-theme-light .text-amber-300,
 .scanner-app-shell.scanner-theme-light .text-amber-200 {
   color: #b45309 !important;
@@ -584,20 +681,20 @@ body::before {
 
 .scanner-app-shell.scanner-theme-light .text-emerald-300,
 .scanner-app-shell.scanner-theme-light .text-emerald-400 {
-  color: #059669 !important;
+  color: #047857 !important;
 }
 
 .scanner-app-shell.scanner-theme-light .text-sky-300,
 .scanner-app-shell.scanner-theme-light .text-sky-400 {
-  color: #0284c7 !important;
+  color: #0369a1 !important;
 }
 
 .scanner-app-shell.scanner-theme-light .text-indigo-300,
 .scanner-app-shell.scanner-theme-light .text-indigo-400 {
-  color: #4f46e5 !important;
+  color: #4338ca !important;
 }
 
 .scanner-app-shell.scanner-theme-light .text-rose-300,
 .scanner-app-shell.scanner-theme-light .text-rose-400 {
-  color: #e11d48 !important;
+  color: #be123c !important;
 }

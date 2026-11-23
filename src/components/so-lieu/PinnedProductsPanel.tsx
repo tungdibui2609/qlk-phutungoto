@@ -51,6 +51,10 @@ export default function PinnedProductsPanel({
     onUnitChange,
     onOpenProductHistory,
 }: PinnedProductsPanelProps) {
+    const latestJournal = journalList[0]
+    const latestNameKey = latestJournal?.item_name ? latestJournal.item_name.trim().toLowerCase() : null
+    const latestIsImport = latestJournal ? latestJournal.to_department === 'Kho' : true
+
     if (pinnedProducts.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-10 sm:py-14 text-center border-2 border-dashed border-stone-200 dark:border-zinc-800 rounded-2xl bg-white/50 dark:bg-zinc-900/40 p-5 sm:p-6">
@@ -122,6 +126,7 @@ export default function PinnedProductsPanel({
                             const productUnits = getProductUnits(product)
                             const currentUnit = selectedUnitMap[product.id] || product.unit || productUnits[0] || 'Kg'
                             const effect = pulseEffect[product.id]
+                            const isLatest = !!latestNameKey && latestNameKey === product.name.trim().toLowerCase()
                             const isAltRow = idx % 2 === 1
 
                             const activeUnits = productUnits.filter(u => {
@@ -147,9 +152,13 @@ export default function PinnedProductsPanel({
                                     }}
                                     className={`w-full p-3 text-left cursor-pointer select-none transition-colors border-l-4 active:bg-indigo-100/60 dark:active:bg-indigo-950/60 ${
                                         effect === 'in'
-                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
+                                            ? 'bg-emerald-100 dark:bg-emerald-950/60 border-l-emerald-600'
                                             : effect === 'out'
-                                            ? 'bg-rose-50 dark:bg-rose-950/40 border-l-rose-500'
+                                            ? 'bg-rose-100 dark:bg-rose-950/60 border-l-rose-600'
+                                            : isLatest
+                                            ? latestIsImport
+                                                ? 'bg-emerald-100/80 dark:bg-emerald-950/50 border-l-emerald-600'
+                                                : 'bg-rose-100/80 dark:bg-rose-950/50 border-l-rose-600'
                                             : isAltRow
                                             ? 'bg-amber-50/35 dark:bg-zinc-800/50 border-l-amber-500'
                                             : 'bg-white dark:bg-zinc-900 border-l-indigo-600'
@@ -158,7 +167,11 @@ export default function PinnedProductsPanel({
                                     <div className="w-full">
                                         <div className="flex items-start gap-2">
                                             <span className={`w-5 h-5 shrink-0 rounded-md text-[10px] font-black flex items-center justify-center mt-0.5 ${
-                                                isAltRow
+                                                isLatest
+                                                    ? latestIsImport
+                                                        ? 'bg-emerald-600 text-white border border-emerald-600'
+                                                        : 'bg-rose-600 text-white border border-rose-600'
+                                                    : isAltRow
                                                     ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                                                     : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800'
                                             }`}>
@@ -169,9 +182,20 @@ export default function PinnedProductsPanel({
                                                 <span className="block text-[13px] font-bold text-stone-900 dark:text-white leading-snug break-words">
                                                     {product.name}
                                                 </span>
-                                                {product.sku && (
-                                                    <span className="block text-[10px] text-stone-400 font-mono mt-0.5">{product.sku}</span>
-                                                )}
+                                                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                                    {product.sku && (
+                                                        <span className="text-[10px] text-stone-400 font-mono">{product.sku}</span>
+                                                    )}
+                                                    {isLatest && (
+                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                                                            latestIsImport
+                                                                ? 'bg-emerald-600 text-white dark:bg-emerald-500/25 dark:text-emerald-300'
+                                                                : 'bg-rose-600 text-white dark:bg-rose-500/25 dark:text-rose-300'
+                                                        }`}>
+                                                            {latestIsImport ? 'Vừa nhập' : 'Vừa xuất'}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                             <button
                                                 type="button"
@@ -272,6 +296,7 @@ export default function PinnedProductsPanel({
                             const isActive = padProduct?.id === product.id
                             const rowUnit = isActive ? padUnit : currentUnit
                             const effect = pulseEffect[product.id]
+                            const isLatest = !!latestNameKey && latestNameKey === product.name.trim().toLowerCase()
                             const batchCount = journalList.filter(j => j.item_name === product.name).length
 
                             const activeUnits = productUnits.filter(u => {
@@ -292,9 +317,13 @@ export default function PinnedProductsPanel({
                                     onClick={() => onOpenPad(product)}
                                     className={`group grid grid-cols-[minmax(0,1fr)_32px_102px_68px_68px_48px_28px] items-center gap-2 px-3 py-1.5 cursor-pointer border-l-4 transition-colors ${
                                         effect === 'in'
-                                            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
+                                            ? 'bg-emerald-100 dark:bg-emerald-950/60 border-l-emerald-600'
                                             : effect === 'out'
-                                            ? 'bg-rose-50 dark:bg-rose-950/40 border-l-rose-500'
+                                            ? 'bg-rose-100 dark:bg-rose-950/60 border-l-rose-600'
+                                            : isLatest
+                                            ? latestIsImport
+                                                ? 'bg-emerald-100/75 dark:bg-emerald-950/45 border-l-emerald-600 hover:bg-emerald-100'
+                                                : 'bg-rose-100/75 dark:bg-rose-950/45 border-l-rose-600 hover:bg-rose-100'
                                             : isActive
                                             ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-l-indigo-600'
                                             : idx % 2 === 1
@@ -305,7 +334,11 @@ export default function PinnedProductsPanel({
                                     {/* Cột 1: STT + Tên sản phẩm + SKU */}
                                     <div className="min-w-0 flex items-center gap-2">
                                         <span className={`w-5 h-5 shrink-0 rounded text-[10px] font-black flex items-center justify-center ${
-                                            isActive
+                                            isLatest
+                                                ? latestIsImport
+                                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                                    : 'bg-rose-600 text-white shadow-xs'
+                                                : isActive
                                                 ? 'bg-indigo-600 text-white shadow-xs'
                                                 : idx % 2 === 1
                                                 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
@@ -318,9 +351,20 @@ export default function PinnedProductsPanel({
                                             <p className={`text-xs font-bold leading-tight break-words ${isActive ? 'text-indigo-900 dark:text-indigo-100' : 'text-stone-900 dark:text-white'}`}>
                                                 {product.name}
                                             </p>
-                                            {product.sku && (
-                                                <p className="text-[10px] text-stone-400 font-mono leading-none mt-0.5">{product.sku}</p>
-                                            )}
+                                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                                {product.sku && (
+                                                    <p className="text-[10px] text-stone-400 font-mono leading-none">{product.sku}</p>
+                                                )}
+                                                {isLatest && (
+                                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold leading-none ${
+                                                        latestIsImport
+                                                            ? 'bg-emerald-600 text-white dark:bg-emerald-500/25 dark:text-emerald-300'
+                                                            : 'bg-rose-600 text-white dark:bg-rose-500/25 dark:text-rose-300'
+                                                    }`}>
+                                                        {latestIsImport ? 'Vừa nhập' : 'Vừa xuất'}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 
