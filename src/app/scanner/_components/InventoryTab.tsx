@@ -87,6 +87,7 @@ interface PositionItem {
 const INVENTORY_KEYS = {
   SESSIONS: 'offline_inventory_sessions_v1',
   RESULTS: 'offline_inventory_results_v1',
+  DIRTY: 'offline_inventory_dirty_v1',
   USERS_MAP: 'offline_inventory_users_map_v1',
   MEMBERS_MAP: 'offline_inventory_members_map_v1',
   MAP_CACHE: 'warehouse_map_offline_cache_v8',
@@ -523,6 +524,8 @@ export function InventoryTab({
   const [allSessionResults, setAllSessionResults] = useState<
     Record<string, Record<string, { checked?: boolean; note?: string }>>
   >({})
+  // Danh sách position_id đã chỉnh sửa trên máy nhưng chưa đồng bộ thành công lên server
+  const [dirtyBySession, setDirtyBySession] = useState<Record<string, string[]>>({})
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
 
@@ -546,50 +549,89 @@ export function InventoryTab({
   const [hallModalOpen, setHallModalOpen] = useState(false)
   const [hallModalDefaultId, setHallModalDefaultId] = useState<string | null>(null)
 
+  // Long-press helper refs cho ô Tầng (nhấn giữ ~450ms để tích nhanh cả tầng giống App Android)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTriggeredRef = useRef(false)
+
+  const clearLevelLongPress = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg)
     setTimeout(() => setToastMsg(null), 3500)
   }, [])
 
   // ── LOAD SƠ ĐỒ KHO & PHIÊN KIỂM KÊ ──
-  const loadLocalCache = useCallback(() => {
+  const loadLocalCache = useCallback(async (): Promise<boolean> => {
+    let hasMap = false
     try {
       const sRaw = localStorage.getItem(INVENTORY_KEYS.SESSIONS)
       if (sRaw) setSessions(JSON.parse(sRaw))
       const rRaw = localStorage.getItem(INVENTORY_KEYS.RESULTS)
       if (rRaw) setAllSessionResults(JSON.parse(rRaw))
-      const mRaw =
-        localStorage.getItem(INVENTORY_KEYS.MAP_CACHE) ||
-        localStorage.getItem('warehouse_map_offline_cache_v7')
-      if (mRaw) {
-        const parsed = JSON.parse(mRaw)
-        if (parsed?.zones) setZones(parsed.zones)
-        if (parsed?.positions) setPositions(parsed.positions)
+      const dRaw = localStorage.getItem(INVENTORY_KEYS.DIRTY)
+      if (dRaw) setDirtyBySession(JSON.parse(dRaw))
+
+      // Nạp sẵn danh mục sản phẩm cache để tìm kiếm theo aliases hoạt động cả khi offline
+      const pRaw = localStorage.getItem('cached_products')
+      if (pRaw) {
+        const parsedProds = JSON.parse(pRaw)
+        if (Array.isArray(parsedProds) && parsedProds.length > 0) {
+          setWarehouseProducts(parsedProds)
+        }
+      }
+
+      // Ưu tiên IndexedDB (chứa trọn 7.000+ vị trí), fallback localStorage
+      const idbSnap = await getWarehouseMapFromOfflineDb().catch(() => null)
+      if (idbSnap && idbSnap.zones?.length > 0 && idbSnap.positions?.length > 0) {
+        setZones(idbSnap.zones)
+        setPositions(idbSnap.positions)
+        hasMap = true
       } else {
-        getWarehouseMapFromOfflineDb().then((idbSnap) => {
-          if (idbSnap && idbSnap.zones?.length > 0) {
-            setZones(idbSnap.zones)
-            setPositions(idbSnap.positions || [])
+        const mRaw =
+          localStorage.getItem(INVENTORY_KEYS.MAP_CACHE) ||
+          localStorage.getItem('warehouse_map_offline_cache_v7')
+        if (mRaw) {
+          const parsed = JSON.parse(mRaw)
+          if (parsed?.zones?.length > 0 && parsed?.positions?.length > 0) {
+            setZones(parsed.zones)
+            setPositions(parsed.positions)
+            hasMap = true
           }
-        })
+        }
       }
     } catch {}
+    return hasMap
   }, [])
 
   const fetchOnlineData = useCallback(
-    async (forceRefreshMap = false) => {
+    async (forceRefreshMap = false, cachedHasMap?: boolean) => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setLoading(false)
+        if (forceRefreshMap) {
+          showToast('Đang mất mạng — sử dụng dữ liệu đã lưu trong máy')
+        }
+        return
+      }
       setLoading(true)
       try {
         await syncOfflineHallLotUpdatesWeb().catch(() => {})
         const prods = await getWarehouseProducts(systemCode).catch(() => [])
-        setWarehouseProducts(prods)
+        if (prods.length > 0) {
+          setWarehouseProducts(prods)
+        }
 
-        // 1. Tải danh sách phiên kiểm kê từ Supabase
+        // 1. Tải danh sách phiên kiểm kê từ Supabase (cô lập theo system_code)
         const { data: remoteSessions } = await (
           supabase.from('internal_inventory_sessions') as any
         )
           .select('*')
           .eq('status', 'active')
+          .eq('system_code', systemCode)
           .order('created_at', { ascending: false })
 
         let mergedSessions: any[] = []
@@ -609,26 +651,40 @@ export function InventoryTab({
           setSessions(mergedSessions)
           localStorage.setItem(INVENTORY_KEYS.SESSIONS, JSON.stringify(mergedSessions))
 
-          // Tải items của các phiên UUID
+          // Tải items của các phiên UUID (phân trang tránh giới hạn 1.000 dòng)
           const uuidIds = remoteSessions.map((s: any) => s.id).filter(isUUID)
           if (uuidIds.length > 0) {
-            const { data: itemsData } = await (
-              supabase.from('internal_inventory_items') as any
+            const itemsData = await fetchAllPagedRows((from, to) =>
+              (supabase.from('internal_inventory_items') as any)
+                .select('session_id, position_id, checked, note')
+                .in('session_id', uuidIds)
+                .order('id', { ascending: true })
+                .range(from, to)
             )
-              .select('session_id, position_id, is_checked, note')
-              .in('session_id', uuidIds)
 
-            if (itemsData) {
+            if (itemsData.length > 0) {
+              // Đọc danh sách vị trí đang sửa offline chưa đồng bộ -> TUYỆT ĐỐI KHÔNG GHI ĐÈ
+              const dirtyMap: Record<string, string[]> = (() => {
+                try {
+                  return JSON.parse(localStorage.getItem(INVENTORY_KEYS.DIRTY) || '{}')
+                } catch {
+                  return {}
+                }
+              })()
               setAllSessionResults(prev => {
                 const next = { ...prev }
                 itemsData.forEach((it: any) => {
+                  const dirtySet = new Set(dirtyMap[it.session_id] || [])
+                  if (dirtySet.has(it.position_id)) return
                   if (!next[it.session_id]) next[it.session_id] = {}
                   next[it.session_id][it.position_id] = {
-                    checked: !!it.is_checked,
+                    checked: !!it.checked,
                     note: it.note || '',
                   }
                 })
-                localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
+                try {
+                  localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
+                } catch {}
                 return next
               })
             }
@@ -636,20 +692,21 @@ export function InventoryTab({
         }
 
         // 2. Nếu chưa có sơ đồ kho trong cache hoặc yêu cầu tải mới -> tải từ Supabase (có phân trang cho 7000+ vị trí)
-        const hasMap = zones.length > 0 && positions.length > 0
+        const hasMap =
+          cachedHasMap !== undefined ? cachedHasMap : zones.length > 0 && positions.length > 0
         if (!hasMap || forceRefreshMap) {
           const [rawZones, rawPositions, zpList, pendRes] = await Promise.all([
             fetchAllPagedRows((from, to) =>
               (supabase.from('zones') as any)
                 .select('id, name, parent_id, system_type, display_order, is_hall')
-                .eq('system_type', 'KHO_DONG_LANH')
+                .eq('system_type', systemCode)
                 .order('id', { ascending: true })
                 .range(from, to)
             ),
             fetchAllPagedRows((from, to) =>
               (supabase.from('positions') as any)
                 .select('id, code, lot_id, system_type')
-                .eq('system_type', 'KHO_DONG_LANH')
+                .eq('system_type', systemCode)
                 .order('id', { ascending: true })
                 .range(from, to)
             ),
@@ -662,7 +719,7 @@ export function InventoryTab({
             ),
             (supabase.from('pending_assignments') as any)
               .select('position_id, lot_stt, production_date')
-              .eq('system_code', 'KHO_DONG_LANH')
+              .eq('system_code', systemCode)
               .eq('status', 'pending'),
           ])
 
@@ -770,7 +827,7 @@ export function InventoryTab({
               zones: rawZones,
               positions: formattedPos,
               cachedAt: now,
-              systemCode: 'KHO_DONG_LANH',
+              systemCode,
             })
             saveWarehouseMapMeta(rawZones, formattedPos, now)
           } catch {}
@@ -793,8 +850,17 @@ export function InventoryTab({
   )
 
   useEffect(() => {
-    loadLocalCache()
-    void fetchOnlineData(false)
+    let mounted = true
+    void (async () => {
+      const hasMap = await loadLocalCache()
+      if (mounted) {
+        void fetchOnlineData(false, hasMap)
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── DANH SÁCH KHO GỐC & SẢNH ──
@@ -888,6 +954,20 @@ export function InventoryTab({
   )
 
   // ── THAO TÁC TÍCH KIỂM & GHI CHÚ ──
+  const markPositionsDirty = (sessionId: string, posIds: string[]) => {
+    const validIds = posIds.filter(id => !id.startsWith('summary|') && isUUID(id))
+    if (validIds.length === 0) return
+    setDirtyBySession(prev => {
+      const curSet = new Set(prev[sessionId] || [])
+      validIds.forEach(id => curSet.add(id))
+      const next = { ...prev, [sessionId]: Array.from(curSet) }
+      try {
+        localStorage.setItem(INVENTORY_KEYS.DIRTY, JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }
+
   const saveResultsToStorage = (
     sessionId: string,
     nextSessionRes: Record<string, { checked?: boolean; note?: string }>
@@ -909,6 +989,7 @@ export function InventoryTab({
       [posId]: { ...cur, checked: !cur.checked },
     }
     saveResultsToStorage(currentSessionId, nextRes)
+    markPositionsDirty(currentSessionId, [posId])
   }
 
   const updatePositionNote = (posId: string, note: string) => {
@@ -919,6 +1000,7 @@ export function InventoryTab({
       [posId]: { ...cur, note, checked: note.trim() ? true : cur.checked },
     }
     saveResultsToStorage(currentSessionId, nextRes)
+    markPositionsDirty(currentSessionId, [posId])
   }
 
   const bulkCheckPositions = (posIds: string[], checked: boolean) => {
@@ -928,6 +1010,25 @@ export function InventoryTab({
       nextRes[id] = { ...(nextRes[id] || {}), checked }
     })
     saveResultsToStorage(currentSessionId, nextRes)
+    markPositionsDirty(currentSessionId, posIds)
+  }
+
+  const startLevelLongPress = (rowName: string, lvl: any, allDone: boolean) => {
+    clearLevelLongPress()
+    longPressTriggeredRef.current = false
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true
+      const total = lvl.slots.length
+      const msg = allDone
+        ? `Bỏ tích toàn bộ ${total} vị trí ở ${rowName} - ${lvl.name}?`
+        : `Xác nhận đã kiểm toàn bộ ${total} vị trí ở ${rowName} - ${lvl.name}?`
+      if (window.confirm(msg)) {
+        bulkCheckPositions(
+          lvl.slots.map((s: any) => s.id),
+          !allDone
+        )
+      }
+    }, 450)
   }
 
   // ── TẠO PHIẾU KIỂM KÊ MỚI ──
@@ -935,7 +1036,9 @@ export function InventoryTab({
     if (!newSessionName.trim()) return
     const payload = {
       name: newSessionName.trim(),
-      zone_id: newSessionZoneId === 'ALL' ? null : newSessionZoneId,
+      warehouse_id: newSessionZoneId === 'ALL' ? null : newSessionZoneId,
+      system_code: systemCode,
+      company_id: userProfile?.companyId || null,
       status: 'active',
       created_by: userProfile?.id || null,
     }
@@ -974,9 +1077,14 @@ export function InventoryTab({
   // ── ĐỒNG BỘ LÊN WEB ──
   const handleSyncSessionToCloud = async (sessionObj: any) => {
     if (syncing) return
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('Đang mất mạng — vui lòng bật mạng rồi bấm Đồng bộ lại!')
+      return
+    }
     setSyncing(true)
     try {
       let realSessionId = sessionObj.id
+      let createdSessionRow: any = null
       if (!isUUID(realSessionId)) {
         const { data: created, error } = await (
           supabase.from('internal_inventory_sessions') as any
@@ -984,7 +1092,9 @@ export function InventoryTab({
           .insert([
             {
               name: sessionObj.name,
-              zone_id: sessionObj.zone_id || null,
+              warehouse_id: sessionObj.warehouse_id || sessionObj.zone_id || null,
+              system_code: sessionObj.system_code || systemCode,
+              company_id: userProfile?.companyId || null,
               status: 'active',
               created_by: userProfile?.id || null,
             },
@@ -993,19 +1103,32 @@ export function InventoryTab({
           .single()
         if (error) throw error
         realSessionId = created.id
+        createdSessionRow = created
       }
 
       const resMap = allSessionResults[sessionObj.id] || {}
+      const dirtySet = new Set(dirtyBySession[sessionObj.id] || [])
+      const posById = new Map(positions.map(p => [p.id, p]))
       const rows = Object.entries(resMap)
-        .filter(([_, v]) => v.checked || (v.note && v.note.trim()))
-        .map(([posId, v]) => ({
-          session_id: realSessionId,
-          position_id: posId,
-          is_checked: !!v.checked,
-          note: v.note?.trim() || null,
-          checked_by: userProfile?.id || null,
-          checked_at: new Date().toISOString(),
-        }))
+        .filter(
+          ([posId, v]) =>
+            !posId.startsWith('summary|') &&
+            isUUID(posId) &&
+            (dirtySet.has(posId) || v.checked || (v.note && v.note.trim()))
+        )
+        .map(([posId, v]) => {
+          const pos = posById.get(posId)
+          return {
+            session_id: realSessionId,
+            position_id: posId,
+            zone_id: pos?.zone_ids?.[0] || null,
+            checked: !!v.checked,
+            note: v.note?.trim() || null,
+            checked_by: userProfile?.id || null,
+            checked_at: new Date().toISOString(),
+            lot_id_snapshot: pos?.lot_id || null,
+          }
+        })
 
       if (rows.length > 0) {
         const CHUNK = 200
@@ -1019,7 +1142,44 @@ export function InventoryTab({
         }
       }
 
-      await fetchOnlineData(false)
+      // Đã đẩy thành công -> xóa danh sách dirty của phiếu này
+      setDirtyBySession(prev => {
+        const next = { ...prev }
+        delete next[sessionObj.id]
+        delete next[realSessionId]
+        try {
+          localStorage.setItem(INVENTORY_KEYS.DIRTY, JSON.stringify(next))
+        } catch {}
+        return next
+      })
+
+      // Nếu vừa chuyển phiếu offline -> UUID thật trên server, đổi key local để tránh tạo trùng
+      if (realSessionId !== sessionObj.id) {
+        setAllSessionResults(prev => {
+          const next = { ...prev }
+          next[realSessionId] = { ...(next[realSessionId] || {}), ...resMap }
+          delete next[sessionObj.id]
+          try {
+            localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
+          } catch {}
+          return next
+        })
+        setSessions(prev => {
+          const next = prev.map(s =>
+            s.id === sessionObj.id ? createdSessionRow || { ...s, id: realSessionId } : s
+          )
+          try {
+            localStorage.setItem(INVENTORY_KEYS.SESSIONS, JSON.stringify(next))
+          } catch {}
+          return next
+        })
+        if (currentSessionId === sessionObj.id) {
+          setCurrentSessionId(realSessionId)
+        }
+      }
+
+      await syncOfflineHallLotUpdatesWeb().catch(() => {})
+      await fetchOnlineData(false, true)
       showToast(`Đã đồng bộ ${rows.length} vị trí kiểm kê lên Web thành công!`)
     } catch (e: any) {
       alert('Lỗi đồng bộ kiểm kê: ' + (e?.message || e))
@@ -1168,7 +1328,9 @@ export function InventoryTab({
   }, [selectedDetailZone])
 
   const detailStructure = useMemo(() => {
-    if (!selectedDetailZoneId) return { khuOptions: [], sections: [], hallPositions: [] }
+    if (!selectedDetailZoneId) {
+      return { khuOptions: [], sections: [], hallPositions: [], totalCount: 0 }
+    }
 
     const directChildren = activeZones
       .filter(z => z.parent_id === selectedDetailZoneId)
@@ -1176,7 +1338,8 @@ export function InventoryTab({
 
     // Kiểm tra xem có cấp KHU trung gian hay trực tiếp là Ô kệ
     const hasSubKhu = directChildren.some(c => /khu|dãy|kệ/i.test(c.name || ''))
-    const khuOptions = hasSubKhu ? directChildren : []
+    // Luôn hiển thị dải lọc ngang các Khu/Ô con (Tất cả, Ô 01, Ô 02...) giống App Android
+    const khuOptions = directChildren
 
     const targetContainers = hasSubKhu
       ? selectedKhuId === 'ALL'
@@ -1188,7 +1351,9 @@ export function InventoryTab({
       const bins = (
         hasSubKhu
           ? activeZones.filter(z => z.parent_id === container.id)
-          : directChildren
+          : selectedKhuId === 'ALL'
+            ? directChildren
+            : directChildren.filter(c => c.id === selectedKhuId)
       ).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
 
       const rows = bins
@@ -1231,7 +1396,7 @@ export function InventoryTab({
       p => p.zone_id && allDesc.has(p.zone_id) && matchSlotBySearch(p)
     )
 
-    return { khuOptions, sections, hallPositions }
+    return { khuOptions, sections, hallPositions, totalCount: hallPositions.length }
   }, [
     selectedDetailZoneId,
     selectedDetailZone,
@@ -1320,9 +1485,10 @@ export function InventoryTab({
             ) : (
               sessions.map(sess => {
                 const resMap = allSessionResults[sess.id] || {}
-                const scopePos = sess.zone_id
+                const scopeZoneId = sess.warehouse_id || sess.zone_id || null
+                const scopePos = scopeZoneId
                   ? (() => {
-                      const dIds = getDescendantIds(sess.zone_id, zones)
+                      const dIds = getDescendantIds(scopeZoneId, zones)
                       return positions.filter(p => p.zone_ids?.some(zid => dIds.has(zid)))
                     })()
                   : positions
@@ -1335,8 +1501,8 @@ export function InventoryTab({
                   if (r?.note && r.note.trim()) sDiscrepancy++
                 })
                 const pct = sTotal > 0 ? Math.round((sChecked / sTotal) * 100) : 0
-                const scopeZoneName = sess.zone_id
-                  ? zones.find(z => z.id === sess.zone_id)?.name || 'Theo khu vực'
+                const scopeZoneName = scopeZoneId
+                  ? zones.find(z => z.id === scopeZoneId)?.name || 'Theo khu vực'
                   : 'Toàn bộ kho'
 
                 return (
@@ -1349,8 +1515,8 @@ export function InventoryTab({
                         type="button"
                         onClick={() => {
                           setCurrentSessionId(sess.id)
-                          if (sess.zone_id && rootWarehouses.some(w => w.id === sess.zone_id)) {
-                            setSelectedWarehouseId(sess.zone_id)
+                          if (scopeZoneId && rootWarehouses.some(w => w.id === scopeZoneId)) {
+                            setSelectedWarehouseId(scopeZoneId)
                           }
                           setViewMode('detail')
                         }}
@@ -1446,17 +1612,31 @@ export function InventoryTab({
                   LOT Sảnh
                 </button>
 
-                {currentSession && (
-                  <button
-                    type="button"
-                    disabled={syncing}
-                    onClick={() => handleSyncSessionToCloud(currentSession)}
-                    className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-extrabold flex items-center gap-1"
-                  >
-                    <CloudUpload className="w-3.5 h-3.5" />
-                    <span>Đồng bộ</span>
-                  </button>
-                )}
+                {currentSession && (() => {
+                  const pendingDirtyCount = (dirtyBySession[currentSession.id] || []).length
+                  const isLocalOnly = !isUUID(currentSession.id)
+                  return (
+                    <button
+                      type="button"
+                      disabled={syncing}
+                      onClick={() => handleSyncSessionToCloud(currentSession)}
+                      className={`px-2.5 py-1 rounded-lg text-white text-[11px] font-extrabold flex items-center gap-1 ${
+                        pendingDirtyCount > 0 || isLocalOnly
+                          ? 'bg-amber-600'
+                          : 'bg-emerald-600'
+                      }`}
+                    >
+                      <CloudUpload className="w-3.5 h-3.5" />
+                      <span>
+                        {syncing
+                          ? 'Đang gửi...'
+                          : pendingDirtyCount > 0
+                            ? `Đồng bộ (${pendingDirtyCount})`
+                            : 'Đồng bộ'}
+                      </span>
+                    </button>
+                  )
+                })()}
 
                 <button
                   type="button"
@@ -1620,22 +1800,34 @@ export function InventoryTab({
       )}
 
       {/* =========================================================
-       * MODAL CHI TIẾT DÃY / SẢNH (SƠ ĐỒ Ô KỆ & TẦNG T1, T2...)
+       * MODAL CHI TIẾT DÃY / SẢNH (SƠ ĐỒ Ô KỆ & TẦNG T1..T5 GIỐNG APP ANDROID)
        * ========================================================= */}
       {selectedDetailZone && (
         <div className="fixed inset-0 z-40 flex flex-col bg-[#0b1120]">
           {/* Header Dãy / Sảnh */}
-          <div className="px-3 py-2.5 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between gap-2">
+          <div className="px-3 py-2.5 bg-[#0f172a] border-b border-slate-800 flex items-center gap-2.5">
             <button
               type="button"
-              onClick={() => setSelectedDetailZoneId(null)}
-              className="flex items-center gap-1.5 text-xs font-black text-white"
+              onClick={() => {
+                setSelectedDetailZoneId(null)
+                setShowHallSummary(false)
+              }}
+              aria-label="Quay lại"
+              className="w-9 h-9 rounded-xl bg-[#1e293b] border border-slate-700 text-slate-200 flex items-center justify-center shrink-0 active:scale-95 transition"
             >
-              <ArrowLeft className="w-4 h-4 text-sky-400" />
-              <span>{selectedDetailZone.name}</span>
+              <ArrowLeft className="w-4 h-4" />
             </button>
 
-            <div className="flex items-center gap-1.5">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-black text-white truncate leading-tight">
+                Kiểm kê: {selectedDetailZone.name}
+              </div>
+              <div className="text-[11px] font-medium text-slate-400 truncate mt-0.5">
+                {currentSession?.name || 'Kiểm kê'} · Nhấn giữ vào Tầng để tích nhanh cả tầng
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
               {isSelectedDetailHall && (
                 <>
                   <button
@@ -1644,14 +1836,14 @@ export function InventoryTab({
                       setHallModalDefaultId(selectedDetailZone.id)
                       setHallModalOpen(true)
                     }}
-                    className="px-2.5 py-1 rounded-lg bg-sky-600 text-white text-[11px] font-extrabold"
+                    className="px-2.5 py-1.5 rounded-xl bg-sky-600 text-white text-[11px] font-extrabold"
                   >
                     Cập nhật LOT
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowHallSummary(v => !v)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border ${
                       showHallSummary
                         ? 'bg-amber-500 border-amber-400 text-slate-950'
                         : 'bg-[#1e293b] border-slate-700 text-slate-300'
@@ -1665,36 +1857,42 @@ export function InventoryTab({
               <button
                 type="button"
                 onClick={() => setIsGrouped(v => !v)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${
+                title={isGrouped ? 'Đang Gộp Ô (bấm để Tách Kệ)' : 'Đang Tách Kệ (bấm để Gộp Ô)'}
+                aria-label={isGrouped ? 'Đang Gộp Ô' : 'Đang Tách Kệ'}
+                className={`w-9 h-9 rounded-xl border flex items-center justify-center transition ${
                   isGrouped
-                    ? 'bg-indigo-600 border-indigo-400 text-white'
-                    : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                    ? 'bg-indigo-900/90 border-indigo-400 text-indigo-200'
+                    : 'bg-[#1e293b] border-slate-700 text-slate-400'
                 }`}
               >
-                {isGrouped ? 'Gộp Ô' : 'Tách Kệ'}
+                <Layers className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Khu filter pills */}
-          {detailStructure.khuOptions.length > 0 && (
-            <div className="px-3 py-2 bg-[#0f172a] border-b border-slate-800 flex gap-1.5 overflow-x-auto no-scrollbar">
+          {/* Dải lọc ngang chọn nhanh Ô / Khu (Tất cả (390), Ô 01, Ô 02...) */}
+          {detailStructure.khuOptions.length > 0 && !showHallSummary && (
+            <div className="px-3 py-2 bg-[#0f172a] border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedKhuId('ALL')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                  selectedKhuId === 'ALL' ? 'bg-sky-600 text-white' : 'bg-[#1e293b] text-slate-400'
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap border transition shrink-0 ${
+                  selectedKhuId === 'ALL'
+                    ? 'bg-violet-600 border-violet-400 text-white'
+                    : 'bg-[#1e293b] border-slate-700 text-slate-400'
                 }`}
               >
-                Tất cả Khu
+                Tất cả ({detailStructure.totalCount})
               </button>
               {detailStructure.khuOptions.map(k => (
                 <button
                   key={k.id}
                   type="button"
                   onClick={() => setSelectedKhuId(k.id)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap ${
-                    selectedKhuId === k.id ? 'bg-sky-600 text-white' : 'bg-[#1e293b] text-slate-400'
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap border transition shrink-0 ${
+                    selectedKhuId === k.id
+                      ? 'bg-violet-600 border-violet-400 text-white'
+                      : 'bg-[#1e293b] border-slate-700 text-slate-400'
                   }`}
                 >
                   {k.name}
@@ -1766,17 +1964,20 @@ export function InventoryTab({
                 })()}
               </div>
             ) : (
-              /* Chế độ Lưới Ô kệ -> Các Tầng (T1, T2, T3...) */
+              /* Chế độ Lưới Ô kệ -> Các Tầng (T1..T5 trên 1 hàng gọn giống App Android) */
               detailStructure.sections.map(sec => (
                 <div key={sec.container.id} className="space-y-2.5">
-                  {detailStructure.sections.length > 1 && (
-                    <div className="text-xs font-black text-sky-400 uppercase px-1">
-                      {sec.container.name}
+                  {!isSelectedDetailHall && (
+                    <div className="flex items-center gap-2 px-0.5 pt-0.5">
+                      <span className="w-6 h-[3px] rounded-full bg-violet-400 shrink-0" />
+                      <span className="text-xs font-black text-white uppercase tracking-wide">
+                        {sec.container.name}
+                      </span>
                     </div>
                   )}
 
                   {sec.rows.map(row => {
-                    // Tính danh sách các sản phẩm khác nhau trong Ô kệ này để tô màu chấm tròn
+                    // Tính danh sách các sản phẩm khác nhau trong Ô kệ này để tô màu chấm
                     const uniqueProdKeys: string[] = []
                     const prodInfoMap = new Map<
                       string,
@@ -1799,46 +2000,62 @@ export function InventoryTab({
                         count: cnt,
                       })
                     })
-
+                    const productsInRow = Array.from(prodInfoMap.values())
                     const isLegendOpen = !!expandedLegendRowIds[row.bin.id]
 
                     return (
                       <div
                         key={row.bin.id}
-                        className="p-2.5 rounded-2xl bg-[#1e293b] border border-slate-700 space-y-2"
+                        className="p-2.5 rounded-2xl bg-[#1e293b]/70 border border-slate-800 space-y-2"
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-white">{row.bin.name}</span>
-                            {isMultiProdRow && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedLegendRowIds(p => ({
-                                    ...p,
-                                    [row.bin.id]: !isLegendOpen,
-                                  }))
-                                }
-                                className="px-2 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-[10px] font-extrabold text-indigo-300 flex items-center gap-1"
-                              >
-                                <span>🎨 {uniqueProdKeys.length} loại SP</span>
-                                {isLegendOpen ? (
-                                  <ChevronUp className="w-3 h-3" />
-                                ) : (
-                                  <ChevronDown className="w-3 h-3" />
-                                )}
-                              </button>
-                            )}
+                        {!isSelectedDetailHall && (
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-xs font-black text-sky-400">
+                                {row.bin.name}
+                              </span>
+                              {productsInRow.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedLegendRowIds(p => ({
+                                      ...p,
+                                      [row.bin.id]: !isLegendOpen,
+                                    }))
+                                  }
+                                  className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition ${
+                                    isMultiProdRow
+                                      ? 'bg-indigo-950/80 border-indigo-500/50 text-indigo-200'
+                                      : 'bg-[#1e293b] border-amber-500/40 text-amber-300'
+                                  }`}
+                                >
+                                  <span className="flex items-center gap-[3px]">
+                                    {productsInRow.slice(0, 4).map((prod, pidx) => (
+                                      <span
+                                        key={pidx}
+                                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                                        style={{ backgroundColor: prod.color }}
+                                      />
+                                    ))}
+                                  </span>
+                                  <span>{productsInRow.length} loại SP</span>
+                                  {isLegendOpen ? (
+                                    <ChevronUp className="w-3 h-3" />
+                                  ) : (
+                                    <ChevronDown className="w-3 h-3" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                            <span className="text-[10px] font-semibold text-slate-500 truncate">
+                              Chạm xem chi tiết · Nhấn giữ để tích cả tầng
+                            </span>
                           </div>
-                          <span className="text-[10px] text-slate-400">
-                            {row.allRowSlots.filter(s => !!s.lot_id).length}/{row.allRowSlots.length}{' '}
-                            có hàng
-                          </span>
-                        </div>
+                        )}
 
-                        {isMultiProdRow && isLegendOpen && (
+                        {productsInRow.length > 0 && isLegendOpen && (
                           <div className="p-2 rounded-xl bg-[#0f172a] border border-slate-800 space-y-1">
-                            {Array.from(prodInfoMap.values()).map((info, i) => (
+                            {productsInRow.map((info, i) => (
                               <div key={i} className="flex items-center gap-2 text-[11px]">
                                 <span
                                   className="w-2.5 h-2.5 rounded-full shrink-0"
@@ -1855,10 +2072,15 @@ export function InventoryTab({
                           </div>
                         )}
 
-                        {/* Lưới các Tầng trong Ô */}
-                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                        {/* Lưới các Tầng trong Ô: 5 cột trên 1 hàng (T1..T5) giống App Android */}
+                        <div
+                          className={`grid gap-1.5 ${
+                            isSelectedDetailHall ? 'grid-cols-2' : 'grid-cols-5'
+                          }`}
+                        >
                           {row.levels.map(lvl => {
                             const total = lvl.slots.length
+                            const occupied = lvl.slots.filter((s: any) => !!s.lot_id).length
                             const checked = lvl.slots.filter(
                               (s: any) => currentResults[s.id]?.checked
                             ).length
@@ -1869,76 +2091,84 @@ export function InventoryTab({
                             const allDone = total > 0 && checked === total
 
                             return (
-                              <div
+                              <button
                                 key={lvl.id}
-                                className={`p-2 rounded-xl border flex flex-col justify-between gap-1.5 transition ${
+                                type="button"
+                                onContextMenu={e => e.preventDefault()}
+                                onPointerDown={() =>
+                                  startLevelLongPress(row.bin.name, lvl, allDone)
+                                }
+                                onPointerUp={clearLevelLongPress}
+                                onPointerLeave={clearLevelLongPress}
+                                onPointerCancel={clearLevelLongPress}
+                                onClick={() => {
+                                  if (longPressTriggeredRef.current) {
+                                    longPressTriggeredRef.current = false
+                                    return
+                                  }
+                                  setSelectedLevelModalData(lvl)
+                                }}
+                                className={`px-1.5 py-2 rounded-xl border text-left flex flex-col justify-between gap-1.5 transition active:scale-[0.97] select-none ${
                                   hasDiscrepancy
-                                    ? 'bg-rose-950/30 border-rose-500/60'
+                                    ? 'bg-rose-950/35 border-rose-500/60'
                                     : allDone
-                                      ? 'bg-emerald-950/30 border-emerald-500/60'
-                                      : 'bg-[#0f172a] border-slate-700'
+                                      ? 'bg-emerald-950/35 border-emerald-500/60'
+                                      : checked > 0
+                                        ? 'bg-sky-950/30 border-sky-500/50'
+                                        : 'bg-[#0f172a] border-slate-700/80'
                                 }`}
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedLevelModalData(lvl)}
-                                  className="text-left space-y-1.5"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-xs font-black text-white">
-                                      {lvl.name.replace(/Tầng\s*/i, 'T')}
-                                    </span>
-                                    <span
-                                      className={`text-[10px] font-extrabold ${
-                                        allDone ? 'text-emerald-400' : 'text-slate-400'
-                                      }`}
-                                    >
-                                      {checked}/{total}
-                                    </span>
-                                  </div>
+                                <div className="flex items-center justify-between gap-0.5 w-full">
+                                  <span className="text-[11px] font-black text-white leading-none">
+                                    {isSelectedDetailHall
+                                      ? lvl.name
+                                      : lvl.name.replace(/Tầng\s*/i, 'T')}
+                                  </span>
+                                  <span
+                                    className={`px-1 py-0.5 rounded text-[9px] font-extrabold leading-none ${
+                                      allDone
+                                        ? 'bg-emerald-500 text-emerald-950'
+                                        : 'bg-[#1e293b] text-slate-300'
+                                    }`}
+                                  >
+                                    {checked}/{total}
+                                  </span>
+                                </div>
 
-                                  {/* Chấm màu các vị trí trong tầng */}
-                                  <div className="flex flex-wrap gap-1">
-                                    {sortPositionsByDepthAndCol(lvl.slots).map((s: any) => {
-                                      const pk = getProductKey(s)
-                                      const pColor =
-                                        isMultiProdRow && pk
-                                          ? prodInfoMap.get(pk)?.color
-                                          : s.lot_id
-                                            ? '#f59e0b'
-                                            : '#334155'
-                                      const isSlotChecked = !!currentResults[s.id]?.checked
-                                      return (
-                                        <span
-                                          key={s.id}
-                                          className={`w-2.5 h-2.5 rounded-full ${
-                                            isSlotChecked ? 'ring-2 ring-emerald-400' : ''
-                                          }`}
-                                          style={{ backgroundColor: pColor }}
-                                        />
-                                      )
-                                    })}
-                                  </div>
-                                </button>
-
-                                {/* Nút tích nhanh cả tầng */}
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    bulkCheckPositions(
-                                      lvl.slots.map((s: any) => s.id),
-                                      !allDone
+                                {/* Thanh chấm màu các vị trí trong tầng */}
+                                <div className="flex items-center gap-[2px] w-full h-[5px]">
+                                  {sortPositionsByDepthAndCol(lvl.slots).map((s: any) => {
+                                    const pk = getProductKey(s)
+                                    const isSlotNote = !!(
+                                      currentResults[s.id]?.note &&
+                                      currentResults[s.id]?.note?.trim()
                                     )
-                                  }
-                                  className={`w-full py-1 rounded-lg text-[10px] font-extrabold border ${
-                                    allDone
-                                      ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
-                                      : 'bg-[#1e293b] border-slate-700 text-slate-400'
-                                  }`}
-                                >
-                                  {allDone ? '✓ Đã kiểm tầng' : 'Tích cả tầng'}
-                                </button>
-                              </div>
+                                    const isSlotChecked = !!currentResults[s.id]?.checked
+                                    const occColor =
+                                      isMultiProdRow && pk && prodInfoMap.get(pk)?.color
+                                        ? prodInfoMap.get(pk)!.color
+                                        : '#f59e0b'
+                                    const dotColor = isSlotNote
+                                      ? '#f43f5e'
+                                      : isSlotChecked
+                                        ? '#10b981'
+                                        : s.lot_id
+                                          ? occColor
+                                          : '#334155'
+                                    return (
+                                      <span
+                                        key={s.id}
+                                        className="flex-1 h-full rounded-[2px]"
+                                        style={{ backgroundColor: dotColor }}
+                                      />
+                                    )
+                                  })}
+                                </div>
+
+                                <div className="text-[9px] font-semibold text-slate-400 text-center w-full truncate leading-none">
+                                  {occupied} có hàng
+                                </div>
+                              </button>
                             )
                           })}
                         </div>

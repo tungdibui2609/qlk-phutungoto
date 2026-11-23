@@ -198,7 +198,10 @@ export default function QuickSnapCameraModal({
         {blink && <div className="absolute inset-0 bg-white/65 pointer-events-none" />}
 
         {/* Thanh trên: Đóng + Badge + Dải chọn Công việc đang mở */}
-        <div className="absolute top-0 inset-x-0 bg-black/55 backdrop-blur-sm pt-3 pb-2.5 space-y-2">
+        <div
+          className="absolute top-0 inset-x-0 bg-black/55 backdrop-blur-sm pb-2.5 space-y-2"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+        >
           <div className="flex items-center justify-between px-3.5">
             <button
               type="button"
@@ -245,7 +248,10 @@ export default function QuickSnapCameraModal({
         </div>
 
         {/* Thanh đáy: Thumbnail nhỏ góc trái + Nút chụp BỤP + Nút Xong */}
-        <div className="absolute bottom-0 inset-x-0 bg-black/60 backdrop-blur-sm py-5 px-6 flex items-center justify-between">
+        <div
+          className="absolute bottom-0 inset-x-0 bg-black/60 backdrop-blur-sm pt-5 px-6 flex items-center justify-between"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)' }}
+        >
           <button
             type="button"
             disabled={!previewThumb && totalQueueCount === 0}

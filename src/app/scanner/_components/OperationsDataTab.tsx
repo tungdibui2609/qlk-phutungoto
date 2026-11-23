@@ -3119,7 +3119,10 @@ export function OperationsDataTab({
       {actionMenuOpen && (
         <div className="fixed inset-0 z-50 flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/50" onClick={() => setActionMenuOpen(false)} />
-          <div className="relative bg-white rounded-t-3xl shadow-2xl px-4 pt-3 pb-6 max-h-[85vh] overflow-y-auto">
+          <div
+            className="relative bg-white rounded-t-3xl shadow-2xl px-4 pt-3 max-h-[85vh] overflow-y-auto"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)' }}
+          >
             <div className="w-10 h-1 bg-stone-300 rounded-full mx-auto mb-3" />
             {selectedShift && (
               <div className="px-1 mb-2">

@@ -796,9 +796,10 @@ export function ScannerSettingsTab({
         <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/55 backdrop-blur-xs">
           <div className="absolute inset-0" onClick={() => setIsThemeModalOpen(false)} />
           <div
-            className={`relative z-10 w-full max-w-md mx-auto rounded-t-3xl border-t p-4 pb-7 max-h-[85dvh] flex flex-col shadow-2xl ${
+            className={`relative z-10 w-full max-w-md mx-auto rounded-t-3xl border-t p-4 max-h-[85dvh] flex flex-col shadow-2xl ${
               isDark ? 'bg-[#111827] border-slate-800' : 'bg-white border-stone-200'
             }`}
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)' }}
           >
             <div className={`flex items-center justify-between pb-3 border-b ${dividerCls}`}>
               <div className="flex items-center gap-2">

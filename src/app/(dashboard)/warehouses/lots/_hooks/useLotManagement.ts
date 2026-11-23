@@ -533,18 +533,9 @@ export function useLotManagement() {
                     query = query.or('is_locked.eq.false,is_locked.is.null')
                 }
 
-                // Apply zone lot filter if we resolved lot IDs
-                if (zoneLotIds !== null) {
-                    if (zoneLotIds.length === 0) {
-                        // No lots in this zone — return empty
-                        query = query.eq('id', '00000000-0000-0000-0000-000000000000')
-                    } else {
-                        // Filter by the resolved lot IDs
-                        // PostgREST uses GET requests — URL limit ~8KB.
-                        // Each UUID = 36 chars, so max ~150 IDs to stay safe.
-                        query = query.in('id', zoneLotIds.slice(0, 150))
-                    }
-                }
+                // Không áp zoneLotIds trực tiếp vào query ở đây để tránh chồng 2 danh sách UUID
+                // lên URL GET (>8KB gây lỗi HTTP 414 / TypeError: Failed to fetch) khi kết hợp searchTerm.
+                // zoneLotIds sẽ được giao (intersect) với kết quả tìm kiếm và chia chunk an toàn ở bước thực thi cuối.
             }
 
             if (sttFilter === 'has_stt') {
@@ -628,8 +619,20 @@ export function useLotManagement() {
                                 const { data: foundLots } = await subQuery;
                                 
                                 if (foundLots && foundLots.length > 0) {
-                                    const matchingIds = foundLots.map((l: any) => l.id);
-                                    query = query.in('id', matchingIds.slice(0, 150));
+                                    let lsxMatchIds: string[] = foundLots.map((l: any) => l.id);
+                                    if (zoneLotIds !== null) {
+                                        const zoneSet = new Set(zoneLotIds);
+                                        lsxMatchIds = lsxMatchIds.filter(id => zoneSet.has(id));
+                                    }
+                                    if (lsxMatchIds.length === 0) {
+                                        if (reqSeq === fetchLotsSeqRef.current) {
+                                            setLots([]);
+                                            setTotalLots(0);
+                                            setLoading(false);
+                                        }
+                                        return;
+                                    }
+                                    query = query.in('id', lsxMatchIds.slice(0, 100));
                                     
                                     // Apply date filter again to the main query for absolute safety
                                     query = applyDateFilterToSubQuery(query);
@@ -637,7 +640,11 @@ export function useLotManagement() {
                                     const { data, error, count } = await query
                                         .range(page * pageSize, (page + 1) * pageSize - 1);
                                     
-                                    if (!error && data) {
+                                    if (reqSeq !== fetchLotsSeqRef.current) return;
+                                    if (error) {
+                                        console.error('Error fetching lots (LSX:STT):', JSON.stringify(error, null, 2));
+                                        showToast('Lỗi tải dữ liệu: ' + error.message, 'error');
+                                    } else if (data) {
                                         setLots(data as unknown as Lot[]);
                                         setTotalLots(count || 0);
                                     }
@@ -671,7 +678,6 @@ export function useLotManagement() {
 
                 // Advanced parser for server-side
                 const orQueries = searchTerm.split(';').map((q: any) => q.trim()).filter(Boolean);
-                let finalOrConditions: string[] = [];
 
                 for (const orQuery of orQueries) {
                     const andParts = orQuery.split('&').map((q: any) => q.trim()).filter(Boolean);
@@ -1095,15 +1101,21 @@ export function useLotManagement() {
                             currentMatchIds = Array.from(new Set([...itemLotIds, ...directIds, ...boxLotIds]));
                         }
                         else if (searchMode === 'tag') {
-                            let tagQuery = (supabase.from('lot_tags') as any)
-                                .select('lot_id, lots!inner(id, system_code, status)')
-                                .ilike('tag', `%${partNormalized}%`)
-                                .eq('lots.system_code', currentSystem.code)
-                                .neq('lots.status', 'hidden')
-                                .neq('lots.status', 'exported');
-                            tagQuery = applyDateFilterToSubQuery(tagQuery, 'lots');
-                            const { data: tagLots } = await tagQuery;
-                            currentMatchIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
+                            const tagLots = await fetchAllPaginated(
+                                'lot_tags',
+                                q => {
+                                    let tagQuery = q
+                                        .ilike('tag', `%${partNormalized}%`)
+                                        .eq('lots.system_code', currentSystem.code)
+                                        .neq('lots.status', 'hidden')
+                                        .neq('lots.status', 'exported')
+                                        .order('lot_id', { ascending: true })
+                                        .order('tag', { ascending: true });
+                                    return applyDateFilterToSubQuery(tagQuery, 'lots');
+                                },
+                                'lot_id, lots!inner(id, system_code, status)'
+                            );
+                            currentMatchIds = Array.from(new Set((tagLots || []).map((t: any) => t.lot_id).filter(Boolean))) as string[];
                         }
                         else if (searchMode === 'position') {
                             let posQuery = (supabase.from('positions') as any)
@@ -1186,28 +1198,42 @@ export function useLotManagement() {
                     }
 
                     if (positionFilter === 'unassigned' && groupLotIds && groupLotIds.length > 0) {
-                        const { data: assigned } = await supabase
-                            .from('positions')
-                            .select('lot_id')
-                            .in('lot_id', groupLotIds)
-                            .not('lot_id', 'is', null);
-                        const assignedIds = (assigned || []).map((p: any) => p.lot_id).filter(Boolean) as string[];
-                        groupLotIds = groupLotIds.filter(id => !assignedIds.includes(id));
+                        const assignedIdsSet = new Set<string>();
+                        const POS_CHUNK = 100;
+                        for (let i = 0; i < groupLotIds.length; i += POS_CHUNK) {
+                            const slice = groupLotIds.slice(i, i + POS_CHUNK);
+                            const { data: assigned } = await supabase
+                                .from('positions')
+                                .select('lot_id')
+                                .in('lot_id', slice)
+                                .not('lot_id', 'is', null);
+                            (assigned || []).forEach((p: any) => {
+                                if (p.lot_id) assignedIdsSet.add(p.lot_id);
+                            });
+                        }
+                        groupLotIds = groupLotIds.filter(id => !assignedIdsSet.has(id));
                     }
 
                     if (groupLotIds && groupLotIds.length > 0) {
-                        finalOrConditions.push(`id.in.(${groupLotIds.slice(0, 150).join(',')})`);
-                    } else if (andParts.length > 0) {
-                        // If no lots match this AND group, we add a dummy filter so the OR doesn't ignore the failure
-                        finalOrConditions.push(`id.eq.00000000-0000-0000-0000-000000000000`);
+                        if (matchingIds === null) matchingIds = [];
+                        matchingIds.push(...groupLotIds);
                     }
                 }
 
-                if (finalOrConditions.length > 0) {
-                    query = query.or(finalOrConditions.join(','));
-                } else {
-                    query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-                }
+                // Hợp tất cả ID từ các nhánh OR và loại trùng
+                matchingIds = Array.from(new Set(matchingIds || []));
+            }
+
+            // Giao (intersect) tập ID từ bộ lọc khu vực (zoneLotIds) và kết quả tìm kiếm (matchingIds)
+            // thành MỘT tập duy nhất để không bao giờ vượt giới hạn URL ~8KB và không bỏ sót kết quả.
+            let constrainedLotIds: string[] | null = null;
+            if (zoneLotIds !== null && matchingIds !== null) {
+                const zoneSet = new Set(zoneLotIds);
+                constrainedLotIds = matchingIds.filter(id => zoneSet.has(id));
+            } else if (matchingIds !== null) {
+                constrainedLotIds = matchingIds;
+            } else if (zoneLotIds !== null) {
+                constrainedLotIds = zoneLotIds;
             }
 
             // 2. Date Range
@@ -1217,21 +1243,140 @@ export function useLotManagement() {
             const from = page * pageSize
             const to = from + pageSize - 1
 
-            // Ordering: FIFO-aware when toggle is active
-            if (isFifoActive) {
-                // FIFO: oldest inbound_date first (nulls last), then created_at ascending
-                query = query
-                    .order('inbound_date', { ascending: true, nullsFirst: false })
-                    .order('created_at', { ascending: true })
-                    .order('id', { ascending: true })
-            } else {
-                query = query
-                    .order('created_at', { ascending: false })
-                    .order('id', { ascending: true })
-            }
+            let data: any[] | null = null
+            let error: any = null
+            let count: number | null = 0
 
-            const { data, error, count } = await query
-                .range(from, to)
+            const SAFE_ID_CHUNK = 100
+
+            if (constrainedLotIds !== null && constrainedLotIds.length === 0) {
+                data = []
+                count = 0
+            } else if (constrainedLotIds !== null && constrainedLotIds.length > SAFE_ID_CHUNK) {
+                // Có hơn 100 LOT khớp: lọc nhẹ theo chunk 100 ID rồi chỉ fetch chi tiết cho đúng trang hiện tại
+                const lightSelect = positionFilter === 'assigned'
+                    ? 'id, created_at, inbound_date, positions!positions_lot_id_fkey!inner(id)'
+                    : 'id, created_at, inbound_date'
+
+                const chunks: string[][] = []
+                for (let i = 0; i < constrainedLotIds.length; i += SAFE_ID_CHUNK) {
+                    chunks.push(constrainedLotIds.slice(i, i + SAFE_ID_CHUNK))
+                }
+
+                const metaMap = new Map<string, { id: string; created_at: string | null; inbound_date: string | null }>()
+                const CONCURRENCY = 5
+                for (let i = 0; i < chunks.length && !error; i += CONCURRENCY) {
+                    const batch = chunks.slice(i, i + CONCURRENCY)
+                    const results = await Promise.all(
+                        batch.map(async (idChunk) => {
+                            let lightQ: any = supabase
+                                .from('lots')
+                                .select(lightSelect)
+                                .eq('system_code', currentSystem.code)
+                                .neq('status', 'hidden')
+                                .neq('status', 'exported')
+                                .in('id', idChunk)
+
+                            if (lockFilter === 'locked') {
+                                lightQ = lightQ.eq('is_locked', true)
+                            } else if (lockFilter === 'unlocked') {
+                                lightQ = lightQ.or('is_locked.eq.false,is_locked.is.null')
+                            }
+
+                            if (sttFilter === 'has_stt') {
+                                lightQ = lightQ.not('daily_seq', 'is', null)
+                            } else if (sttFilter === 'no_stt') {
+                                lightQ = lightQ.is('daily_seq', null)
+                            }
+
+                            if (branchFilter !== BRANCH_FILTER_ALL) {
+                                if (branchFilter === BRANCH_FILTER_NONE) {
+                                    lightQ = lightQ.is('warehouse_name', null)
+                                } else {
+                                    lightQ = lightQ.eq('warehouse_name', branchFilter)
+                                }
+                            }
+
+                            lightQ = applyDateFilterToSubQuery(lightQ)
+                            return lightQ
+                        })
+                    )
+
+                    for (const res of results) {
+                        if (res.error) {
+                            error = res.error
+                            break
+                        }
+                        for (const row of (res.data || [])) {
+                            if (row?.id && !metaMap.has(row.id)) {
+                                metaMap.set(row.id, {
+                                    id: row.id,
+                                    created_at: row.created_at ?? null,
+                                    inbound_date: row.inbound_date ?? null,
+                                })
+                            }
+                        }
+                    }
+                }
+
+                if (!error) {
+                    const cmpStr = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+                    const allMatched = Array.from(metaMap.values()).sort((a, b) => {
+                        if (isFifoActive) {
+                            if (a.inbound_date && b.inbound_date && a.inbound_date !== b.inbound_date) {
+                                return cmpStr(a.inbound_date, b.inbound_date)
+                            }
+                            if (a.inbound_date && !b.inbound_date) return -1
+                            if (!a.inbound_date && b.inbound_date) return 1
+                            const cCmp = cmpStr(a.created_at || '', b.created_at || '')
+                            if (cCmp !== 0) return cCmp
+                            return cmpStr(a.id, b.id)
+                        }
+                        const cCmp = cmpStr(b.created_at || '', a.created_at || '')
+                        if (cCmp !== 0) return cCmp
+                        return cmpStr(a.id, b.id)
+                    })
+
+                    count = allMatched.length
+                    const pageIds = allMatched.slice(from, to + 1).map(r => r.id)
+
+                    if (pageIds.length === 0) {
+                        data = []
+                    } else {
+                        const detailRes = await query.in('id', pageIds)
+                        if (detailRes.error) {
+                            error = detailRes.error
+                        } else {
+                            const orderIndex = new Map(pageIds.map((id, idx) => [id, idx]))
+                            data = [...(detailRes.data || [])].sort(
+                                (a: any, b: any) => (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0)
+                            )
+                        }
+                    }
+                }
+            } else {
+                if (constrainedLotIds !== null) {
+                    query = query.in('id', constrainedLotIds)
+                }
+
+                // Ordering: FIFO-aware when toggle is active
+                if (isFifoActive) {
+                    // FIFO: oldest inbound_date first (nulls last), then created_at ascending
+                    query = query
+                        .order('inbound_date', { ascending: true, nullsFirst: false })
+                        .order('created_at', { ascending: true })
+                        .order('id', { ascending: true })
+                } else {
+                    query = query
+                        .order('created_at', { ascending: false })
+                        .order('id', { ascending: true })
+                }
+
+                const res = await query.range(from, to)
+                data = res.data
+                error = res.error
+                count = res.count
+            }
 
             if (reqSeq !== fetchLotsSeqRef.current) return
 
