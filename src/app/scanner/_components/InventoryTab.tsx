@@ -20,9 +20,22 @@ import {
   ChevronUp,
   CheckSquare,
   Square,
+  Volume2,
+  Trash2,
+  Cpu,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
-import { saveWarehouseMapToOfflineDb, getWarehouseMapFromOfflineDb } from '@/lib/scanner-db'
+import {
+  saveWarehouseMapToOfflineDb,
+  getWarehouseMapFromOfflineDb,
+  OfflineInventoryVoiceItem,
+  saveOfflineInventoryVoice,
+  getOfflineInventoryVoicesBySession,
+  deleteOfflineInventoryVoiceByKey,
+  remapOfflineInventoryVoiceSession,
+  parseVoiceNoteUrls,
+  appendVoiceNoteUrl,
+} from '@/lib/scanner-db'
 import { fetchAllPagedRows, runWithConcurrency, saveWarehouseMapMeta } from './scannerUtils'
 import HallLotInputModal, {
   HallOption,
@@ -33,6 +46,8 @@ import {
   getWarehouseProducts,
   normalizeViText,
 } from './operations/operationsService'
+import { VoiceMicButton, OfflineVoicePayload } from './VoiceMicButton'
+import { appendWarehouseVoiceText, normalizeWarehouseVoiceText } from './voiceTextNormalizer'
 
 export interface InventoryTabProps {
   isActive?: boolean
@@ -271,20 +286,84 @@ function LevelInventoryModal({
   visible,
   onClose,
   inventoryResults,
+  systemCode,
+  sessionId,
+  sessionName,
+  companyId,
+  voiceVocabulary,
+  pendingVoicesMap,
+  transcribingVoicesMap,
   togglePositionChecked,
   updatePositionNote,
+  onSaveVoiceResult,
+  onSaveOfflineVoice,
+  onDeleteOfflineVoice,
+  onTranscribeOfflineVoice,
   bulkCheckPositions,
 }: {
   level: any
   visible: boolean
   onClose: () => void
-  inventoryResults: Record<string, { checked?: boolean; note?: string }>
+  inventoryResults: Record<string, { checked?: boolean; note?: string; voice_note_url?: string | null }>
+  systemCode: string
+  sessionId: string | null
+  sessionName?: string | null
+  companyId?: string | null
+  voiceVocabulary?: string[]
+  pendingVoicesMap: Record<string, OfflineInventoryVoiceItem[]>
+  transcribingVoicesMap: Record<string, boolean>
   togglePositionChecked: (posId: string) => void
   updatePositionNote: (posId: string, note: string) => void
+  onSaveVoiceResult: (posId: string, spokenText: string, voiceUrl?: string | null, voiceKey?: string) => void
+  onSaveOfflineVoice: (posId: string, payload: OfflineVoicePayload) => void
+  onDeleteOfflineVoice: (posId: string, voiceKey: string) => void
+  onTranscribeOfflineVoice: (posId: string, voiceKey: string, positionCode?: string | null) => void
   bulkCheckPositions: (posIds: string[], checked: boolean) => void
 }) {
   const [fetchedLotItemsMap, setFetchedLotItemsMap] = useState<Record<string, any[]>>({})
   const fetchedLotItemsRef = useRef<Record<string, any[]>>({})
+  const [playingPosId, setPlayingPosId] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    if (!visible && audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+      setPlayingPosId(null)
+    }
+  }, [visible])
+
+  const handleTogglePlayAudio = (posId: string, src: string) => {
+    if (playingPosId === posId && audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+      setPlayingPosId(null)
+      return
+    }
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+    try {
+      const audio = new Audio(src)
+      audio.onended = () => {
+        setPlayingPosId(null)
+        audioRef.current = null
+      }
+      audio.onerror = () => {
+        setPlayingPosId(null)
+        audioRef.current = null
+      }
+      audioRef.current = audio
+      setPlayingPosId(posId)
+      void audio.play().catch(() => {
+        setPlayingPosId(null)
+        audioRef.current = null
+      })
+    } catch {
+      setPlayingPosId(null)
+    }
+  }
 
   useEffect(() => {
     if (!visible || !level?.slots || level.slots.length === 0) return
@@ -485,18 +564,134 @@ function LevelInventoryModal({
                   </button>
                 </div>
 
-                {/* Ô ghi chú sai lệch */}
-                <input
-                  type="text"
-                  value={res.note || ''}
-                  onChange={e => updatePositionNote(slot.id, e.target.value)}
-                  placeholder="Ghi chú sai lệch thực tế (nếu có)..."
-                  className={`w-full px-3 py-1.5 rounded-xl text-xs border focus:outline-none ${
-                    hasNote
-                      ? 'bg-rose-950/40 border-rose-500/60 text-rose-200 placeholder-rose-400/60'
-                      : 'bg-[#0f172a] border-slate-700 text-white placeholder-slate-500'
-                  }`}
-                />
+                {/* Ô ghi chú sai lệch + Nút Micro nhập giọng nói */}
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={res.note || ''}
+                    onChange={e => updatePositionNote(slot.id, e.target.value)}
+                    placeholder="Ghi chú sai lệch thực tế (gõ hoặc bấm Micro)..."
+                    className={`flex-1 min-w-0 px-3 py-1.5 rounded-xl text-xs border focus:outline-none ${
+                      hasNote
+                        ? 'bg-rose-950/40 border-rose-500/60 text-rose-200 placeholder-rose-400/60'
+                        : 'bg-[#0f172a] border-slate-700 text-white placeholder-slate-500'
+                    }`}
+                  />
+                  {hasNote && (
+                    <button
+                      type="button"
+                      onClick={() => updatePositionNote(slot.id, '')}
+                      title="Xóa ghi chú"
+                      className="w-7 h-7 rounded-lg bg-rose-500/15 border border-rose-500/35 text-rose-400 flex items-center justify-center shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <VoiceMicButton
+                    size="sm"
+                    saveToServer
+                    systemCode={systemCode}
+                    sessionId={sessionId}
+                    sessionName={sessionName}
+                    positionId={slot.id}
+                    positionCode={slot.code}
+                    companyId={companyId}
+                    vocabulary={voiceVocabulary}
+                    onResult={(spoken, voiceUrl) =>
+                      onSaveVoiceResult(slot.id, spoken, voiceUrl)
+                    }
+                    onOfflineAudio={payload => onSaveOfflineVoice(slot.id, payload)}
+                  />
+                </div>
+
+                {/* Danh sách ghi âm (Đã lưu trên Drive + Local chờ dịch — hỗ trợ nhiều đoạn / 1 vị trí) */}
+                {(() => {
+                  const savedUrls = parseVoiceNoteUrls(res.voice_note_url)
+                  const pendingList = pendingVoicesMap[slot.id] || []
+                  if (savedUrls.length === 0 && pendingList.length === 0) return null
+                  return (
+                    <div className="space-y-1.5">
+                      {savedUrls.map((sUrl, sIdx) => {
+                        const playKey = `saved-${slot.id}-${sIdx}`
+                        const isPlaying = playingPosId === playKey
+                        return (
+                          <div
+                            key={playKey}
+                            className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border text-[11px] bg-sky-500/10 border-sky-500/35 text-sky-300"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePlayAudio(playKey, sUrl)}
+                              className="flex items-center gap-1.5 font-extrabold min-w-0 flex-1 text-left"
+                            >
+                              <Volume2 className={`w-3.5 h-3.5 shrink-0 ${isPlaying ? 'animate-pulse' : ''}`} />
+                              <span className="truncate">
+                                {isPlaying
+                                  ? 'Đang phát... (bấm dừng)'
+                                  : savedUrls.length > 1
+                                    ? `Ghi âm đã lưu #${sIdx + 1}`
+                                    : 'Nghe lại ghi âm đã lưu'}
+                              </span>
+                            </button>
+                          </div>
+                        )
+                      })}
+
+                      {pendingList.map((pv, pIdx) => {
+                        const audioSrc = `data:${pv.mimeType};base64,${pv.audioBase64}`
+                        const isPlaying = playingPosId === pv.key
+                        const isTranscribing = Boolean(transcribingVoicesMap[pv.key])
+                        return (
+                          <div
+                            key={pv.key}
+                            className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border text-[11px] bg-amber-500/10 border-amber-500/35 text-amber-300"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePlayAudio(pv.key, audioSrc)}
+                              className="flex items-center gap-1.5 font-extrabold min-w-0 flex-1 text-left"
+                            >
+                              <Volume2 className={`w-3.5 h-3.5 shrink-0 ${isPlaying ? 'animate-pulse' : ''}`} />
+                              <span className="truncate">
+                                {isPlaying
+                                  ? 'Đang phát... (bấm dừng)'
+                                  : pendingList.length > 1
+                                    ? `Ghi âm #${pIdx + 1} (${pv.durationSec}s)`
+                                    : `Nghe lại (${pv.durationSec}s)`}
+                              </span>
+                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={isTranscribing}
+                                onClick={() => onTranscribeOfflineVoice(slot.id, pv.key, slot.code)}
+                                title="Gửi AI dịch & lưu Google Drive ngay"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-500/25 border border-violet-400/50 text-violet-100 hover:bg-violet-500/35 font-extrabold text-[11px] disabled:opacity-60"
+                              >
+                                {isTranscribing ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Cpu className="w-3 h-3" />
+                                )}
+                                <span>{isTranscribing ? 'Đang dịch...' : 'Dịch'}</span>
+                              </button>
+                              {!isTranscribing && (
+                                <button
+                                  type="button"
+                                  onClick={() => onDeleteOfflineVoice(slot.id, pv.key)}
+                                  title="Xóa ghi âm tạm"
+                                  className="text-rose-400 hover:text-rose-300 p-0.5 shrink-0"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}
@@ -522,10 +717,13 @@ export function InventoryTab({
   // Sessions & Results
   const [sessions, setSessions] = useState<any[]>([])
   const [allSessionResults, setAllSessionResults] = useState<
-    Record<string, Record<string, { checked?: boolean; note?: string }>>
+    Record<string, Record<string, { checked?: boolean; note?: string; voice_note_url?: string | null }>>
   >({})
   // Danh sách position_id đã chỉnh sửa trên máy nhưng chưa đồng bộ thành công lên server
   const [dirtyBySession, setDirtyBySession] = useState<Record<string, string[]>>({})
+  // Ghi âm offline của phiên hiện tại đang chờ gửi lên Server & AI dịch
+  const [pendingVoicesMap, setPendingVoicesMap] = useState<Record<string, OfflineInventoryVoiceItem[]>>({})
+  const [transcribingVoicesMap, setTranscribingVoicesMap] = useState<Record<string, boolean>>({})
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
 
@@ -656,7 +854,7 @@ export function InventoryTab({
           if (uuidIds.length > 0) {
             const itemsData = await fetchAllPagedRows((from, to) =>
               (supabase.from('internal_inventory_items') as any)
-                .select('session_id, position_id, checked, note')
+                .select('session_id, position_id, checked, note, voice_note_url')
                 .in('session_id', uuidIds)
                 .order('id', { ascending: true })
                 .range(from, to)
@@ -680,6 +878,7 @@ export function InventoryTab({
                   next[it.session_id][it.position_id] = {
                     checked: !!it.checked,
                     note: it.note || '',
+                    voice_note_url: it.voice_note_url || null,
                   }
                 })
                 try {
@@ -970,13 +1169,170 @@ export function InventoryTab({
 
   const saveResultsToStorage = (
     sessionId: string,
-    nextSessionRes: Record<string, { checked?: boolean; note?: string }>
+    nextSessionRes: Record<string, { checked?: boolean; note?: string; voice_note_url?: string | null }>
   ) => {
     setAllSessionResults(prev => {
       const next = { ...prev, [sessionId]: nextSessionRes }
       try {
         localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
       } catch {}
+      return next
+    })
+  }
+
+  // Nạp danh sách ghi âm offline đang chờ AI dịch của phiên hiện tại từ IndexedDB
+  useEffect(() => {
+    if (!currentSessionId) {
+      setPendingVoicesMap({})
+      return
+    }
+    let cancelled = false
+    void getOfflineInventoryVoicesBySession(currentSessionId).then(list => {
+      if (cancelled) return
+      const map: Record<string, OfflineInventoryVoiceItem[]> = {}
+      list.forEach(v => {
+        if (!map[v.positionId]) map[v.positionId] = []
+        map[v.positionId].push(v)
+      })
+      setPendingVoicesMap(map)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [currentSessionId])
+
+  const handleSaveVoiceResult = (
+    posId: string,
+    spokenText: string,
+    voiceUrl?: string | null,
+    voiceKey?: string
+  ) => {
+    if (!currentSessionId) return
+    const cur = currentResults[posId] || {}
+    const nextNote = spokenText ? appendWarehouseVoiceText(cur.note || '', spokenText) : cur.note || ''
+    const nextVoiceUrl = appendVoiceNoteUrl(cur.voice_note_url, voiceUrl)
+    const nextRes = {
+      ...currentResults,
+      [posId]: {
+        ...cur,
+        note: nextNote,
+        voice_note_url: nextVoiceUrl,
+        checked: nextNote.trim() || nextVoiceUrl ? true : cur.checked,
+      },
+    }
+    saveResultsToStorage(currentSessionId, nextRes)
+    markPositionsDirty(currentSessionId, [posId])
+    if (voiceKey && (spokenText || voiceUrl)) {
+      void deleteOfflineInventoryVoiceByKey(voiceKey)
+      setPendingVoicesMap(prev => {
+        const arr = prev[posId]
+        if (!arr || arr.length === 0) return prev
+        const filtered = arr.filter(x => x.key !== voiceKey)
+        const next = { ...prev }
+        if (filtered.length > 0) next[posId] = filtered
+        else delete next[posId]
+        return next
+      })
+    }
+  }
+
+  const handleSaveOfflineVoice = async (posId: string, payload: OfflineVoicePayload) => {
+    if (!currentSessionId) return
+    try {
+      const saved = await saveOfflineInventoryVoice({
+        sessionId: currentSessionId,
+        positionId: posId,
+        audioBase64: payload.audioBase64,
+        mimeType: payload.mimeType,
+        durationSec: payload.durationSec,
+        createdAt: new Date().toISOString(),
+      })
+      setPendingVoicesMap(prev => ({
+        ...prev,
+        [posId]: [...(prev[posId] || []), saved],
+      }))
+
+      // Tự tích đã kiểm vị trí này & đánh dấu chờ đồng bộ
+      const cur = currentResults[posId] || {}
+      const nextRes = {
+        ...currentResults,
+        [posId]: { ...cur, checked: true },
+      }
+      saveResultsToStorage(currentSessionId, nextRes)
+      markPositionsDirty(currentSessionId, [posId])
+      showToast(`Đã lưu ghi âm (${payload.durationSec}s) — nghe lại rồi bấm "Dịch" hoặc Đồng bộ sau!`)
+    } catch {
+      showToast('Không thể lưu ghi âm tạm trên máy')
+    }
+  }
+
+  const handleTranscribeOfflineVoice = async (
+    posId: string,
+    voiceKey: string,
+    positionCode?: string | null
+  ) => {
+    if (!currentSessionId || !voiceKey) return
+    const pv = (pendingVoicesMap[posId] || []).find(x => x.key === voiceKey)
+    if (!pv) return
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('Đang không có mạng — file vẫn giữ an toàn trên máy để Đồng bộ sau!')
+      return
+    }
+
+    setTranscribingVoicesMap(prev => ({ ...prev, [voiceKey]: true }))
+    try {
+      const res = await fetch('/api/voice-transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audioBase64: pv.audioBase64,
+          mimeType: pv.mimeType,
+          companyId: userProfile?.companyId || null,
+          saveToServer: true,
+          systemCode,
+          sessionId: currentSessionId,
+          sessionName: currentSession?.name || null,
+          positionId: posId,
+          positionCode: positionCode || null,
+          vocabulary: voiceVocabulary,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        showToast(data?.error || 'Không thể dịch AI lúc này — file vẫn được giữ trên máy.')
+        return
+      }
+      const rawText = String(data?.text || '').trim()
+      const normalized = rawText ? normalizeWarehouseVoiceText(rawText) : ''
+      const voiceUrl = data?.voiceUrl ? String(data.voiceUrl) : null
+      if (normalized || voiceUrl) {
+        handleSaveVoiceResult(posId, normalized, voiceUrl, voiceKey)
+        showToast(normalized ? 'Đã dịch AI & lưu Drive thành công!' : 'Đã tải file ghi âm lên Drive!')
+      } else {
+        showToast('AI không nghe rõ nội dung — file vẫn giữ lại trên máy.')
+      }
+    } catch {
+      showToast('Lỗi kết nối khi dịch AI — file vẫn giữ an toàn trên máy.')
+    } finally {
+      setTranscribingVoicesMap(prev => {
+        const next = { ...prev }
+        delete next[voiceKey]
+        return next
+      })
+    }
+  }
+
+  const handleDeleteOfflineVoice = async (posId: string, voiceKey: string) => {
+    if (!currentSessionId || !voiceKey) return
+    await deleteOfflineInventoryVoiceByKey(voiceKey)
+    setPendingVoicesMap(prev => {
+      const arr = prev[posId]
+      if (!arr) return prev
+      const filtered = arr.filter(x => x.key !== voiceKey)
+      const next = { ...prev }
+      if (filtered.length > 0) next[posId] = filtered
+      else delete next[posId]
       return next
     })
   }
@@ -1104,17 +1460,96 @@ export function InventoryTab({
         if (error) throw error
         realSessionId = created.id
         createdSessionRow = created
+        await remapOfflineInventoryVoiceSession(sessionObj.id, realSessionId)
       }
 
-      const resMap = allSessionResults[sessionObj.id] || {}
+      const resMap: Record<
+        string,
+        { checked?: boolean; note?: string; voice_note_url?: string | null }
+      > = { ...(allSessionResults[sessionObj.id] || {}) }
+
+      // Bước 1: Gộp tối đa 10 ghi âm / 1 lượt gọi Gemini AI + Upload lên Supabase Storage
+      const pendingVoices = await getOfflineInventoryVoicesBySession(realSessionId)
+      let syncedVoicesCount = 0
       const dirtySet = new Set(dirtyBySession[sessionObj.id] || [])
+
+      if (pendingVoices.length > 0) {
+        const VOICE_BATCH = 10
+        const totalBatches = Math.ceil(pendingVoices.length / VOICE_BATCH)
+        for (let b = 0; b < pendingVoices.length; b += VOICE_BATCH) {
+          const batch = pendingVoices.slice(b, b + VOICE_BATCH)
+          const batchIndex = Math.floor(b / VOICE_BATCH) + 1
+          showToast(
+            totalBatches > 1
+              ? `Đang gửi lô ${batchIndex}/${totalBatches} (${batch.length} ghi âm) cho AI dịch...`
+              : `Đang tải & dịch AI ${batch.length} ghi âm kiểm kê...`
+          )
+          try {
+            const resp = await fetch('/api/voice-transcribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                items: batch.map(pv => ({
+                  itemId: pv.key,
+                  positionId: pv.positionId,
+                  positionCode: positions.find(p => p.id === pv.positionId)?.code || null,
+                  audioBase64: pv.audioBase64,
+                  mimeType: pv.mimeType,
+                })),
+                companyId: userProfile?.companyId || null,
+                saveToServer: true,
+                systemCode: sessionObj.system_code || systemCode,
+                sessionId: realSessionId,
+                sessionName: sessionObj.name || null,
+                vocabulary: voiceVocabulary,
+              }),
+            })
+            const data = await resp.json().catch(() => ({}))
+            if (!resp.ok || !Array.isArray(data?.results)) continue
+
+            for (const itemRes of data.results) {
+              const pid = String(itemRes?.positionId || '')
+              const voiceKey = String(itemRes?.itemId || '')
+              if (!pid) continue
+              const rawText = String(itemRes?.text || '').trim()
+              const normalized = rawText ? normalizeWarehouseVoiceText(rawText) : ''
+              const voiceUrl = itemRes?.voiceUrl ? String(itemRes.voiceUrl) : null
+
+              if (normalized || voiceUrl) {
+                const prevItem = resMap[pid] || {}
+                resMap[pid] = {
+                  ...prevItem,
+                  checked: true,
+                  note: normalized
+                    ? appendWarehouseVoiceText(prevItem.note || '', normalized)
+                    : prevItem.note || '',
+                  voice_note_url: appendVoiceNoteUrl(prevItem.voice_note_url, voiceUrl),
+                }
+                dirtySet.add(pid)
+                if (voiceKey) await deleteOfflineInventoryVoiceByKey(voiceKey)
+                syncedVoicesCount++
+              }
+            }
+          } catch {}
+        }
+
+        // Cập nhật lại danh sách ghi âm còn lại trên UI
+        const remainingVoices = await getOfflineInventoryVoicesBySession(realSessionId)
+        const remMap: Record<string, OfflineInventoryVoiceItem[]> = {}
+        remainingVoices.forEach(v => {
+          if (!remMap[v.positionId]) remMap[v.positionId] = []
+          remMap[v.positionId].push(v)
+        })
+        setPendingVoicesMap(remMap)
+      }
+
       const posById = new Map(positions.map(p => [p.id, p]))
       const rows = Object.entries(resMap)
         .filter(
           ([posId, v]) =>
             !posId.startsWith('summary|') &&
             isUUID(posId) &&
-            (dirtySet.has(posId) || v.checked || (v.note && v.note.trim()))
+            (dirtySet.has(posId) || v.checked || (v.note && v.note.trim()) || v.voice_note_url)
         )
         .map(([posId, v]) => {
           const pos = posById.get(posId)
@@ -1124,6 +1559,7 @@ export function InventoryTab({
             zone_id: pos?.zone_ids?.[0] || null,
             checked: !!v.checked,
             note: v.note?.trim() || null,
+            voice_note_url: v.voice_note_url || null,
             checked_by: userProfile?.id || null,
             checked_at: new Date().toISOString(),
             lot_id_snapshot: pos?.lot_id || null,
@@ -1142,6 +1578,19 @@ export function InventoryTab({
         }
       }
 
+      // Lưu resMap mới nhất (đã gồm text AI dịch & voice_note_url) vào state + localStorage
+      setAllSessionResults(prev => {
+        const next = { ...prev }
+        next[realSessionId] = { ...(next[realSessionId] || {}), ...resMap }
+        if (realSessionId !== sessionObj.id) {
+          delete next[sessionObj.id]
+        }
+        try {
+          localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
+        } catch {}
+        return next
+      })
+
       // Đã đẩy thành công -> xóa danh sách dirty của phiếu này
       setDirtyBySession(prev => {
         const next = { ...prev }
@@ -1153,17 +1602,8 @@ export function InventoryTab({
         return next
       })
 
-      // Nếu vừa chuyển phiếu offline -> UUID thật trên server, đổi key local để tránh tạo trùng
+      // Nếu vừa chuyển phiếu offline -> UUID thật trên server, cập nhật danh sách phiên local
       if (realSessionId !== sessionObj.id) {
-        setAllSessionResults(prev => {
-          const next = { ...prev }
-          next[realSessionId] = { ...(next[realSessionId] || {}), ...resMap }
-          delete next[sessionObj.id]
-          try {
-            localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
-          } catch {}
-          return next
-        })
         setSessions(prev => {
           const next = prev.map(s =>
             s.id === sessionObj.id ? createdSessionRow || { ...s, id: realSessionId } : s
@@ -1180,13 +1620,33 @@ export function InventoryTab({
 
       await syncOfflineHallLotUpdatesWeb().catch(() => {})
       await fetchOnlineData(false, true)
-      showToast(`Đã đồng bộ ${rows.length} vị trí kiểm kê lên Web thành công!`)
+      showToast(
+        syncedVoicesCount > 0
+          ? `Đã lưu & dịch AI ${syncedVoicesCount} ghi âm + đồng bộ ${rows.length} vị trí!`
+          : `Đã đồng bộ ${rows.length} vị trí kiểm kê lên Web thành công!`
+      )
     } catch (e: any) {
       alert('Lỗi đồng bộ kiểm kê: ' + (e?.message || e))
     } finally {
       setSyncing(false)
     }
   }
+
+  // Từ điển tên sản phẩm & tên viết tắt (aliases) thật của kho gửi kèm cho Gemini Voice AI
+  const voiceVocabulary = useMemo(() => {
+    const terms = new Set<string>()
+    for (const p of warehouseProducts) {
+      if (p.aliases) {
+        p.aliases
+          .split(/[,;/|]+/)
+          .map(s => s.trim())
+          .filter(Boolean)
+          .forEach(s => terms.add(s))
+      }
+      if (p.name) terms.add(p.name.trim())
+    }
+    return Array.from(terms).slice(0, 120)
+  }, [warehouseProducts])
 
   // ── TÌM KIẾM SẢN PHẨM & AUTOCOMPLETE TRONG KIỂM KÊ ──
   const inventoryProductSuggestions = useMemo(() => {
@@ -1614,6 +2074,11 @@ export function InventoryTab({
 
                 {currentSession && (() => {
                   const pendingDirtyCount = (dirtyBySession[currentSession.id] || []).length
+                  const pendingVoiceCount = Object.values(pendingVoicesMap).reduce(
+                    (sum, arr) => sum + (arr?.length || 0),
+                    0
+                  )
+                  const totalPending = Math.max(pendingDirtyCount, pendingVoiceCount)
                   const isLocalOnly = !isUUID(currentSession.id)
                   return (
                     <button
@@ -1621,7 +2086,7 @@ export function InventoryTab({
                       disabled={syncing}
                       onClick={() => handleSyncSessionToCloud(currentSession)}
                       className={`px-2.5 py-1 rounded-lg text-white text-[11px] font-extrabold flex items-center gap-1 ${
-                        pendingDirtyCount > 0 || isLocalOnly
+                        totalPending > 0 || isLocalOnly
                           ? 'bg-amber-600'
                           : 'bg-emerald-600'
                       }`}
@@ -1629,9 +2094,9 @@ export function InventoryTab({
                       <CloudUpload className="w-3.5 h-3.5" />
                       <span>
                         {syncing
-                          ? 'Đang gửi...'
-                          : pendingDirtyCount > 0
-                            ? `Đồng bộ (${pendingDirtyCount})`
+                          ? 'Đang đồng bộ...'
+                          : totalPending > 0
+                            ? `Đồng bộ (${totalPending}${pendingVoiceCount > 0 ? ` · 🎙️${pendingVoiceCount}` : ''})`
                             : 'Đồng bộ'}
                       </span>
                     </button>
@@ -1652,9 +2117,9 @@ export function InventoryTab({
               </div>
             </div>
 
-            {/* Ô tìm kiếm sản phẩm theo tên viết tắt + Autocomplete */}
+            {/* Ô tìm kiếm sản phẩm theo tên viết tắt + Autocomplete + Micro */}
             <div className="relative">
-              <div className="flex items-center gap-2 px-3 h-9 rounded-xl bg-[#1e293b] border border-slate-700">
+              <div className="flex items-center gap-1.5 px-2.5 h-9 rounded-xl bg-[#1e293b] border border-slate-700">
                 <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <input
                   type="text"
@@ -1665,8 +2130,8 @@ export function InventoryTab({
                   }}
                   onFocus={() => setShowInvSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowInvSuggestions(false), 180)}
-                  placeholder="Lọc vị trí theo tên viết tắt (alias), SKU, STT, tên SP..."
-                  className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
+                  placeholder="Lọc vị trí theo alias, SKU, STT, tên SP..."
+                  className="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
                 />
                 {invSearchQuery && (
                   <button
@@ -1675,11 +2140,22 @@ export function InventoryTab({
                       setInvSearchQuery('')
                       setShowInvSuggestions(false)
                     }}
-                    className="text-slate-400"
+                    className="text-slate-400 shrink-0"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                 )}
+                <VoiceMicButton
+                  size="sm"
+                  companyId={userProfile?.companyId}
+                  vocabulary={voiceVocabulary}
+                  title="Nói tên sản phẩm hoặc STT để lọc (AI)"
+                  onResult={spoken => {
+                    setInvSearchQuery(spoken)
+                    setShowInvSuggestions(true)
+                  }}
+                  onError={msg => showToast(msg)}
+                />
               </div>
 
               {showInvSuggestions &&
@@ -2270,8 +2746,19 @@ export function InventoryTab({
         visible={!!selectedLevelModalData}
         onClose={() => setSelectedLevelModalData(null)}
         inventoryResults={currentResults}
+        systemCode={systemCode}
+        sessionId={currentSessionId}
+        sessionName={currentSession?.name || null}
+        companyId={userProfile?.companyId}
+        voiceVocabulary={voiceVocabulary}
+        pendingVoicesMap={pendingVoicesMap}
+        transcribingVoicesMap={transcribingVoicesMap}
         togglePositionChecked={togglePositionChecked}
         updatePositionNote={updatePositionNote}
+        onSaveVoiceResult={handleSaveVoiceResult}
+        onSaveOfflineVoice={handleSaveOfflineVoice}
+        onDeleteOfflineVoice={handleDeleteOfflineVoice}
+        onTranscribeOfflineVoice={handleTranscribeOfflineVoice}
         bulkCheckPositions={bulkCheckPositions}
       />
 

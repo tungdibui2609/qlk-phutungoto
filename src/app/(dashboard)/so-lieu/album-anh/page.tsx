@@ -884,14 +884,14 @@ export default function SoLieuAlbumPage() {
                         Đẩy Drive ({unsyncedIds.length})
                     </button>
 
-                    <button
-                        type="button"
-                        onClick={() => setDriveModalOpen(true)}
+                    <a
+                        href="/integrations"
                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 shadow-sm"
+                        title="Cài đặt Google Drive tại trang Kết nối AI & Drive"
                     >
                         <Settings className="w-4 h-4 text-slate-500" />
-                        Cài đặt Drive
-                    </button>
+                        Cài đặt Drive →
+                    </a>
                 </div>
             </div>
 
@@ -1928,159 +1928,7 @@ export default function SoLieuAlbumPage() {
                 </div>
             )}
 
-            {/* Modal Cài đặt Google Drive */}
-            {driveModalOpen && (
-                <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
-                            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                <Cloud className="w-5 h-5 text-emerald-500" />
-                                Cài Đặt Đồng Bộ Google Drive ({currentSystem?.code})
-                            </h3>
-                            <button
-                                type="button"
-                                onClick={() => setDriveModalOpen(false)}
-                                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-5 space-y-4 overflow-y-auto text-sm">
-                            <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/30 p-3 text-xs text-emerald-900 dark:text-emerald-200 space-y-1">
-                                <p className="font-bold">💡 Cơ chế lưu trữ Google Drive &amp; dùng chung đa thiết bị:</p>
-                                <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
-                                    <li>Ảnh <strong>không lưu lên server</strong>: giữ trên máy nhân viên khi offline và tự động đẩy thẳng lên Google Drive khi có mạng.</li>
-                                    <li>Bạn <strong>chỉ cần cài đặt 1 lần tại đây</strong>: App điện thoại (Android APK) và iOS Web của kho <strong>{currentSystem?.code}</strong> sẽ tự động dùng chung cấu hình này.</li>
-                                </ul>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                    Google Apps Script Webhook URL
-                                </label>
-                                <input
-                                    type="url"
-                                    value={driveSettings.webhook_url || ''}
-                                    onChange={(e) => setDriveSettings((prev) => ({ ...prev, webhook_url: e.target.value }))}
-                                    placeholder="https://script.google.com/macros/s/.../exec"
-                                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                    Tên thư mục gốc trên Google Drive
-                                </label>
-                                <input
-                                    type="text"
-                                    value={driveSettings.root_folder_name || ''}
-                                    onChange={(e) => setDriveSettings((prev) => ({ ...prev, root_folder_name: e.target.value }))}
-                                    placeholder="WMS_HinhAnh_Kho"
-                                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                                />
-                                <p className="text-[11px] text-slate-500 mt-1">
-                                    Ảnh sẽ được sắp xếp tự động theo cấu trúc: <code>{driveSettings.root_folder_name || 'WMS_HinhAnh_Kho'} / Mã_Kho / Năm-Tháng / Thư_Mục_hoặc_Công_Việc</code>
-                                </p>
-                                <p className="text-[11px] text-slate-500 mt-1">
-                                    Lưu ý: Trên App điện thoại, file nén tạm luôn tự xóa ngay sau khi đẩy lên Drive; mỗi nhân viên có thể tự chọn số ngày giữ/xóa ảnh gốc ngay trên máy của mình.
-                                </p>
-                            </div>
-
-                            <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/60 dark:bg-indigo-950/25 p-3.5 space-y-2 text-xs text-slate-700 dark:text-slate-200">
-                                <div className="font-bold text-indigo-800 dark:text-indigo-300 flex items-center justify-between">
-                                    <span>📘 Hướng dẫn cài đặt từng bước (chỉ làm 1 lần)</span>
-                                    <a
-                                        href="https://script.google.com"
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-                                    >
-                                        Mở script.google.com
-                                        <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                </div>
-                                <ol className="list-decimal pl-4 space-y-1 text-[11px] leading-relaxed">
-                                    <li>
-                                        Bấm nút <strong>Copy Script</strong> ở khung bên dưới.
-                                    </li>
-                                    <li>
-                                        Mở <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 underline">script.google.com</a> → tạo <strong>Dự án mới (New project)</strong> → xóa code mặc định, dán toàn bộ script vào file <code>Code.gs</code> và bấm <strong>Lưu (Ctrl + S)</strong>.
-                                    </li>
-                                    <li>
-                                        Trên thanh công cụ phía trên, chọn hàm <code>khoiTaoQuyenDrive</code> → bấm <strong>Chạy (Run)</strong> → Chọn tài khoản Google → <em>Nâng cao (Advanced)</em> → <em>Đi tới dự án (không an toàn)</em> → <strong>Cho phép (Allow)</strong> để cấp quyền Google Drive.
-                                    </li>
-                                    <li>
-                                        Bấm <strong>Triển khai (Deploy)</strong> → <strong>Tạo bản triển khai mới (New deployment)</strong> → Loại: <strong>Ứng dụng web (Web app)</strong>:
-                                        <div className="mt-0.5 pl-2 text-slate-600 dark:text-slate-300">
-                                            • Thực thi dưới tư cách (<em>Execute as</em>): <strong>Tôi (Me)</strong><br />
-                                            • Ai có quyền truy cập (<em>Who has access</em>): <strong>Bất kỳ ai (Anyone)</strong>
-                                        </div>
-                                    </li>
-                                    <li>
-                                        Copy <strong>URL ứng dụng web</strong> (dạng <code>https://script.google.com/macros/s/.../exec</code>) dán vào ô <strong>Google Apps Script Webhook URL</strong> ở trên.
-                                    </li>
-                                    <li>
-                                        Bấm <strong>Kiểm tra kết nối</strong> → thấy báo thành công thì bấm <strong>Lưu cấu hình</strong>.
-                                    </li>
-                                </ol>
-                                <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 rounded-lg px-2.5 py-1.5">
-                                    <strong>Mẹo khi cập nhật script mới:</strong> Dán đè code mới và lưu lại → vào <strong>Deploy → Manage deployments</strong> → bấm biểu tượng cây bút (Edit) → chọn Version: <strong>New version</strong> → bấm <strong>Deploy</strong> (sẽ giữ nguyên được URL cũ).
-                                </p>
-                            </div>
-
-                            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                                        Mẫu Google Apps Script (Copy & Dán vào script.google.com)
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={handleCopyScript}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white"
-                                    >
-                                        {copiedScript ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                                        {copiedScript ? 'Đã copy!' : 'Copy Script'}
-                                    </button>
-                                </div>
-                                <pre className="text-[11px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 max-h-40 overflow-auto">
-                                    {GOOGLE_APPS_SCRIPT_TEMPLATE}
-                                </pre>
-                            </div>
-                        </div>
-
-                        <div className="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
-                            <button
-                                type="button"
-                                disabled={testingDrive}
-                                onClick={handleTestDrive}
-                                className="px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5"
-                            >
-                                {testingDrive ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                                Kiểm tra kết nối
-                            </button>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setDriveModalOpen(false)}
-                                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                >
-                                    Đóng
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={savingDrive}
-                                    onClick={handleSaveDriveSettings}
-                                    className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center gap-1.5"
-                                >
-                                    {savingDrive ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                                    Lưu cấu hình
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Cấu hình Google Drive đã chuyển tập trung về trang /integrations */}
         </div>
     )
 }

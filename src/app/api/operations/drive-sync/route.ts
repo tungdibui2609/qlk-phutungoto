@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { webhookUrl, rootFolder, folderPath, filename, mimeType, base64 } = body || {}
+    const { webhookUrl, rootFolder, folderPath, filename, mimeType, base64, action } = body || {}
 
     if (!webhookUrl || typeof webhookUrl !== 'string' || !webhookUrl.startsWith('http')) {
       return NextResponse.json(
@@ -16,6 +16,7 @@ export async function POST(req: Request) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        ...(action ? { action } : {}),
         rootFolder,
         folderPath,
         filename,

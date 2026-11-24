@@ -658,163 +658,36 @@ export function StampQueueAiTab({
         </div>
       )}
 
-      {/* 1. KHỐI CẤU HÌNH: GEMINI VISION + GOOGLE DRIVE APPS SCRIPT RIÊNG */}
-      <div className="p-4 sm:p-5 rounded-2xl border border-indigo-200 bg-indigo-50/60 dark:bg-indigo-950/30 dark:border-indigo-800/70 space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-indigo-200/60 dark:border-indigo-800/50">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm">
-              <Sparkles size={18} className="text-amber-300" />
-            </div>
-            <div>
-              <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-                <span>Cấu hình AI Đọc Số & Lưu Trữ Ảnh Google Drive</span>
-                {hasSavedKey && isEnabled && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300 text-[11px] font-bold">
-                    AI Đang bật
-                  </span>
-                )}
-                {driveWebhookUrl.trim() && (
-                  <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 text-[11px] font-bold flex items-center gap-1">
-                    <Cloud size={11} /> Google Drive
-                  </span>
-                )}
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Gemini đọc dãy số • Google Drive lưu ảnh vào thư mục <code className="font-mono font-bold text-indigo-700 dark:text-indigo-300">CON_DAU/YYYY-MM</code> (0đ chi phí lưu trữ)
-              </p>
-            </div>
+      {/* 1. THANH TRẠNG THÁI GỌN (Quản lý chi tiết tại /integrations) */}
+      <div className="px-4 py-3 rounded-2xl border border-indigo-200 bg-indigo-50/60 dark:bg-indigo-950/30 dark:border-indigo-800/70 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+            <Sparkles size={16} className="text-amber-300" />
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowScriptModal(true)}
-              className="px-3 py-1.5 rounded-xl border border-indigo-300 dark:border-indigo-700 bg-white dark:bg-slate-900 hover:bg-indigo-50 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <FileCode2 size={14} />
-              <span>Xem Code Google Script</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveAiKey}
-              disabled={savingKey}
-              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {savingKey ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-              <span>Lưu Cấu Hình</span>
-            </button>
-          </div>
+          <span className="text-xs font-extrabold text-slate-800 dark:text-white">
+            AI Đọc Dấu &amp; Drive:
+          </span>
+          {hasSavedKey && isEnabled ? (
+            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300 text-[11px] font-bold">
+              AI Đang bật ({parseGeminiApiKeys(apiKey).length} Key · {modelName})
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold">
+              Chưa bật Gemini AI
+            </span>
+          )}
+          {driveWebhookUrl.trim() && (
+            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 text-[11px] font-bold flex items-center gap-1">
+              <Cloud size={11} /> Google Drive
+            </span>
+          )}
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Cột 1: Google Gemini API Key (Hỗ trợ nhiều Key dự phòng xoay vòng) */}
-          <div className="space-y-1.5 p-3 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-indigo-100 dark:border-indigo-900/50">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200">
-              <span className="flex items-center gap-1.5">
-                <KeyRound size={13} className="text-indigo-600" />
-                <span>1. Google Gemini API Key (Đọc 2 dòng số)</span>
-                {(() => {
-                  const detected = parseGeminiApiKeys(apiKey)
-                  if (detected.length > 1) {
-                    return (
-                      <span className="px-1.5 py-0.2 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 font-bold text-[10px]">
-                        🟢 {detected.length} Key dự phòng
-                      </span>
-                    )
-                  }
-                  if (detected.length === 1) {
-                    return (
-                      <span className="px-1.5 py-0.2 rounded-md bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 font-bold text-[10px]">
-                        1 Key chính
-                      </span>
-                    )
-                  }
-                  return (
-                    <span className="text-slate-400 font-normal text-[10px]">(Chưa có Key)</span>
-                  )
-                })()}
-              </span>
-              <label className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-400 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isEnabled}
-                  onChange={e => setIsEnabled(e.target.checked)}
-                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                Kích hoạt AI
-              </label>
-            </div>
-            <div className="relative">
-              <textarea
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-                placeholder="Dán 1 hoặc nhiều Gemini API Key (AIzaSy...)\nMỗi tài khoản 1 dòng để tự động xoay vòng khi hết 250 lượt/ngày"
-                rows={showKey ? Math.max(2, Math.min(parseGeminiApiKeys(apiKey).length + 1, 5)) : 2}
-                style={!showKey ? ({ WebkitTextSecurity: 'disc' } as any) : undefined}
-                className="w-full px-3 py-1.5 pr-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-indigo-500 outline-none resize-y"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                title={showKey ? 'Ẩn mã Key' : 'Hiện mã Key'}
-                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5 flex-wrap gap-2">
-              <div className="flex items-center gap-1.5">
-                <span>Mô hình:</span>
-                <select
-                  value={modelName}
-                  onChange={e => setModelName(e.target.value)}
-                  className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-mono font-bold text-indigo-700 dark:text-indigo-300 outline-none cursor-pointer"
-                >
-                  <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Khuyên dùng: Siêu nhanh, 200 OK)</option>
-                  <option value="gemini-3.5-flash">gemini-3.5-flash (Chuẩn xác cao)</option>
-                  <option value="gemini-flash-latest">gemini-flash-latest (Bản mới nhất)</option>
-                  <option value="gemini-3.8-flash">gemini-3.8-flash</option>
-                  <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
-                </select>
-              </div>
-              {parseGeminiApiKeys(apiKey).length > 1 && (
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                  Tự động chuyển key khi lỗi 429
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Cột 2: Google Apps Script Webhook (Tài khoản Google Drive riêng) */}
-          <div className="space-y-1.5 p-3 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-indigo-100 dark:border-indigo-900/50">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200">
-              <span className="flex items-center gap-1.5">
-                <Cloud size={13} className="text-blue-600" />
-                <span>2. Google Apps Script Webhook (Lưu ảnh CON_DAU)</span>
-              </span>
-              <button
-                type="button"
-                onClick={handleTestDriveConnection}
-                disabled={testingDrive || !driveWebhookUrl.trim()}
-                className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 disabled:opacity-50"
-              >
-                {testingDrive ? <Loader2 size={11} className="animate-spin" /> : <FolderSync size={11} />}
-                <span>Kiểm tra kết nối</span>
-              </button>
-            </div>
-            <div>
-              <input
-                type="text"
-                value={driveWebhookUrl}
-                onChange={e => setDriveWebhookUrl(e.target.value)}
-                placeholder="https://script.google.com/macros/s/.../exec"
-                className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white font-mono focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-            </div>
-            <div className="text-[11px] text-slate-500 pt-0.5 flex items-center justify-between">
-              <span>Lưu tự động vào: <code className="font-bold text-blue-600 dark:text-blue-400">CON_DAU / YYYY-MM</code></span>
-            </div>
-          </div>
-        </div>
+        <a
+          href="/integrations"
+          className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-50 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all"
+        >
+          Quản lý tại Kết nối AI &amp; Drive →
+        </a>
       </div>
 
       {/* 2. Thanh công cụ & Bộ lọc hàng đợi */}

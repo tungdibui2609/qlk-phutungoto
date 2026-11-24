@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Truck, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, CheckSquare, Hash, Stamp, LayoutGrid, Clock, CalendarClock, FileCheck, Zap, Link2, Scale, Handshake, Sprout, UserCheck, Keyboard, Briefcase, Images } from 'lucide-react'
+import { LayoutDashboard, Package, Truck, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, CheckSquare, Hash, Stamp, LayoutGrid, Clock, CalendarClock, FileCheck, Zap, Link2, Scale, Handshake, Sprout, UserCheck, Keyboard, Briefcase, Images, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -52,6 +52,7 @@ const menuItems: MenuItem[] = [
             { id: 'production_places', name: 'Nơi sản xuất / Nhà máy', href: '/production-places', icon: Factory, requiredModule: 'production_place' },
             { id: 'production', name: 'Sản xuất', href: '/production', icon: Factory, requiredPermission: 'production.view' },
             { id: 'members_teams', name: 'Thành viên & Đội', href: '/members-teams', icon: UserCheck, requiredModule: 'member_team_manager' },
+            { id: 'integrations', name: 'Kết nối AI & Drive', href: '/integrations', icon: Sparkles, requiredPermission: 'warehouse.manage' },
         ]
     },
     {

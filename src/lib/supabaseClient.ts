@@ -546,6 +546,7 @@ type InternalInventoryItemsTable = {
         checked_by: string | null
         checked_at: string | null
         lot_id_snapshot: string | null
+        voice_note_url: string | null
         created_at: string
     }
     Insert: {
@@ -558,6 +559,7 @@ type InternalInventoryItemsTable = {
         checked_by?: string | null
         checked_at?: string | null
         lot_id_snapshot?: string | null
+        voice_note_url?: string | null
         created_at?: string
     }
     Update: {
@@ -570,6 +572,7 @@ type InternalInventoryItemsTable = {
         checked_by?: string | null
         checked_at?: string | null
         lot_id_snapshot?: string | null
+        voice_note_url?: string | null
         created_at?: string
     }
     Relationships: [

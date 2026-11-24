@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { ClipboardCheck, Plus, Loader2, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Trash2, X, Calendar, User, Users, BarChart3, CheckCircle2, LayoutGrid, Eye, Package, MessageSquare, Lock, Unlock, AlertTriangle, Edit, ShieldCheck, RefreshCw } from 'lucide-react'
+import { ClipboardCheck, Plus, Loader2, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Trash2, X, Calendar, User, Users, BarChart3, CheckCircle2, LayoutGrid, Eye, Package, MessageSquare, Lock, Unlock, AlertTriangle, Edit, ShieldCheck, RefreshCw, HardDrive } from 'lucide-react'
+import InventoryVoiceDriveModal from './_components/InventoryVoiceDriveModal'
 import { supabase } from '@/lib/supabaseClient'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { buildHallStats, HALL_ALL_TAB_ID, type HallScope } from '@/lib/hallInventoryStats'
@@ -16,6 +17,7 @@ import { decodeSTT } from '@/lib/numberUtils'
 import { useRouter } from 'next/navigation'
 import { logActivity } from '@/lib/audit'
 import { logLotsDeletion } from '@/lib/lotDeleteLogger'
+import { parseVoiceNoteUrls } from '@/lib/scanner-db'
 
 // Types
 interface Session {
@@ -49,6 +51,7 @@ interface InvItem {
     lot_id_snapshot: string | null
     is_modified?: boolean
     resolved?: boolean
+    voice_note_url?: string | null
 }
 
 interface Zone {
@@ -156,6 +159,21 @@ export default function InternalInventoryPage() {
 
     // Create modal
     const [isCreateOpen, setIsCreateOpen] = useState(false)
+    const [isVoiceDriveModalOpen, setIsVoiceDriveModalOpen] = useState(false)
+    const [voiceDriveConnected, setVoiceDriveConnected] = useState(false)
+
+    useEffect(() => {
+        if (!systemType) return
+        ;(supabase as any)
+            .from('inventory_voice_drive_settings')
+            .select('webhook_url, is_enabled')
+            .eq('system_code', systemType)
+            .maybeSingle()
+            .then(({ data }: any) => {
+                setVoiceDriveConnected(Boolean(data?.is_enabled && data?.webhook_url?.trim()?.startsWith('http')))
+            })
+            .catch(() => {})
+    }, [systemType])
     const [newName, setNewName] = useState('')
     const [newSelectionPath, setNewSelectionPath] = useState<string[]>([])
     const [allZonesForCreate, setAllZonesForCreate] = useState<Zone[]>([])
@@ -1205,8 +1223,9 @@ export default function InternalInventoryPage() {
         const lot = pos.lot_id ? lotInfo[pos.lot_id] : null
         const isChecked = item?.checked
         const hasNote = !!item?.note
+        const hasVoice = !!item?.voice_note_url
         const isResolved = !!item?.resolved
-        const isDiscrepancy = hasNote && !isResolved
+        const isDiscrepancy = (hasNote || hasVoice) && !isResolved
         const isModified = !!item?.is_modified
         const locked = selectedSession?.status === 'completed'
 
@@ -1365,10 +1384,10 @@ export default function InternalInventoryPage() {
                     <p className="mt-0.5 pl-3 text-[10px] italic text-stone-300">Vị trí trống</p>
                 )}
 
-                {/* Ghi chú sai lệch: hiện khi có note hoặc hover */}
+                {/* Ghi chú sai lệch & file ghi âm: hiện khi có note, có ghi âm, hoặc hover */}
                 <div
                     onClick={(e) => e.stopPropagation()}
-                    className={`mt-1 pl-3 transition-opacity ${hasNote ? '' : 'opacity-0 group-hover/pos:opacity-100'}`}
+                    className={`mt-1 pl-3 transition-opacity ${hasNote || hasVoice ? '' : 'opacity-0 group-hover/pos:opacity-100'}`}
                 >
                     <input
                         key={pos.id}
@@ -1379,6 +1398,23 @@ export default function InternalInventoryPage() {
                         placeholder="Ghi chú sai lệch…"
                         className={`w-full min-w-0 bg-transparent text-[10px] italic outline-none border-t pt-0.5 ${hasNote ? (isDiscrepancy ? 'text-red-600 border-red-200' : 'text-emerald-600 border-emerald-200') : 'text-stone-500 border-stone-100 placeholder:text-stone-300 focus:text-stone-700'}`}
                     />
+                    {parseVoiceNoteUrls(item?.voice_note_url).length > 0 && (
+                        <div className="mt-1.5 space-y-1">
+                            {parseVoiceNoteUrls(item?.voice_note_url).map((vUrl, vIdx, arr) => (
+                                <div key={vUrl} className="rounded-lg bg-sky-50/90 border border-sky-200/80 px-2 py-1">
+                                    <div className="text-[9px] font-bold text-sky-700 mb-0.5 flex items-center gap-1">
+                                        <span>🎙️ Ghi âm kiểm kê {arr.length > 1 ? `#${vIdx + 1}` : ''}</span>
+                                    </div>
+                                    <audio
+                                        controls
+                                        preload="metadata"
+                                        src={vUrl}
+                                        className="h-7 w-full"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         )
@@ -1602,10 +1638,23 @@ export default function InternalInventoryPage() {
                     </h1>
                     <p className="text-stone-500 mt-1">Kiểm tra vật lý từng vị trí trong kho — đồng bộ với ứng dụng mobile</p>
                 </div>
-                <button onClick={() => { setNewName(''); setNewSelectionPath([]); setIsCreateOpen(true) }} className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-sm transition-all shadow-sm">
-                    <Plus size={18} />
-                    Tạo phiếu kiểm
-                </button>
+                <div className="flex items-center gap-2">
+                    <a
+                        href="/integrations"
+                        className="flex items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 rounded-xl font-bold text-sm transition-all shadow-xs"
+                        title="Quản lý Google Drive lưu file ghi âm tại trang Kết nối AI & Drive"
+                    >
+                        <span
+                            className={`w-2 h-2 rounded-full ${voiceDriveConnected ? 'bg-emerald-500' : 'bg-stone-300'}`}
+                        />
+                        <HardDrive size={16} className="text-sky-600" />
+                        <span>Drive Ghi âm →</span>
+                    </a>
+                    <button onClick={() => { setNewName(''); setNewSelectionPath([]); setIsCreateOpen(true) }} className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-sm transition-all shadow-sm">
+                        <Plus size={18} />
+                        Tạo phiếu kiểm
+                    </button>
+                </div>
             </div>
 
             {selectedSession ? (
@@ -1790,7 +1839,14 @@ export default function InternalInventoryPage() {
                                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2.5">
                                                 {activeHallScope?.groups.map((group, idx) => {
                                                 const allChecked = group.checkedCount === group.count;
-                                                const hasErr = group.notes.length > 0;
+                                                const groupVoiceUrls = Array.from(
+                                                    new Set(
+                                                        group.positionIds.flatMap((pid: string) =>
+                                                            parseVoiceNoteUrls(itemsMap[pid]?.voice_note_url)
+                                                        )
+                                                    )
+                                                );
+                                                const hasErr = group.notes.length > 0 || groupVoiceUrls.length > 0;
                                                 const firstNote = group.notes[0] || '';
                                                 return (
                                                     <div key={idx} className={`border rounded-xl p-3 shadow-sm hover:shadow-md transition-all relative group/card flex flex-col gap-2 overflow-hidden ${hasErr ? 'bg-red-50/70 border-red-200' : 'bg-white border-stone-200'}`}>
@@ -1857,6 +1913,18 @@ export default function InternalInventoryPage() {
                                                                 className={`flex-1 min-w-0 bg-transparent text-[11px] italic outline-none placeholder:text-stone-300 ${firstNote ? 'text-red-600' : 'text-stone-500 focus:text-stone-700'}`}
                                                             />
                                                         </div>
+                                                        {groupVoiceUrls.length > 0 && (
+                                                            <div className="space-y-1.5 border-t border-sky-100 pt-1.5">
+                                                                {groupVoiceUrls.map((vUrl, vIdx) => (
+                                                                    <div key={vUrl} className="rounded-lg bg-sky-50/90 border border-sky-200/80 px-2 py-1">
+                                                                        <div className="text-[9px] font-bold text-sky-700 mb-0.5">
+                                                                            🎙️ Ghi âm kiểm kê {groupVoiceUrls.length > 1 ? `#${vIdx + 1}` : ''}
+                                                                        </div>
+                                                                        <audio controls preload="metadata" src={vUrl} className="h-7 w-full" />
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 );
                                             })}
@@ -1994,7 +2062,7 @@ export default function InternalInventoryPage() {
             )}
 
             {/* Bong bóng nổi ghi chú kiểm kê — luôn giữa màn hình khi cuộn trong modal LOT */}
-            {showLotEdit && editingPositionId && itemsMap[editingPositionId]?.note && dismissedNotePos !== editingPositionId && (
+            {showLotEdit && editingPositionId && (itemsMap[editingPositionId]?.note || itemsMap[editingPositionId]?.voice_note_url) && dismissedNotePos !== editingPositionId && (
                 <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[70] pointer-events-none max-w-[92vw]">
                     <div className="pointer-events-auto flex items-start gap-2.5 bg-amber-500 text-white shadow-2xl shadow-amber-500/40 rounded-2xl px-4 py-3 border border-amber-300/60">
                         <MessageSquare size={16} className="shrink-0 mt-0.5 text-amber-100" />
@@ -2002,7 +2070,28 @@ export default function InternalInventoryPage() {
                             <p className="text-[10px] font-black uppercase tracking-widest text-amber-100 leading-none mb-1">
                                 Ghi chú kiểm kê — vị trí {positions.find(p => p.id === editingPositionId)?.code}
                             </p>
-                            <p className="text-sm font-bold leading-snug break-words">"{itemsMap[editingPositionId]?.note}"</p>
+                            {itemsMap[editingPositionId]?.note && (
+                                <p className="text-sm font-bold leading-snug break-words">"{itemsMap[editingPositionId]?.note}"</p>
+                            )}
+                            {parseVoiceNoteUrls(itemsMap[editingPositionId]?.voice_note_url).length > 0 && (
+                                <div className="mt-2 space-y-1.5">
+                                    {parseVoiceNoteUrls(itemsMap[editingPositionId]?.voice_note_url).map((vUrl, vIdx, arr) => (
+                                        <div key={vUrl}>
+                                            {arr.length > 1 && (
+                                                <p className="text-[10px] font-bold text-amber-100 mb-0.5">
+                                                    🎙️ Ghi âm #{vIdx + 1}
+                                                </p>
+                                            )}
+                                            <audio
+                                                controls
+                                                preload="metadata"
+                                                src={vUrl}
+                                                className="h-8 w-full max-w-[260px]"
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                         <button
                             onClick={() => setDismissedNotePos(editingPositionId)}

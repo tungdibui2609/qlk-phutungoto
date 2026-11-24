@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'chanhthu_scanner_db'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 export interface OfflinePallet {
     id: string
@@ -134,6 +134,13 @@ function openDatabase(): Promise<IDBDatabase> {
                 const store = db.createObjectStore('stamp_queue', { keyPath: 'id' })
                 store.createIndex('pallet_stt', 'pallet_stt', { unique: false })
                 store.createIndex('created_at', 'created_at', { unique: false })
+            }
+
+            // Store 7: Offline Inventory Voice Notes (ghi âm kiểm kê chờ đồng bộ lên Server & dịch AI)
+            if (!db.objectStoreNames.contains('offline_inventory_voices')) {
+                const store = db.createObjectStore('offline_inventory_voices', { keyPath: 'key' })
+                store.createIndex('sessionId', 'sessionId', { unique: false })
+                store.createIndex('createdAt', 'createdAt', { unique: false })
             }
         }
 
@@ -556,4 +563,141 @@ export async function syncAllOfflineStampQueue(): Promise<{ synced: number; fail
         else failed++
     }
     return { synced, failed }
+}
+
+// ── OFFLINE INVENTORY VOICE NOTES (GHI ÂM KIỂM KÊ CHỜ ĐỒNG BỘ & DỊCH AI) ──
+
+export interface OfflineInventoryVoiceItem {
+    key: string // `${sessionId}__${positionId}__${ts}_${rand}` (hỗ trợ nhiều ghi âm / 1 vị trí)
+    sessionId: string
+    positionId: string
+    audioBase64: string
+    mimeType: string
+    durationSec: number
+    createdAt: string
+}
+
+export function parseVoiceNoteUrls(raw?: string | null): string[] {
+    const s = String(raw || '').trim()
+    if (!s) return []
+    if (s.startsWith('[')) {
+        try {
+            const arr = JSON.parse(s)
+            if (Array.isArray(arr)) {
+                return Array.from(new Set(arr.map(x => String(x || '').trim()).filter(Boolean)))
+            }
+        } catch {}
+    }
+    return [s]
+}
+
+export function appendVoiceNoteUrl(
+    existingRaw: string | null | undefined,
+    incoming: string | string[] | null | undefined
+): string | null {
+    const current = parseVoiceNoteUrls(existingRaw)
+    const additions = Array.isArray(incoming)
+        ? incoming.map(x => String(x || '').trim()).filter(Boolean)
+        : incoming
+          ? [String(incoming).trim()].filter(Boolean)
+          : []
+    const merged = Array.from(new Set([...current, ...additions]))
+    if (merged.length === 0) return null
+    if (merged.length === 1) return merged[0]
+    return JSON.stringify(merged)
+}
+
+export async function saveOfflineInventoryVoice(
+    item: Omit<OfflineInventoryVoiceItem, 'key'>
+): Promise<OfflineInventoryVoiceItem> {
+    const db = await openDatabase()
+    const rand = Math.random().toString(36).slice(2, 6)
+    const fullItem: OfflineInventoryVoiceItem = {
+        ...item,
+        key: `${item.sessionId}__${item.positionId}__${Date.now()}_${rand}`,
+    }
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('offline_inventory_voices', 'readwrite')
+        tx.objectStore('offline_inventory_voices').put(fullItem)
+        tx.oncomplete = () => resolve(fullItem)
+        tx.onerror = () => reject(tx.error)
+    })
+}
+
+export async function getOfflineInventoryVoicesBySession(
+    sessionId: string
+): Promise<OfflineInventoryVoiceItem[]> {
+    try {
+        const db = await openDatabase()
+        return new Promise((resolve) => {
+            const tx = db.transaction('offline_inventory_voices', 'readonly')
+            const idx = tx.objectStore('offline_inventory_voices').index('sessionId')
+            const req = idx.getAll(IDBKeyRange.only(sessionId))
+            req.onsuccess = () => {
+                const list: OfflineInventoryVoiceItem[] = req.result || []
+                list.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+                resolve(list)
+            }
+            req.onerror = () => resolve([])
+        })
+    } catch {
+        return []
+    }
+}
+
+export async function deleteOfflineInventoryVoiceByKey(voiceKey: string): Promise<void> {
+    try {
+        const db = await openDatabase()
+        return new Promise((resolve) => {
+            const tx = db.transaction('offline_inventory_voices', 'readwrite')
+            tx.objectStore('offline_inventory_voices').delete(voiceKey)
+            tx.oncomplete = () => resolve()
+            tx.onerror = () => resolve()
+        })
+    } catch {}
+}
+
+export async function deleteOfflineInventoryVoice(
+    sessionId: string,
+    positionId: string
+): Promise<void> {
+    try {
+        const items = await getOfflineInventoryVoicesBySession(sessionId)
+        const targets = items.filter(x => x.positionId === positionId)
+        if (targets.length === 0) return
+        const db = await openDatabase()
+        return new Promise((resolve) => {
+            const tx = db.transaction('offline_inventory_voices', 'readwrite')
+            const store = tx.objectStore('offline_inventory_voices')
+            for (const t of targets) store.delete(t.key)
+            tx.oncomplete = () => resolve()
+            tx.onerror = () => resolve()
+        })
+    } catch {}
+}
+
+export async function remapOfflineInventoryVoiceSession(
+    oldSessionId: string,
+    newSessionId: string
+): Promise<void> {
+    if (oldSessionId === newSessionId) return
+    const items = await getOfflineInventoryVoicesBySession(oldSessionId)
+    if (items.length === 0) return
+    const db = await openDatabase()
+    return new Promise((resolve) => {
+        const tx = db.transaction('offline_inventory_voices', 'readwrite')
+        const store = tx.objectStore('offline_inventory_voices')
+        const prefix = `${oldSessionId}__`
+        for (const it of items) {
+            store.delete(it.key)
+            const suffix = it.key.startsWith(prefix) ? it.key.slice(prefix.length) : it.positionId
+            store.put({
+                ...it,
+                sessionId: newSessionId,
+                key: `${newSessionId}__${suffix}`,
+            })
+        }
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => resolve()
+    })
 }

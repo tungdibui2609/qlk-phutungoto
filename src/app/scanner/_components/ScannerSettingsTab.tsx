@@ -124,6 +124,7 @@ export function ScannerSettingsTab({
   const [lastStampSync, setLastStampSync] = useState<string | null>(null)
   const [lastLotsSync, setLastLotsSync] = useState<string | null>(null)
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(true)
+  const [autoTranscribeVoice, setAutoTranscribeVoice] = useState<boolean>(false)
 
   // Trình tra cứu Từ điển giải mã dấu đóng
   const [showDictModal, setShowDictModal] = useState(false)
@@ -148,6 +149,9 @@ export function ScannerSettingsTab({
       const autoCfg = localStorage.getItem('config_auto_sync_offline_v2')
       setAutoSyncEnabled(autoCfg === null ? true : autoCfg === 'true')
 
+      const autoVoiceCfg = localStorage.getItem('config_auto_transcribe_voice_on_stop')
+      setAutoTranscribeVoice(autoVoiceCfg === 'true')
+
       const savedDict = localStorage.getItem('cached_stamp_dictionaries')
       if (savedDict) {
         const parsed = JSON.parse(savedDict)
@@ -171,6 +175,13 @@ export function ScannerSettingsTab({
     setAutoSyncEnabled(val)
     try {
       localStorage.setItem('config_auto_sync_offline_v2', val ? 'true' : 'false')
+    } catch {}
+  }
+
+  const handleToggleAutoTranscribeVoice = (val: boolean) => {
+    setAutoTranscribeVoice(val)
+    try {
+      localStorage.setItem('config_auto_transcribe_voice_on_stop', val ? 'true' : 'false')
     } catch {}
   }
 
@@ -432,6 +443,45 @@ export function ScannerSettingsTab({
               <div
                 className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
                   soundEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="px-3.5 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  autoTranscribeVoice
+                    ? isDark
+                      ? 'bg-violet-500/20 text-violet-300'
+                      : 'bg-violet-50 text-violet-600'
+                    : isDark
+                      ? 'bg-slate-800 text-slate-400'
+                      : 'bg-stone-100 text-stone-500'
+                }`}
+              >
+                <Zap size={18} />
+              </div>
+              <div className="min-w-0">
+                <div className={`text-[13px] font-bold ${textPrimary}`}>
+                  Tự động gửi AI dịch khi ghi âm xong
+                </div>
+                <div className={`text-[11px] mt-0.5 ${textMuted}`}>
+                  Mặc định tắt: lưu máy nghe lại trước, bấm &quot;Dịch&quot; hoặc Đồng bộ sau
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleAutoTranscribeVoice(!autoTranscribeVoice)}
+              className={`w-11 h-6 rounded-full transition-colors p-0.5 shrink-0 ${
+                autoTranscribeVoice ? 'bg-violet-500' : isDark ? 'bg-slate-700' : 'bg-stone-300'
+              }`}
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
+                  autoTranscribeVoice ? 'translate-x-5' : 'translate-x-0'
                 }`}
               />
             </button>
