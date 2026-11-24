@@ -564,14 +564,14 @@ function LevelInventoryModal({
                   </button>
                 </div>
 
-                {/* Ô ghi chú sai lệch + Nút Micro nhập giọng nói */}
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="text"
+                {/* Ô ghi chú sai lệch + Nút Micro nhập giọng nói (hỗ trợ nhiều dòng #1 #2...) */}
+                <div className="flex items-start gap-1.5">
+                  <textarea
+                    rows={Math.min(6, Math.max(1, (res.note || '').split(/\r?\n/).length))}
                     value={res.note || ''}
                     onChange={e => updatePositionNote(slot.id, e.target.value)}
                     placeholder="Ghi chú sai lệch thực tế (gõ hoặc bấm Micro)..."
-                    className={`flex-1 min-w-0 px-3 py-1.5 rounded-xl text-xs border focus:outline-none ${
+                    className={`flex-1 min-w-0 px-3 py-1.5 rounded-xl text-xs border focus:outline-none resize-none leading-relaxed ${
                       hasNote
                         ? 'bg-rose-950/40 border-rose-500/60 text-rose-200 placeholder-rose-400/60'
                         : 'bg-[#0f172a] border-slate-700 text-white placeholder-slate-500'

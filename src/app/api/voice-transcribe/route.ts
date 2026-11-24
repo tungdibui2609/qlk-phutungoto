@@ -21,10 +21,18 @@ function getOrderedGeminiKeys(keys: string[]): string[] {
 }
 
 const BASE_WAREHOUSE_VOCAB = [
-  'Dona',
   'Dona A',
   'Dona B',
   'Dona C',
+  'Dona D',
+  'Đô A',
+  'Đô B',
+  'Đô C',
+  'Đô D',
+  'Ri A',
+  'Ri B',
+  'Ri C',
+  'Ri D',
   'Ri 6',
   'Ri 6 A',
   'Ri 6 B',
@@ -237,7 +245,7 @@ export async function POST(req: NextRequest) {
       const batchPrompt = [
         `Bạn sẽ nghe ${batchItems.length} đoạn ghi âm kiểm kê tiếng Việt của nhân viên KHO LẠNH, mỗi đoạn đi kèm một mã ID.`,
         `Từ khóa kho hay dùng: ${mergedVocab.join(', ')}.`,
-        'Quy tắc: "đô na A"->"Dona A", "ri sáu"->"Ri 6", "lót"->"LOT", "ba lết"->"pallet"; viết số lượng bằng chữ số (0-9).',
+        'Quy tắc: nhân viên kho hay đọc tắt "Đô A/B/C/D" (="Dona A/B/C/D") và "Ri A/B/C/D". BẮT BUỘC giữ nguyên chữ phân loại A/B/C/D: "đô a"->"Dona A", "đô bê"->"Dona B", "đô xê"->"Dona C", "ri a"->"Ri A", "ri bê"->"Ri B", "ri xê"->"Ri C". ĐẶC BIỆT: nghe "đô a 8 thùng" phải viết "Dona A 8 thùng", TUYỆT ĐỐI KHÔNG nuốt chữ A thành "Dona 8 thùng"; KHÔNG tự thêm số "6" khi chỉ nói "Ri A/B/C". "lót"->"LOT", "ba lết"->"pallet"; viết số lượng bằng chữ số (0-9).',
         'Trả về DUY NHẤT một JSON object map chính xác từng ID sang nội dung tiếng Việt đã nghe được, ví dụ: {"<ID>": "Dona A thiếu 2 thùng"}. Nếu đoạn nào im lặng trả về chuỗi rỗng "".',
       ].join('\n')
 
@@ -372,7 +380,7 @@ export async function POST(req: NextRequest) {
     const prompt = [
       'Chuyển đoạn ghi âm tiếng Việt của nhân viên KHO LẠNH sang văn bản ghi chú ngắn gọn, chính xác.',
       `Từ khóa kho hay dùng: ${mergedVocab.join(', ')}.`,
-      'Quy tắc: "đô na A"->"Dona A", "ri sáu"->"Ri 6", "lót"->"LOT", "ba lết"->"pallet"; viết số lượng bằng chữ số (0-9).',
+      'Quy tắc: nhân viên kho hay đọc tắt "Đô A/B/C/D" (="Dona A/B/C/D") và "Ri A/B/C/D". BẮT BUỘC giữ nguyên chữ phân loại A/B/C/D: "đô a"->"Dona A", "đô bê"->"Dona B", "đô xê"->"Dona C", "ri a"->"Ri A", "ri bê"->"Ri B", "ri xê"->"Ri C". ĐẶC BIỆT: nghe "đô a 8 thùng" phải viết "Dona A 8 thùng", TUYỆT ĐỐI KHÔNG nuốt chữ A thành "Dona 8 thùng"; KHÔNG tự thêm số "6" khi chỉ nói "Ri A/B/C". "lót"->"LOT", "ba lết"->"pallet"; viết số lượng bằng chữ số (0-9).',
       'CHỈ trả về nội dung đã nghe, không giải thích, không ngoặc kép. Nếu im lặng trả về chuỗi rỗng.',
     ].join('\n')
 

@@ -1389,14 +1389,13 @@ export default function InternalInventoryPage() {
                     onClick={(e) => e.stopPropagation()}
                     className={`mt-1 pl-3 transition-opacity ${hasNote || hasVoice ? '' : 'opacity-0 group-hover/pos:opacity-100'}`}
                 >
-                    <input
-                        key={pos.id}
-                        type="text"
+                    <textarea
+                        key={`${pos.id}-${item?.note || ''}`}
+                        rows={Math.min(6, Math.max(1, (item?.note || '').split(/\r?\n/).length))}
                         defaultValue={item?.note || ''}
                         onBlur={(e) => updateNote(pos.id, e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                         placeholder="Ghi chú sai lệch…"
-                        className={`w-full min-w-0 bg-transparent text-[10px] italic outline-none border-t pt-0.5 ${hasNote ? (isDiscrepancy ? 'text-red-600 border-red-200' : 'text-emerald-600 border-emerald-200') : 'text-stone-500 border-stone-100 placeholder:text-stone-300 focus:text-stone-700'}`}
+                        className={`w-full min-w-0 bg-transparent text-[10px] italic outline-none border-t pt-0.5 resize-none leading-snug whitespace-pre-line ${hasNote ? (isDiscrepancy ? 'text-red-600 border-red-200' : 'text-emerald-600 border-emerald-200') : 'text-stone-500 border-stone-100 placeholder:text-stone-300 focus:text-stone-700'}`}
                     />
                     {parseVoiceNoteUrls(item?.voice_note_url).length > 0 && (
                         <div className="mt-1.5 space-y-1">
@@ -2071,7 +2070,7 @@ export default function InternalInventoryPage() {
                                 Ghi chú kiểm kê — vị trí {positions.find(p => p.id === editingPositionId)?.code}
                             </p>
                             {itemsMap[editingPositionId]?.note && (
-                                <p className="text-sm font-bold leading-snug break-words">"{itemsMap[editingPositionId]?.note}"</p>
+                                <p className="text-sm font-bold leading-snug break-words whitespace-pre-line">"{itemsMap[editingPositionId]?.note}"</p>
                             )}
                             {parseVoiceNoteUrls(itemsMap[editingPositionId]?.voice_note_url).length > 0 && (
                                 <div className="mt-2 space-y-1.5">
