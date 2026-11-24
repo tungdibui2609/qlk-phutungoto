@@ -1895,10 +1895,11 @@ export default function InternalInventoryPage() {
                                                         </div>
 
                                                         {/* Ghi chú chung */}
-                                                        <div className={`flex items-center gap-1.5 border-t pt-1.5 ${firstNote ? 'border-red-100' : 'border-stone-100'}`}>
-                                                            <MessageSquare size={12} className={`shrink-0 ${firstNote ? 'text-red-500' : 'text-stone-300'}`} />
-                                                            <input
-                                                                type="text"
+                                                        <div className={`flex items-start gap-1.5 border-t pt-1.5 ${firstNote ? 'border-red-100' : 'border-stone-100'}`}>
+                                                            <MessageSquare size={12} className={`shrink-0 mt-0.5 ${firstNote ? 'text-red-500' : 'text-stone-300'}`} />
+                                                            <textarea
+                                                                key={`${group.groupKey}-${firstNote}`}
+                                                                rows={Math.min(6, Math.max(1, firstNote.split(/\r?\n/).length))}
                                                                 placeholder="Ghi chú chung cho cụm…"
                                                                 defaultValue={firstNote}
                                                                 onBlur={(e) => {
@@ -1908,8 +1909,7 @@ export default function InternalInventoryPage() {
                                                                         showToast(`Đã cập nhật ghi chú cụm`, 'info');
                                                                     }
                                                                 }}
-                                                                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                                                                className={`flex-1 min-w-0 bg-transparent text-[11px] italic outline-none placeholder:text-stone-300 ${firstNote ? 'text-red-600' : 'text-stone-500 focus:text-stone-700'}`}
+                                                                className={`flex-1 min-w-0 bg-transparent text-[11px] italic outline-none resize-none leading-snug whitespace-pre-line placeholder:text-stone-300 ${firstNote ? 'text-red-600' : 'text-stone-500 focus:text-stone-700'}`}
                                                             />
                                                         </div>
                                                         {groupVoiceUrls.length > 0 && (

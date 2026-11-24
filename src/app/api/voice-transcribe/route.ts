@@ -243,22 +243,23 @@ export async function POST(req: NextRequest) {
       }
 
       const batchPrompt = [
-        `Bạn sẽ nghe ${batchItems.length} đoạn ghi âm kiểm kê tiếng Việt của nhân viên KHO LẠNH, mỗi đoạn đi kèm một mã ID.`,
-        `Từ khóa kho hay dùng: ${mergedVocab.join(', ')}.`,
-        'Quy tắc: nhân viên kho hay đọc tắt "Đô A/B/C/D" (="Dona A/B/C/D") và "Ri A/B/C/D". BẮT BUỘC giữ nguyên chữ phân loại A/B/C/D: "đô a"->"Dona A", "đô bê"->"Dona B", "đô xê"->"Dona C", "ri a"->"Ri A", "ri bê"->"Ri B", "ri xê"->"Ri C". ĐẶC BIỆT: nghe "đô a 8 thùng" phải viết "Dona A 8 thùng", TUYỆT ĐỐI KHÔNG nuốt chữ A thành "Dona 8 thùng"; KHÔNG tự thêm số "6" khi chỉ nói "Ri A/B/C". "lót"->"LOT", "ba lết"->"pallet"; viết số lượng bằng chữ số (0-9).',
-        'Trả về DUY NHẤT một JSON object map chính xác từng ID sang nội dung tiếng Việt đã nghe được, ví dụ: {"<ID>": "Dona A thiếu 2 thùng"}. Nếu đoạn nào im lặng trả về chuỗi rỗng "".',
+        `Nghe ${batchItems.length} đoạn ghi âm kiểm kê của nhân viên KHO LẠNH SẦU RIÊNG (đánh số "1".."${batchItems.length}").`,
+        `Tên hàng & từ hay dùng trong kho: ${mergedVocab.join(', ')}, vụn.`,
+        'Chép lại đúng ý người nói bằng tiếng Việt, viết số bằng chữ số (0-9), giữ nguyên phân loại A/B/C/D nếu có.',
+        `Trả về DUY NHẤT JSON object chứa đủ ${batchItems.length} khóa "1".."${batchItems.length}", ví dụ: {"1": "...", "2": "..."}. Đoạn im lặng trả về "".`,
       ].join('\n')
 
+      // Dùng ID ngắn "1", "2", ... để Gemini không bao giờ gõ nhầm chuỗi UUID dài
       const parts: any[] = [{ text: batchPrompt }]
-      for (const it of batchItems) {
-        parts.push({ text: `ID: ${it.itemId}` })
+      batchItems.forEach((it: any, idx: number) => {
+        parts.push({ text: `Đoạn "${idx + 1}":` })
         parts.push({
           inlineData: {
             mimeType: it.mimeType || 'audio/webm',
             data: it.audioBase64,
           },
         })
-      }
+      })
 
       const model = geminiCfg.model || 'gemini-2.0-flash'
       let lastError = 'Không gọi được Gemini'
@@ -312,10 +313,10 @@ export async function POST(req: NextRequest) {
           }
 
           return NextResponse.json({
-            results: batchItems.map((it: any) => ({
+            results: batchItems.map((it: any, idx: number) => ({
               itemId: it.itemId,
               positionId: it.positionId,
-              text: String(parsedMap?.[it.itemId] || '').trim(),
+              text: String(parsedMap?.[String(idx + 1)] ?? parsedMap?.[it.itemId] ?? '').trim(),
               voiceUrl: voiceUrlMap[it.itemId] || null,
             })),
             engine: 'gemini-batch',
@@ -378,9 +379,9 @@ export async function POST(req: NextRequest) {
     }
 
     const prompt = [
-      'Chuyển đoạn ghi âm tiếng Việt của nhân viên KHO LẠNH sang văn bản ghi chú ngắn gọn, chính xác.',
-      `Từ khóa kho hay dùng: ${mergedVocab.join(', ')}.`,
-      'Quy tắc: nhân viên kho hay đọc tắt "Đô A/B/C/D" (="Dona A/B/C/D") và "Ri A/B/C/D". BẮT BUỘC giữ nguyên chữ phân loại A/B/C/D: "đô a"->"Dona A", "đô bê"->"Dona B", "đô xê"->"Dona C", "ri a"->"Ri A", "ri bê"->"Ri B", "ri xê"->"Ri C". ĐẶC BIỆT: nghe "đô a 8 thùng" phải viết "Dona A 8 thùng", TUYỆT ĐỐI KHÔNG nuốt chữ A thành "Dona 8 thùng"; KHÔNG tự thêm số "6" khi chỉ nói "Ri A/B/C". "lót"->"LOT", "ba lết"->"pallet"; viết số lượng bằng chữ số (0-9).',
+      'Nghe đoạn ghi âm kiểm kê của nhân viên KHO LẠNH SẦU RIÊNG.',
+      `Tên hàng & từ hay dùng trong kho: ${mergedVocab.join(', ')}, vụn.`,
+      'Chép lại đúng ý người nói bằng tiếng Việt, viết số bằng chữ số (0-9), giữ nguyên phân loại A/B/C/D nếu có.',
       'CHỈ trả về nội dung đã nghe, không giải thích, không ngoặc kép. Nếu im lặng trả về chuỗi rỗng.',
     ].join('\n')
 

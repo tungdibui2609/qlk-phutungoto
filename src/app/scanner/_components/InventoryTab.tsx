@@ -31,6 +31,7 @@ import {
   OfflineInventoryVoiceItem,
   saveOfflineInventoryVoice,
   getOfflineInventoryVoicesBySession,
+  getOfflineVoiceCountsBySession,
   deleteOfflineInventoryVoiceByKey,
   remapOfflineInventoryVoiceSession,
   parseVoiceNoteUrls,
@@ -369,42 +370,42 @@ function LevelInventoryModal({
     if (!visible || !level?.slots || level.slots.length === 0) return
 
     const neededLotIds: string[] = []
-    ;(level.slots || []).forEach((s: any) => {
-      if (!s.lot_id || s.lot_id === 'pending') return
-      const hasValidItems =
-        Array.isArray(s.items) &&
-        s.items.length > 0 &&
-        s.items.some((it: any) => it.quantity !== null && it.quantity !== undefined)
-      if (
-        !hasValidItems &&
-        !fetchedLotItemsRef.current[s.lot_id] &&
-        !neededLotIds.includes(s.lot_id)
-      ) {
-        neededLotIds.push(s.lot_id)
-      }
-    })
+      ; (level.slots || []).forEach((s: any) => {
+        if (!s.lot_id || s.lot_id === 'pending') return
+        const hasValidItems =
+          Array.isArray(s.items) &&
+          s.items.length > 0 &&
+          s.items.some((it: any) => it.quantity !== null && it.quantity !== undefined)
+        if (
+          !hasValidItems &&
+          !fetchedLotItemsRef.current[s.lot_id] &&
+          !neededLotIds.includes(s.lot_id)
+        ) {
+          neededLotIds.push(s.lot_id)
+        }
+      })
 
     if (neededLotIds.length === 0) return
-    ;(supabase.from('lot_items') as any)
-      .select('lot_id, product_id, quantity, unit, products ( name, sku, unit )')
-      .in('lot_id', neededLotIds)
-      .then(({ data, error }: any) => {
-        if (error || !data || data.length === 0) return
-        const newMap: Record<string, any[]> = {}
-        data.forEach((it: any) => {
-          if (!newMap[it.lot_id]) newMap[it.lot_id] = []
-          newMap[it.lot_id].push({
-            product_id: it.product_id,
-            sku: it.products?.sku || '',
-            product_name: it.products?.name || 'Hàng đông lạnh',
-            quantity: it.quantity ?? 0,
-            unit: it.unit || it.products?.unit || 'Thùng',
+      ; (supabase.from('lot_items') as any)
+        .select('lot_id, product_id, quantity, unit, products ( name, sku, unit )')
+        .in('lot_id', neededLotIds)
+        .then(({ data, error }: any) => {
+          if (error || !data || data.length === 0) return
+          const newMap: Record<string, any[]> = {}
+          data.forEach((it: any) => {
+            if (!newMap[it.lot_id]) newMap[it.lot_id] = []
+            newMap[it.lot_id].push({
+              product_id: it.product_id,
+              sku: it.products?.sku || '',
+              product_name: it.products?.name || 'Hàng đông lạnh',
+              quantity: it.quantity ?? 0,
+              unit: it.unit || it.products?.unit || 'Thùng',
+            })
           })
+          fetchedLotItemsRef.current = { ...fetchedLotItemsRef.current, ...newMap }
+          setFetchedLotItemsMap(prev => ({ ...prev, ...newMap }))
         })
-        fetchedLotItemsRef.current = { ...fetchedLotItemsRef.current, ...newMap }
-        setFetchedLotItemsMap(prev => ({ ...prev, ...newMap }))
-      })
-      .catch(() => {})
+        .catch(() => { })
   }, [visible, level?.slots])
 
   if (!visible || !level) return null
@@ -431,11 +432,10 @@ function LevelInventoryModal({
           <button
             type="button"
             onClick={() => bulkCheckPositions(allSlotIds, !allChecked)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1 border ${
-              allChecked
-                ? 'bg-slate-800 border-slate-600 text-slate-300'
-                : 'bg-emerald-600 border-emerald-400 text-white'
-            }`}
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1 border ${allChecked
+              ? 'bg-slate-800 border-slate-600 text-slate-300'
+              : 'bg-emerald-600 border-emerald-400 text-white'
+              }`}
           >
             <Check className="w-3.5 h-3.5" />
             <span>{allChecked ? 'Bỏ tích tất cả' : 'Tích tất cả'}</span>
@@ -464,118 +464,159 @@ function LevelInventoryModal({
                   ? fetchedLotItemsMap[slot.lot_id]
                   : null) || []
 
+            const cleanTags: string[] = (slot.tags || []).filter(
+              (t: string) => t && !t.startsWith('MERGED_') && !t.startsWith('SPLIT_')
+            )
+
+            // Tính nhãn vị trí tóm tắt siêu gọn (VD: "A2", "B2", "C2") từ zone_name hoặc trực tiếp từ slot.code (K2D5B08T202)
+            const shortPosLabel = (() => {
+              const posCode = String(slot.code || '').trim().toUpperCase()
+              const rawSuffix = posCode ? posCode.slice(-2) : ''
+              const posNum =
+                rawSuffix && /^\d+$/.test(rawSuffix)
+                  ? String(parseInt(rawSuffix, 10))
+                  : rawSuffix
+
+              if (slot.zone_name) {
+                const cleanZone = String(slot.zone_name).replace(/^Ô\s*/i, '').trim()
+                const m = cleanZone.match(/^([A-Za-z]+)(\d+)$/)
+                if (m) return `${m[1].toUpperCase()}${posNum}`
+                if (cleanZone) return `${cleanZone}${posNum ? `-${posNum}` : ''}`
+              }
+
+              // Parse trực tiếp từ mã vị trí chuẩn kho lạnh: K2D5B08T202 -> B2
+              const mCode = posCode.match(/D\d+([A-Z])(\d{2})T\d+?(\d{2})$/) || posCode.match(/([A-Z])(\d{2})T\d+?(\d{2})$/)
+              if (mCode) {
+                const col = mCode[1]
+                const depthNum = String(parseInt(mCode[3], 10))
+                return `${col}${depthNum}`
+              }
+              return null
+            })()
+
+            const formattedDate = slot.packaging_date
+              ? String(slot.packaging_date).includes('-')
+                ? String(slot.packaging_date).split('-').reverse().join('/')
+                : String(slot.packaging_date)
+              : null
+
             return (
               <div
                 key={slot.id}
-                className={`p-3 rounded-2xl border transition space-y-2 ${
-                  hasNote
-                    ? 'bg-rose-950/25 border-rose-500/60'
-                    : isChecked
-                      ? 'bg-emerald-950/25 border-emerald-500/60'
-                      : hasLot
-                        ? 'bg-[#1e293b] border-amber-500/40'
-                        : 'bg-[#1e293b]/60 border-slate-800'
-                }`}
+                className={`p-2.5 rounded-xl border transition space-y-2 ${hasNote
+                  ? 'bg-rose-950/25 border-rose-500/60'
+                  : isChecked
+                    ? 'bg-emerald-950/25 border-emerald-500/60'
+                    : hasLot
+                      ? 'bg-[#111c33] border-slate-700/80'
+                      : 'bg-[#111c33]/60 border-slate-800'
+                  }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-600 text-xs font-black text-sky-300 font-mono">
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    {/* Hàng 1: Mã vị trí + Huy hiệu đỏ tóm tắt (Ô 08 - B2) + #STT + Mã phụ */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[12px] font-bold text-sky-400 font-mono tracking-tight">
                         {slot.code}
                       </span>
-                      {slot.zone_name && (() => {
-                        const cleanZone = String(slot.zone_name).replace(/^Ô\s*/i, '').trim()
-                        const posCode = String(slot.code || '')
-                        const rawSuffix = posCode ? posCode.slice(-2) : ''
-                        const posNum = rawSuffix && /^\d+$/.test(rawSuffix) ? String(parseInt(rawSuffix, 10)) : rawSuffix
-                        const m = cleanZone.match(/^([A-Za-z]+)(\d+)$/)
-                        const label = m
-                          ? `Ô ${m[2]} - ${m[1].toUpperCase()}${posNum}`
-                          : `Ô ${cleanZone}${posNum ? ` - ${posNum}` : ''}`
-                        return (
-                          <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black tracking-wide">
-                            {label}
-                          </span>
-                        )
-                      })()}
+                      {shortPosLabel && (
+                        <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold leading-none">
+                          {shortPosLabel}
+                        </span>
+                      )}
                       {slot.stt && (
-                        <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-xs font-black text-amber-300">
-                          STT: {slot.stt}
+                        <span className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-bold leading-none">
+                          #{slot.stt}
                         </span>
                       )}
-                      {slot.packaging_date && (
-                        <span className="text-[11px] font-bold text-slate-400">
-                          📅 {slot.packaging_date}
+                      {cleanTags.map((tag: string, tIdx: number) => (
+                        <span
+                          key={`tag-${tIdx}`}
+                          className="px-1.5 py-0.5 rounded bg-amber-950/90 border border-amber-500/60 text-[10px] font-bold text-amber-300 leading-none"
+                        >
+                          {tag}
                         </span>
-                      )}
+                      ))}
                     </div>
 
+                    {/* Hàng 2: Tên sản phẩm (vạch màu bên trái giống App, không SKU/LOT) + SL & ĐG */}
                     {hasLot ? (
-                      <div className="mt-1.5 space-y-1">
+                      <div className="border-l-[2.5px] border-sky-400/80 pl-2 space-y-0.5">
                         {detailedItems.length > 1 ? (
                           detailedItems.map((it: any, idx: number) => (
                             <div
                               key={idx}
-                              className="text-xs font-bold text-white flex items-center justify-between bg-[#0f172a]/70 px-2 py-1 rounded-lg"
+                              className="text-[11.5px] font-semibold text-white flex items-center justify-between gap-2 bg-[#0f172a]/70 px-2 py-0.5 rounded-md"
                             >
-                              <span className="truncate pr-2">{it.product_name}</span>
-                              <span className="text-emerald-400 font-extrabold shrink-0">
+                              <span className="break-words">
+                                {it.product_name}
+                                {it.sku ? (
+                                  <span className="ml-1.5 text-[10px] font-mono font-medium text-indigo-300/90">
+                                    ({it.sku})
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="text-emerald-400 font-bold shrink-0">
                                 {it.quantity} {it.unit || 'Thùng'}
                               </span>
                             </div>
                           ))
                         ) : (
-                          <div className="text-xs font-bold text-white">
-                            {slot.product_name || 'Hàng đông lạnh'}{' '}
-                            {slot.quantity ? (
-                              <span className="text-emerald-400 font-black">
-                                ({slot.quantity} {slot.unit || 'Thùng'})
+                          <div className="text-[12px] font-semibold text-white leading-snug break-words">
+                            {slot.product_name || 'Hàng đông lạnh'}
+                            {slot.sku ? (
+                              <span className="ml-1.5 text-[10.5px] font-mono font-medium text-indigo-300/90">
+                                ({slot.sku})
                               </span>
                             ) : null}
                           </div>
                         )}
-                        {slot.sku && (
-                          <div className="text-[10px] text-slate-400">
-                            SKU: <b className="text-indigo-300">{slot.sku}</b>
-                            {slot.aliases ? ` • Tên tắt: ${slot.aliases}` : ''}
-                          </div>
-                        )}
+                        <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] leading-tight">
+                          {slot.quantity != null && (
+                            <span className="text-slate-400">
+                              SL:{' '}
+                              <span className="text-emerald-400 font-bold">
+                                {slot.quantity} {slot.unit || 'Thùng'}
+                              </span>
+                            </span>
+                          )}
+                          {formattedDate && (
+                            <span className="text-amber-300/90 font-semibold">
+                              ĐG: {formattedDate}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ) : (
-                      <div className="mt-1 text-xs text-slate-500 italic">Vị trí trống</div>
+                      <div className="text-[11px] text-slate-500 italic leading-tight">Vị trí trống</div>
                     )}
                   </div>
 
+                  {/* Nút tích vuông giống 100% App Android */}
                   <button
                     type="button"
                     onClick={() => togglePositionChecked(slot.id)}
-                    className={`px-3 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shrink-0 border transition ${
-                      isChecked
-                        ? 'bg-emerald-600 border-emerald-400 text-white'
-                        : 'bg-[#0f172a] border-slate-700 text-slate-300'
-                    }`}
+                    aria-label={isChecked ? 'Bỏ tích đã kiểm' : 'Tích đã kiểm'}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border transition ${isChecked
+                      ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm'
+                      : 'bg-[#1e293b] border-slate-600/80 text-slate-400 hover:border-slate-500'
+                      }`}
                   >
-                    {isChecked ? (
-                      <CheckSquare className="w-4 h-4" />
-                    ) : (
-                      <Square className="w-4 h-4" />
-                    )}
-                    <span>{isChecked ? 'Đã kiểm' : 'Kiểm'}</span>
+                    <Check className="w-4 h-4 stroke-[2.5]" />
                   </button>
                 </div>
 
-                {/* Ô ghi chú sai lệch + Nút Micro nhập giọng nói (hỗ trợ nhiều dòng #1 #2...) */}
+                {/* Hàng 3: Ô ghi chú sai lệch + Nút Micro nhập giọng nói */}
                 <div className="flex items-start gap-1.5">
                   <textarea
                     rows={Math.min(6, Math.max(1, (res.note || '').split(/\r?\n/).length))}
                     value={res.note || ''}
                     onChange={e => updatePositionNote(slot.id, e.target.value)}
-                    placeholder="Ghi chú sai lệch thực tế (gõ hoặc bấm Micro)..."
-                    className={`flex-1 min-w-0 px-3 py-1.5 rounded-xl text-xs border focus:outline-none resize-none leading-relaxed ${
-                      hasNote
-                        ? 'bg-rose-950/40 border-rose-500/60 text-rose-200 placeholder-rose-400/60'
-                        : 'bg-[#0f172a] border-slate-700 text-white placeholder-slate-500'
-                    }`}
+                    placeholder="Ghi chú sai lệch (gõ hoặc bấm Micro)..."
+                    className={`flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-[11px] border focus:outline-none resize-none leading-snug ${hasNote
+                      ? 'bg-rose-950/40 border-rose-500/60 text-rose-200 placeholder-rose-400/60'
+                      : 'bg-[#0f172a] border-slate-700/80 text-white placeholder-slate-500'
+                      }`}
                   />
                   {hasNote && (
                     <button
@@ -696,12 +737,30 @@ function LevelInventoryModal({
             )
           })}
         </div>
+
+        {/* Footer HOÀN TẤT giống App Android */}
+        <div className="px-3.5 py-2.5 border-t border-slate-800 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold tracking-wide transition active:scale-[0.99]"
+          >
+            HOÀN TẤT
+          </button>
+        </div>
       </div>
     </div>
   )
 }
 
 // ── COMPONENT CHÍNH: INVENTORY TAB ────────────────────────────
+const compareZoneOrder = (a: ZoneItem, b: ZoneItem): number => {
+  const oa = a.display_order ?? 0
+  const ob = b.display_order ?? 0
+  if (oa !== ob) return oa - ob
+  return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
+}
+
 export function InventoryTab({
   isActive = true,
   systemCode = 'KHO_DONG_LANH',
@@ -723,7 +782,9 @@ export function InventoryTab({
   const [dirtyBySession, setDirtyBySession] = useState<Record<string, string[]>>({})
   // Ghi âm offline của phiên hiện tại đang chờ gửi lên Server & AI dịch
   const [pendingVoicesMap, setPendingVoicesMap] = useState<Record<string, OfflineInventoryVoiceItem[]>>({})
+  const [pendingVoiceCountBySession, setPendingVoiceCountBySession] = useState<Record<string, number>>({})
   const [transcribingVoicesMap, setTranscribingVoicesMap] = useState<Record<string, boolean>>({})
+  const [transcribingSessionId, setTranscribingSessionId] = useState<string | null>(null)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
 
@@ -733,6 +794,7 @@ export function InventoryTab({
   const [selectedDetailZoneId, setSelectedDetailZoneId] = useState<string | null>(null)
   const [selectedKhuId, setSelectedKhuId] = useState<string>('ALL')
   const [showHallSummary, setShowHallSummary] = useState(false)
+  const [addedHallExtraIds, setAddedHallExtraIds] = useState<string[]>([])
   const [expandedLegendRowIds, setExpandedLegendRowIds] = useState<Record<string, boolean>>({})
 
   // Tìm kiếm Sản Phẩm theo tên viết tắt + Autocomplete trong Kiểm kê
@@ -802,7 +864,7 @@ export function InventoryTab({
           }
         }
       }
-    } catch {}
+    } catch { }
     return hasMap
   }, [])
 
@@ -817,7 +879,7 @@ export function InventoryTab({
       }
       setLoading(true)
       try {
-        await syncOfflineHallLotUpdatesWeb().catch(() => {})
+        await syncOfflineHallLotUpdatesWeb().catch(() => { })
         const prods = await getWarehouseProducts(systemCode).catch(() => [])
         if (prods.length > 0) {
           setWarehouseProducts(prods)
@@ -883,7 +945,7 @@ export function InventoryTab({
                 })
                 try {
                   localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
-                } catch {}
+                } catch { }
                 return next
               })
             }
@@ -952,7 +1014,7 @@ export function InventoryTab({
                 .in('id', chunk)
             )
             chunkResults.forEach((res: any) => {
-              ;(res?.data || []).forEach((l: any) => {
+              ; (res?.data || []).forEach((l: any) => {
                 const allItems = l.lot_items || []
                 const prodName =
                   l.products?.name ||
@@ -969,6 +1031,13 @@ export function InventoryTab({
                   quantity: it.quantity ?? 0,
                   unit: it.unit || unit,
                 }))
+                const tagsList: string[] = Array.from(
+                  new Set(
+                    (l.lot_tags || [])
+                      .map((t: any) => String(t?.tag || '').trim())
+                      .filter(Boolean)
+                  )
+                )
                 lotMap.set(l.id, {
                   code: l.code,
                   stt: l.daily_seq ? String(l.daily_seq) : null,
@@ -981,20 +1050,21 @@ export function InventoryTab({
                   packaging_date: l.packaging_date ? String(l.packaging_date).split('T')[0] : null,
                   quantity: l.quantity ?? null,
                   items: itemsList,
+                  tags: tagsList,
                 })
               })
             })
           }
 
           const pendMap = new Map<string, any>()
-          ;(pendRes.data || []).forEach((p: any) => {
-            if (p.position_id) {
-              pendMap.set(p.position_id, {
-                stt: String(p.lot_stt || ''),
-                packaging_date: p.production_date,
-              })
-            }
-          })
+            ; (pendRes.data || []).forEach((p: any) => {
+              if (p.position_id) {
+                pendMap.set(p.position_id, {
+                  stt: String(p.lot_stt || ''),
+                  packaging_date: p.production_date,
+                })
+              }
+            })
 
           const formattedPos: PositionItem[] = rawPositions.map(p => {
             const lInfo = p.lot_id ? lotMap.get(p.lot_id) : null
@@ -1015,6 +1085,7 @@ export function InventoryTab({
               packaging_date: lInfo?.packaging_date || pInfo?.packaging_date || null,
               quantity: lInfo?.quantity || null,
               items: lInfo?.items || [],
+              tags: lInfo?.tags || [],
             }
           })
 
@@ -1029,7 +1100,7 @@ export function InventoryTab({
               systemCode,
             })
             saveWarehouseMapMeta(rawZones, formattedPos, now)
-          } catch {}
+          } catch { }
           try {
             localStorage.setItem(
               INVENTORY_KEYS.MAP_CACHE,
@@ -1039,7 +1110,7 @@ export function InventoryTab({
                 cachedAt: now,
               })
             )
-          } catch {}
+          } catch { }
         }
       } finally {
         setLoading(false)
@@ -1067,15 +1138,51 @@ export function InventoryTab({
     () =>
       zones
         .filter(z => !z.parent_id)
-        .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })),
+        .sort(compareZoneOrder),
     [zones]
   )
 
-  useEffect(() => {
-    if (!selectedWarehouseId && rootWarehouses.length > 0) {
-      setSelectedWarehouseId(rootWarehouses[0].id)
+  // Phạm vi kho/khu vực của phiếu kiểm kê hiện tại (hỗ trợ cả warehouse_id, zone_id và note.v giống App Android)
+  const effectiveWhId = useMemo(() => {
+    const activeSess = sessions.find(s => s.id === currentSessionId) || null
+    if (!activeSess) return null
+    let virtualWhId: string | null = null
+    try {
+      if (activeSess.note && String(activeSess.note).startsWith('{')) {
+        const parsed = JSON.parse(activeSess.note)
+        virtualWhId = parsed?.v || null
+      }
+    } catch { }
+    return activeSess.warehouse_id || activeSess.zone_id || virtualWhId || null
+  }, [sessions, currentSessionId])
+
+  // Danh sách kho gốc được phép xem trong phiếu hiện tại (nếu phiếu khóa 1 kho -> chỉ hiện đúng kho đó)
+  const scopedWarehouses = useMemo(() => {
+    if (!effectiveWhId) return rootWarehouses
+    const zoneMap = new Map(zones.map(z => [z.id, z]))
+    let cur: string | null = effectiveWhId
+    let rootId: string | null = null
+    while (cur) {
+      const z = zoneMap.get(cur)
+      if (!z) break
+      if (!z.parent_id) {
+        rootId = z.id
+        break
+      }
+      cur = z.parent_id
     }
-  }, [rootWarehouses, selectedWarehouseId])
+    if (rootId) {
+      return rootWarehouses.filter(w => w.id === rootId)
+    }
+    return rootWarehouses
+  }, [effectiveWhId, zones, rootWarehouses])
+
+  useEffect(() => {
+    if (scopedWarehouses.length === 0) return
+    if (!selectedWarehouseId || !scopedWarehouses.some(w => w.id === selectedWarehouseId)) {
+      setSelectedWarehouseId(scopedWarehouses[0].id)
+    }
+  }, [scopedWarehouses, selectedWarehouseId])
 
   const allHalls: HallOption[] = useMemo(() => {
     const zMap = new Map(zones.map(z => [z.id, z]))
@@ -1162,7 +1269,7 @@ export function InventoryTab({
       const next = { ...prev, [sessionId]: Array.from(curSet) }
       try {
         localStorage.setItem(INVENTORY_KEYS.DIRTY, JSON.stringify(next))
-      } catch {}
+      } catch { }
       return next
     })
   }
@@ -1175,7 +1282,7 @@ export function InventoryTab({
       const next = { ...prev, [sessionId]: nextSessionRes }
       try {
         localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
-      } catch {}
+      } catch { }
       return next
     })
   }
@@ -1430,12 +1537,136 @@ export function InventoryTab({
     }
   }
 
-  // ── ĐỒNG BỘ LÊN WEB ──
+  const refreshPendingVoiceCounts = useCallback(async () => {
+    try {
+      const counts = await getOfflineVoiceCountsBySession()
+      setPendingVoiceCountBySession(counts)
+    } catch { }
+  }, [])
+
+  useEffect(() => {
+    void refreshPendingVoiceCounts()
+  }, [refreshPendingVoiceCounts, sessions.length, viewMode, pendingVoicesMap])
+
+  // ── BƯỚC 1 (TÁCH RIÊNG): GỬI TOÀN BỘ FILE GHI ÂM LÊN DRIVE & DỊCH AI VỀ MÁY KIỂM TRA ──
+  const handleTranscribeSessionVoices = async (sessionObj: any) => {
+    if (transcribingSessionId || !sessionObj?.id) return
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      showToast('Đang mất mạng — vui lòng bật mạng rồi bấm Dịch ghi âm!')
+      return
+    }
+    const sid = sessionObj.id
+    const pendingVoices = await getOfflineInventoryVoicesBySession(sid)
+    if (pendingVoices.length === 0) {
+      showToast('Không còn đoạn ghi âm nào đang chờ dịch!')
+      return
+    }
+
+    setTranscribingSessionId(sid)
+    try {
+      const resMap: Record<
+        string,
+        { checked?: boolean; note?: string; voice_note_url?: string | null }
+      > = { ...(allSessionResults[sid] || {}) }
+      const dirtySet = new Set(dirtyBySession[sid] || [])
+      let syncedVoicesCount = 0
+
+      const VOICE_BATCH = 10
+      const totalBatches = Math.ceil(pendingVoices.length / VOICE_BATCH)
+      for (let b = 0; b < pendingVoices.length; b += VOICE_BATCH) {
+        const batch = pendingVoices.slice(b, b + VOICE_BATCH)
+        const batchIndex = Math.floor(b / VOICE_BATCH) + 1
+        showToast(
+          totalBatches > 1
+            ? `Đang gửi lô ${batchIndex}/${totalBatches} (${batch.length} ghi âm) cho AI dịch...`
+            : `Đang tải & dịch AI ${batch.length} ghi âm kiểm kê...`
+        )
+        try {
+          const resp = await fetch('/api/voice-transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: batch.map(pv => ({
+                itemId: pv.key,
+                positionId: pv.positionId,
+                positionCode: positions.find(p => p.id === pv.positionId)?.code || null,
+                audioBase64: pv.audioBase64,
+                mimeType: pv.mimeType,
+              })),
+              companyId: userProfile?.companyId || null,
+              saveToServer: true,
+              systemCode: sessionObj.system_code || systemCode,
+              sessionId: sid,
+              sessionName: sessionObj.name || null,
+              vocabulary: voiceVocabulary,
+            }),
+          })
+          const data = await resp.json().catch(() => ({}))
+          if (!resp.ok || !Array.isArray(data?.results)) continue
+
+          for (const itemRes of data.results) {
+            const pid = String(itemRes?.positionId || '')
+            const voiceKey = String(itemRes?.itemId || '')
+            if (!pid) continue
+            const rawText = String(itemRes?.text || '').trim()
+            const normalized = rawText ? normalizeWarehouseVoiceText(rawText) : ''
+            const voiceUrl = itemRes?.voiceUrl ? String(itemRes.voiceUrl) : null
+
+            if (normalized || voiceUrl) {
+              const prevItem = resMap[pid] || {}
+              resMap[pid] = {
+                ...prevItem,
+                checked: true,
+                note: normalized
+                  ? appendWarehouseVoiceText(prevItem.note || '', normalized)
+                  : prevItem.note || '',
+                voice_note_url: appendVoiceNoteUrl(prevItem.voice_note_url, voiceUrl),
+              }
+              dirtySet.add(pid)
+              if (voiceKey) await deleteOfflineInventoryVoiceByKey(voiceKey)
+              syncedVoicesCount++
+            }
+          }
+        } catch { }
+      }
+
+      if (syncedVoicesCount > 0) {
+        saveResultsToStorage(sid, resMap)
+        markPositionsDirty(sid, Array.from(dirtySet))
+        if (currentSessionId === sid) {
+          const remainingVoices = await getOfflineInventoryVoicesBySession(sid)
+          const remMap: Record<string, OfflineInventoryVoiceItem[]> = {}
+          remainingVoices.forEach(v => {
+            if (!remMap[v.positionId]) remMap[v.positionId] = []
+            remMap[v.positionId].push(v)
+          })
+          setPendingVoicesMap(remMap)
+        }
+        await refreshPendingVoiceCounts()
+        showToast(
+          `Đã dịch ${syncedVoicesCount} ghi âm! Hãy kiểm tra lại chữ rồi bấm "Đồng bộ lên Web".`
+        )
+      } else {
+        showToast('Không dịch được file ghi âm nào — vui lòng kiểm tra mạng hoặc API Key.')
+      }
+    } finally {
+      setTranscribingSessionId(null)
+    }
+  }
+
+  // ── BƯỚC 2 (TÁCH RIÊNG): ĐỒNG BỘ SỐ LIỆU KIỂM KÊ LÊN WEB ──
   const handleSyncSessionToCloud = async (sessionObj: any) => {
     if (syncing) return
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       showToast('Đang mất mạng — vui lòng bật mạng rồi bấm Đồng bộ lại!')
       return
+    }
+    const pendingCount = pendingVoiceCountBySession[sessionObj.id] || 0
+    if (pendingCount > 0) {
+      const proceed = window.confirm(
+        `Phiếu "${sessionObj.name}" còn ${pendingCount} ghi âm chưa dịch sang chữ.\n\nBạn nên bấm "Dịch ghi âm (${pendingCount})" để kiểm tra lại nội dung trước khi đồng bộ lên Web.\n\nBấm OK để vẫn đồng bộ số liệu hiện tại, hoặc Hủy để dịch ghi âm trước.`
+      )
+      if (!proceed) return
     }
     setSyncing(true)
     try {
@@ -1467,81 +1698,8 @@ export function InventoryTab({
         string,
         { checked?: boolean; note?: string; voice_note_url?: string | null }
       > = { ...(allSessionResults[sessionObj.id] || {}) }
-
-      // Bước 1: Gộp tối đa 10 ghi âm / 1 lượt gọi Gemini AI + Upload lên Supabase Storage
-      const pendingVoices = await getOfflineInventoryVoicesBySession(realSessionId)
-      let syncedVoicesCount = 0
+      const syncedVoicesCount = 0
       const dirtySet = new Set(dirtyBySession[sessionObj.id] || [])
-
-      if (pendingVoices.length > 0) {
-        const VOICE_BATCH = 10
-        const totalBatches = Math.ceil(pendingVoices.length / VOICE_BATCH)
-        for (let b = 0; b < pendingVoices.length; b += VOICE_BATCH) {
-          const batch = pendingVoices.slice(b, b + VOICE_BATCH)
-          const batchIndex = Math.floor(b / VOICE_BATCH) + 1
-          showToast(
-            totalBatches > 1
-              ? `Đang gửi lô ${batchIndex}/${totalBatches} (${batch.length} ghi âm) cho AI dịch...`
-              : `Đang tải & dịch AI ${batch.length} ghi âm kiểm kê...`
-          )
-          try {
-            const resp = await fetch('/api/voice-transcribe', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                items: batch.map(pv => ({
-                  itemId: pv.key,
-                  positionId: pv.positionId,
-                  positionCode: positions.find(p => p.id === pv.positionId)?.code || null,
-                  audioBase64: pv.audioBase64,
-                  mimeType: pv.mimeType,
-                })),
-                companyId: userProfile?.companyId || null,
-                saveToServer: true,
-                systemCode: sessionObj.system_code || systemCode,
-                sessionId: realSessionId,
-                sessionName: sessionObj.name || null,
-                vocabulary: voiceVocabulary,
-              }),
-            })
-            const data = await resp.json().catch(() => ({}))
-            if (!resp.ok || !Array.isArray(data?.results)) continue
-
-            for (const itemRes of data.results) {
-              const pid = String(itemRes?.positionId || '')
-              const voiceKey = String(itemRes?.itemId || '')
-              if (!pid) continue
-              const rawText = String(itemRes?.text || '').trim()
-              const normalized = rawText ? normalizeWarehouseVoiceText(rawText) : ''
-              const voiceUrl = itemRes?.voiceUrl ? String(itemRes.voiceUrl) : null
-
-              if (normalized || voiceUrl) {
-                const prevItem = resMap[pid] || {}
-                resMap[pid] = {
-                  ...prevItem,
-                  checked: true,
-                  note: normalized
-                    ? appendWarehouseVoiceText(prevItem.note || '', normalized)
-                    : prevItem.note || '',
-                  voice_note_url: appendVoiceNoteUrl(prevItem.voice_note_url, voiceUrl),
-                }
-                dirtySet.add(pid)
-                if (voiceKey) await deleteOfflineInventoryVoiceByKey(voiceKey)
-                syncedVoicesCount++
-              }
-            }
-          } catch {}
-        }
-
-        // Cập nhật lại danh sách ghi âm còn lại trên UI
-        const remainingVoices = await getOfflineInventoryVoicesBySession(realSessionId)
-        const remMap: Record<string, OfflineInventoryVoiceItem[]> = {}
-        remainingVoices.forEach(v => {
-          if (!remMap[v.positionId]) remMap[v.positionId] = []
-          remMap[v.positionId].push(v)
-        })
-        setPendingVoicesMap(remMap)
-      }
 
       const posById = new Map(positions.map(p => [p.id, p]))
       const rows = Object.entries(resMap)
@@ -1587,7 +1745,7 @@ export function InventoryTab({
         }
         try {
           localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
-        } catch {}
+        } catch { }
         return next
       })
 
@@ -1598,7 +1756,7 @@ export function InventoryTab({
         delete next[realSessionId]
         try {
           localStorage.setItem(INVENTORY_KEYS.DIRTY, JSON.stringify(next))
-        } catch {}
+        } catch { }
         return next
       })
 
@@ -1610,7 +1768,7 @@ export function InventoryTab({
           )
           try {
             localStorage.setItem(INVENTORY_KEYS.SESSIONS, JSON.stringify(next))
-          } catch {}
+          } catch { }
           return next
         })
         if (currentSessionId === sessionObj.id) {
@@ -1618,7 +1776,7 @@ export function InventoryTab({
         }
       }
 
-      await syncOfflineHallLotUpdatesWeb().catch(() => {})
+      await syncOfflineHallLotUpdatesWeb().catch(() => { })
       await fetchOnlineData(false, true)
       showToast(
         syncedVoicesCount > 0
@@ -1737,9 +1895,30 @@ export function InventoryTab({
   // ── SUMMARY CARDS CHO CÁC DÃY / SẢNH TRONG KHO ĐANG CHỌN ──
   const summaryCards = useMemo(() => {
     if (!selectedWarehouseId) return []
-    const childZones = activeZones
+    let childZones = activeZones
       .filter(z => z.parent_id === selectedWarehouseId)
-      .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+      .sort(compareZoneOrder)
+
+    // Nếu phiếu chỉ kiểm 1 dãy/khu con cụ thể bên trong kho -> chỉ hiện đúng nhánh đó giống App Android
+    if (effectiveWhId && effectiveWhId !== selectedWarehouseId) {
+      const isDescendantOrSelf = (childId: string, ancestorId: string): boolean => {
+        if (childId === ancestorId) return true
+        let cur: string | null = childId
+        while (cur) {
+          const z = activeZones.find(x => x.id === cur)
+          if (!z || !z.parent_id) break
+          if (z.parent_id === ancestorId) return true
+          cur = z.parent_id
+        }
+        return false
+      }
+      childZones = childZones.filter(
+        c =>
+          c.id === effectiveWhId ||
+          isDescendantOrSelf(c.id, effectiveWhId) ||
+          isDescendantOrSelf(effectiveWhId, c.id)
+      )
+    }
 
     return childZones.map(cz => {
       const descIds = getDescendantIds(cz.id, activeZones)
@@ -1767,6 +1946,7 @@ export function InventoryTab({
     })
   }, [
     selectedWarehouseId,
+    effectiveWhId,
     activeZones,
     activePositions,
     getDescendantIds,
@@ -1794,7 +1974,7 @@ export function InventoryTab({
 
     const directChildren = activeZones
       .filter(z => z.parent_id === selectedDetailZoneId)
-      .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+      .sort(compareZoneOrder)
 
     // Kiểm tra xem có cấp KHU trung gian hay trực tiếp là Ô kệ
     const hasSubKhu = directChildren.some(c => /khu|dãy|kệ/i.test(c.name || ''))
@@ -1814,15 +1994,13 @@ export function InventoryTab({
           : selectedKhuId === 'ALL'
             ? directChildren
             : directChildren.filter(c => c.id === selectedKhuId)
-      ).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+      ).sort(compareZoneOrder)
 
       const rows = bins
         .map(bin => {
           const levels = activeZones
             .filter(z => z.parent_id === bin.id)
-            .sort((a, b) =>
-              (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
-            )
+            .sort(compareZoneOrder)
 
           const levelCells = (levels.length > 0 ? levels : [bin]).map(lvl => {
             const slots = activePositions.filter(
@@ -1868,7 +2046,7 @@ export function InventoryTab({
   ])
 
   return (
-    <div className="flex flex-col h-full bg-[#0b1120] text-slate-100 select-none overflow-hidden">
+    <div className="scanner-inventory-compact flex flex-col h-full bg-[#0b1120] text-slate-100 select-none overflow-hidden">
       {toastMsg && (
         <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold shadow-xl border border-emerald-400">
           {toastMsg}
@@ -1948,9 +2126,9 @@ export function InventoryTab({
                 const scopeZoneId = sess.warehouse_id || sess.zone_id || null
                 const scopePos = scopeZoneId
                   ? (() => {
-                      const dIds = getDescendantIds(scopeZoneId, zones)
-                      return positions.filter(p => p.zone_ids?.some(zid => dIds.has(zid)))
-                    })()
+                    const dIds = getDescendantIds(scopeZoneId, zones)
+                    return positions.filter(p => p.zone_ids?.some(zid => dIds.has(zid)))
+                  })()
                   : positions
                 const sTotal = scopePos.length
                 let sChecked = 0
@@ -1991,19 +2169,40 @@ export function InventoryTab({
                         </div>
                       </button>
 
-                      <button
-                        type="button"
-                        disabled={syncing}
-                        onClick={() => handleSyncSessionToCloud(sess)}
-                        className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-extrabold flex items-center gap-1 shrink-0"
-                      >
-                        {syncing ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <CloudUpload className="w-3.5 h-3.5" />
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                        {(pendingVoiceCountBySession[sess.id] || 0) > 0 && (
+                          <button
+                            type="button"
+                            disabled={transcribingSessionId === sess.id}
+                            onClick={() => handleTranscribeSessionVoices(sess)}
+                            className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400/50 text-amber-200 text-[11px] font-extrabold flex items-center gap-1 shrink-0 disabled:opacity-60"
+                          >
+                            {transcribingSessionId === sess.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Cpu className="w-3.5 h-3.5" />
+                            )}
+                            <span>
+                              {transcribingSessionId === sess.id
+                                ? 'Đang dịch...'
+                                : `Dịch (${pendingVoiceCountBySession[sess.id]})`}
+                            </span>
+                          </button>
                         )}
-                        <span>Đồng bộ lên Web</span>
-                      </button>
+                        <button
+                          type="button"
+                          disabled={syncing}
+                          onClick={() => handleSyncSessionToCloud(sess)}
+                          className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-extrabold flex items-center gap-1 shrink-0"
+                        >
+                          {syncing ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <CloudUpload className="w-3.5 h-3.5" />
+                          )}
+                          <span>Đồng bộ lên Web</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Progress bar */}
@@ -2045,22 +2244,22 @@ export function InventoryTab({
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header Phiên */}
           <div className="px-3 py-2.5 bg-[#0f172a] border-b border-slate-800 space-y-2">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setSelectedDetailZoneId(null)
                   setViewMode('list')
                 }}
-                className="flex items-center gap-1.5 text-xs font-extrabold text-slate-300"
+                className="flex items-center gap-1.5 text-xs font-extrabold text-slate-300 min-w-0"
               >
-                <ArrowLeft className="w-4 h-4 text-sky-400" />
-                <span className="truncate max-w-[160px]">
+                <ArrowLeft className="w-4 h-4 text-sky-400 shrink-0" />
+                <span className="truncate max-w-[200px]">
                   {currentSession?.name || 'Danh sách phiên'}
                 </span>
               </button>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -2078,39 +2277,57 @@ export function InventoryTab({
                     (sum, arr) => sum + (arr?.length || 0),
                     0
                   )
-                  const totalPending = Math.max(pendingDirtyCount, pendingVoiceCount)
                   const isLocalOnly = !isUUID(currentSession.id)
                   return (
-                    <button
-                      type="button"
-                      disabled={syncing}
-                      onClick={() => handleSyncSessionToCloud(currentSession)}
-                      className={`px-2.5 py-1 rounded-lg text-white text-[11px] font-extrabold flex items-center gap-1 ${
-                        totalPending > 0 || isLocalOnly
-                          ? 'bg-amber-600'
+                    <>
+                      {pendingVoiceCount > 0 && (
+                        <button
+                          type="button"
+                          disabled={transcribingSessionId === currentSession.id}
+                          onClick={() => handleTranscribeSessionVoices(currentSession)}
+                          className="px-2.5 py-1 rounded-lg bg-amber-600 text-white text-[11px] font-extrabold flex items-center gap-1 disabled:opacity-60"
+                        >
+                          {transcribingSessionId === currentSession.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Cpu className="w-3.5 h-3.5" />
+                          )}
+                          <span>
+                            {transcribingSessionId === currentSession.id
+                              ? 'Đang dịch...'
+                              : `Dịch (${pendingVoiceCount})`}
+                          </span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={syncing}
+                        onClick={() => handleSyncSessionToCloud(currentSession)}
+                        className={`px-2.5 py-1 rounded-lg text-white text-[11px] font-extrabold flex items-center gap-1 ${pendingDirtyCount > 0 || isLocalOnly
+                          ? 'bg-sky-600'
                           : 'bg-emerald-600'
-                      }`}
-                    >
-                      <CloudUpload className="w-3.5 h-3.5" />
-                      <span>
-                        {syncing
-                          ? 'Đang đồng bộ...'
-                          : totalPending > 0
-                            ? `Đồng bộ (${totalPending}${pendingVoiceCount > 0 ? ` · 🎙️${pendingVoiceCount}` : ''})`
-                            : 'Đồng bộ'}
-                      </span>
-                    </button>
+                          }`}
+                      >
+                        <CloudUpload className="w-3.5 h-3.5" />
+                        <span>
+                          {syncing
+                            ? 'Đang đồng bộ...'
+                            : pendingDirtyCount > 0
+                              ? `Đồng bộ (${pendingDirtyCount})`
+                              : 'Đồng bộ'}
+                        </span>
+                      </button>
+                    </>
                   )
                 })()}
 
                 <button
                   type="button"
                   onClick={() => setIsGrouped(v => !v)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${
-                    isGrouped
-                      ? 'bg-indigo-600 border-indigo-400 text-white'
-                      : 'bg-[#1e293b] border-slate-700 text-slate-300'
-                  }`}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${isGrouped
+                    ? 'bg-indigo-600 border-indigo-400 text-white'
+                    : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                    }`}
                 >
                   {isGrouped ? 'Đang Gộp Ô' : 'Tách Kệ'}
                 </button>
@@ -2207,7 +2424,7 @@ export function InventoryTab({
 
             {/* Chọn Kho (Kho 1, Kho 2...) */}
             <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-              {rootWarehouses.map(wh => {
+              {scopedWarehouses.map(wh => {
                 const active = wh.id === selectedWarehouseId
                 return (
                   <button
@@ -2217,11 +2434,10 @@ export function InventoryTab({
                       setSelectedWarehouseId(wh.id)
                       setSelectedDetailZoneId(null)
                     }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap border transition flex items-center gap-1.5 ${
-                      active
-                        ? 'bg-sky-600 border-sky-400 text-white'
-                        : 'bg-[#1e293b] border-slate-700 text-slate-400'
-                    }`}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap border transition flex items-center gap-1.5 ${active
+                      ? 'bg-sky-600 border-sky-400 text-white'
+                      : 'bg-[#1e293b] border-slate-700 text-slate-400'
+                      }`}
                   >
                     <Building2 className="w-3.5 h-3.5" />
                     <span>{wh.name}</span>
@@ -2231,46 +2447,75 @@ export function InventoryTab({
             </div>
           </div>
 
-          {/* Danh sách thẻ Dãy / Sảnh */}
-          <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-2.5 pb-20">
-            {summaryCards.map(card => (
+          {/* Danh sách thẻ Dãy / Sảnh (Sảnh tô màu hổ phách nổi bật riêng biệt) */}
+          <div className="flex-1 overflow-y-auto overscroll-contain p-2.5 space-y-2 pb-20">
+            {summaryCards.map(card => {
+              const isHallCard = Boolean(
+                card.zone.is_hall || /s[ảàa]nh/i.test(card.zone.name || '')
+              )
+              return (
               <button
                 key={card.zone.id}
                 type="button"
                 onClick={() => {
                   setSelectedDetailZoneId(card.zone.id)
                   setSelectedKhuId('ALL')
-                  setShowHallSummary(false)
+                  setShowHallSummary(isHallCard)
+                  setAddedHallExtraIds([])
                 }}
-                className="w-full p-3.5 rounded-2xl bg-[#1e293b] border border-slate-700 hover:border-sky-500/50 text-left space-y-2.5 transition"
+                className={`w-full px-3 py-2 rounded-xl border text-left space-y-1.5 transition ${
+                  isHallCard
+                    ? 'bg-amber-950/45 border-amber-500/60 hover:border-amber-400'
+                    : 'bg-[#1e293b] border-slate-700/80 hover:border-sky-500/50'
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-black text-white">{card.zone.name}</span>
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-extrabold">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span
+                      className={`text-xs font-bold truncate ${
+                        isHallCard ? 'text-amber-200' : 'text-white'
+                      }`}
+                    >
+                      {card.zone.name}
+                    </span>
+                    {isHallCard && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-400/50 text-amber-300 text-[9px] font-bold uppercase shrink-0">
+                        Sảnh
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10.5px] font-semibold shrink-0 ${
+                      isHallCard
+                        ? 'bg-amber-500/20 text-amber-300'
+                        : 'bg-emerald-500/15 text-emerald-400'
+                    }`}
+                  >
                     {card.pct}% Đã kiểm
                   </span>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <div className="p-2 rounded-xl bg-[#0f172a]">
-                    <div className="text-[10px] font-bold text-slate-400">TỔNG</div>
-                    <div className="text-sm font-black text-white">{card.total}</div>
+                <div className="grid grid-cols-4 gap-1.5 text-center">
+                  <div className={`py-1 px-1 rounded-lg ${isHallCard ? 'bg-amber-950/60' : 'bg-[#0f172a]'}`}>
+                    <div className="text-[9px] font-medium text-slate-400 leading-tight">TỔNG</div>
+                    <div className="text-xs font-bold text-white leading-tight mt-0.5">{card.total}</div>
                   </div>
-                  <div className="p-2 rounded-xl bg-[#0f172a]">
-                    <div className="text-[10px] font-bold text-amber-400">CÓ HÀNG</div>
-                    <div className="text-sm font-black text-amber-300">{card.occupied}</div>
+                  <div className={`py-1 px-1 rounded-lg ${isHallCard ? 'bg-amber-950/60' : 'bg-[#0f172a]'}`}>
+                    <div className="text-[9px] font-medium text-amber-400 leading-tight">CÓ HÀNG</div>
+                    <div className="text-xs font-bold text-amber-300 leading-tight mt-0.5">{card.occupied}</div>
                   </div>
-                  <div className="p-2 rounded-xl bg-[#0f172a]">
-                    <div className="text-[10px] font-bold text-emerald-400">ĐÃ KIỂM</div>
-                    <div className="text-sm font-black text-emerald-400">{card.checked}</div>
+                  <div className={`py-1 px-1 rounded-lg ${isHallCard ? 'bg-amber-950/60' : 'bg-[#0f172a]'}`}>
+                    <div className="text-[9px] font-medium text-emerald-400 leading-tight">ĐÃ KIỂM</div>
+                    <div className="text-xs font-bold text-emerald-400 leading-tight mt-0.5">{card.checked}</div>
                   </div>
-                  <div className="p-2 rounded-xl bg-[#0f172a]">
-                    <div className="text-[10px] font-bold text-rose-400">SAI LỆCH</div>
-                    <div className="text-sm font-black text-rose-400">{card.discrepancy}</div>
+                  <div className={`py-1 px-1 rounded-lg ${isHallCard ? 'bg-amber-950/60' : 'bg-[#0f172a]'} ${card.discrepancy > 0 ? 'ring-1 ring-rose-500/50' : ''}`}>
+                    <div className="text-[9px] font-medium text-rose-400 leading-tight">SAI LỆCH</div>
+                    <div className="text-xs font-bold text-rose-400 leading-tight mt-0.5">{card.discrepancy}</div>
                   </div>
                 </div>
               </button>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
@@ -2319,11 +2564,10 @@ export function InventoryTab({
                   <button
                     type="button"
                     onClick={() => setShowHallSummary(v => !v)}
-                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border ${
-                      showHallSummary
-                        ? 'bg-amber-500 border-amber-400 text-slate-950'
-                        : 'bg-[#1e293b] border-slate-700 text-slate-300'
-                    }`}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border ${showHallSummary
+                      ? 'bg-amber-500 border-amber-400 text-slate-950'
+                      : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                      }`}
                   >
                     Gom nhóm
                   </button>
@@ -2335,11 +2579,10 @@ export function InventoryTab({
                 onClick={() => setIsGrouped(v => !v)}
                 title={isGrouped ? 'Đang Gộp Ô (bấm để Tách Kệ)' : 'Đang Tách Kệ (bấm để Gộp Ô)'}
                 aria-label={isGrouped ? 'Đang Gộp Ô' : 'Đang Tách Kệ'}
-                className={`w-9 h-9 rounded-xl border flex items-center justify-center transition ${
-                  isGrouped
-                    ? 'bg-indigo-900/90 border-indigo-400 text-indigo-200'
-                    : 'bg-[#1e293b] border-slate-700 text-slate-400'
-                }`}
+                className={`w-9 h-9 rounded-xl border flex items-center justify-center transition ${isGrouped
+                  ? 'bg-indigo-900/90 border-indigo-400 text-indigo-200'
+                  : 'bg-[#1e293b] border-slate-700 text-slate-400'
+                  }`}
               >
                 <Layers className="w-4 h-4" />
               </button>
@@ -2352,11 +2595,10 @@ export function InventoryTab({
               <button
                 type="button"
                 onClick={() => setSelectedKhuId('ALL')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap border transition shrink-0 ${
-                  selectedKhuId === 'ALL'
-                    ? 'bg-violet-600 border-violet-400 text-white'
-                    : 'bg-[#1e293b] border-slate-700 text-slate-400'
-                }`}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap border transition shrink-0 ${selectedKhuId === 'ALL'
+                  ? 'bg-violet-600 border-violet-400 text-white'
+                  : 'bg-[#1e293b] border-slate-700 text-slate-400'
+                  }`}
               >
                 Tất cả ({detailStructure.totalCount})
               </button>
@@ -2365,11 +2607,10 @@ export function InventoryTab({
                   key={k.id}
                   type="button"
                   onClick={() => setSelectedKhuId(k.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap border transition shrink-0 ${
-                    selectedKhuId === k.id
-                      ? 'bg-violet-600 border-violet-400 text-white'
-                      : 'bg-[#1e293b] border-slate-700 text-slate-400'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap border transition shrink-0 ${selectedKhuId === k.id
+                    ? 'bg-violet-600 border-violet-400 text-white'
+                    : 'bg-[#1e293b] border-slate-700 text-slate-400'
+                    }`}
                 >
                   {k.name}
                 </button>
@@ -2380,8 +2621,8 @@ export function InventoryTab({
           {/* Nội dung Sảnh gom nhóm hoặc Lưới Ô Kệ & Tầng */}
           <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-3 pb-20">
             {isSelectedDetailHall && showHallSummary ? (
-              /* Chế độ Gom Nhóm Sảnh theo Sản phẩm */
-              <div className="space-y-2">
+              /* Chế độ Gom Nhóm Sảnh theo Sản phẩm + Thẻ Hàng phát sinh ngoài danh sách */
+              <div className="space-y-2.5">
                 {(() => {
                   const groups = new Map<
                     string,
@@ -2400,43 +2641,325 @@ export function InventoryTab({
                       groups.set(k, g)
                     })
                   const list = Array.from(groups.values())
-                  if (list.length === 0) {
-                    return (
-                      <div className="py-12 text-center text-xs text-slate-500">
-                        Chưa có hàng hóa tại sảnh này.
-                      </div>
-                    )
-                  }
-                  return list.map(g => {
-                    const ids = g.slots.map(s => s.id)
-                    const allChecked = ids.every(id => currentResults[id]?.checked)
-                    return (
-                      <div
-                        key={`${g.sku}_${g.product_name}`}
-                        className="p-3 rounded-2xl bg-[#1e293b] border border-slate-700 flex items-center justify-between gap-2"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-extrabold text-white truncate">
-                            {g.product_name}
-                          </div>
-                          <div className="text-[11px] text-amber-300 font-bold">
-                            {g.slots.length} vị trí/pallet • SKU: {g.sku || '---'}
-                          </div>
+
+                  // Vị trí trống đại diện của Sảnh dùng để ghi nhận hàng phát sinh / ngoài danh sách gom nhóm
+                  const emptyHallSlots = detailStructure.hallPositions.filter(p => !p.lot_id)
+                  const addedSet = new Set(addedHallExtraIds)
+                  const activeExtraHallSlots = emptyHallSlots.filter(
+                    p =>
+                      addedSet.has(p.id) ||
+                      Boolean(currentResults[p.id]?.note) ||
+                      Boolean(currentResults[p.id]?.voice_note_url) ||
+                      (pendingVoicesMap[p.id]?.length || 0) > 0
+                  )
+                  const extraSlots =
+                    activeExtraHallSlots.length > 0
+                      ? activeExtraHallSlots
+                      : emptyHallSlots.length > 0
+                        ? [emptyHallSlots[0]]
+                        : detailStructure.hallPositions.length > 0
+                          ? [detailStructure.hallPositions[0]]
+                          : []
+                  const chosenExtraIds = new Set(extraSlots.map(p => p.id))
+                  const remainingEmptyHallSlots = emptyHallSlots.filter(
+                    p => !chosenExtraIds.has(p.id)
+                  )
+
+                  return (
+                    <>
+                      {list.length === 0 && (
+                        <div className="py-6 text-center text-xs text-slate-500">
+                          Chưa có hàng hóa trên hệ thống tại sảnh này — bạn vẫn có thể ghi nhận hàng phát sinh bên dưới.
                         </div>
+                      )}
+                      {list.map(g => {
+                        const ids = g.slots.map(s => s.id)
+                        const allChecked = ids.every(id => currentResults[id]?.checked)
+                        const primarySlot =
+                          g.slots.find(
+                            s =>
+                              Boolean(currentResults[s.id]?.note) ||
+                              Boolean(currentResults[s.id]?.voice_note_url) ||
+                              (pendingVoicesMap[s.id]?.length || 0) > 0
+                          ) || g.slots[0]
+                        const primaryRes = currentResults[primarySlot.id] || {}
+                        const savedUrls = parseVoiceNoteUrls(primaryRes.voice_note_url)
+                        const pendingList = pendingVoicesMap[primarySlot.id] || []
+                        const totalQty = g.slots.reduce(
+                          (sum, s) => sum + (Number(s.quantity) || 0),
+                          0
+                        )
+                        const unit = g.slots[0]?.unit || 'Thùng'
+                        return (
+                          <div
+                            key={`${g.sku}_${g.product_name}`}
+                            className="p-2.5 rounded-xl bg-[#1e293b] border border-slate-700/80 space-y-1.5"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[11.5px] font-semibold text-white leading-snug break-words">
+                                  {g.product_name}
+                                </div>
+                                <div className="text-[10px] text-amber-300 font-medium mt-0.5 leading-snug break-words">
+                                  {g.slots.length} LOT{totalQty > 0 ? ` · ${totalQty} ${unit}` : ''} • SKU: {g.sku || '---'}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => bulkCheckPositions(ids, !allChecked)}
+                                className={`px-2 py-1 rounded-lg text-[10.5px] font-semibold shrink-0 border ${allChecked
+                                  ? 'bg-emerald-600 border-emerald-400 text-white'
+                                  : 'bg-slate-800 border-slate-600 text-slate-200'
+                                  }`}
+                              >
+                                {allChecked ? '✓ Đã kiểm' : 'Kiểm'}
+                              </button>
+                            </div>
+
+                            <div className="flex items-start gap-1.5">
+                              <textarea
+                                rows={Math.min(6, Math.max(1, (primaryRes.note || '').split(/\r?\n/).length))}
+                                value={primaryRes.note || ''}
+                                onChange={e => updatePositionNote(primarySlot.id, e.target.value)}
+                                placeholder="Ghi chú dòng tổng (gõ hoặc bấm Micro)..."
+                                className={`flex-1 min-w-0 px-2.5 py-1 rounded-lg text-[11px] border focus:outline-none resize-none leading-snug ${primaryRes.note
+                                  ? 'bg-rose-950/40 border-rose-500/60 text-rose-200 placeholder-rose-400/60'
+                                  : 'bg-[#0f172a] border-slate-700 text-white placeholder-slate-500'
+                                  }`}
+                              />
+                              <VoiceMicButton
+                                size="sm"
+                                saveToServer
+                                systemCode={systemCode}
+                                sessionId={currentSessionId}
+                                sessionName={currentSession?.name || null}
+                                positionId={primarySlot.id}
+                                positionCode={primarySlot.code}
+                                companyId={userProfile?.companyId}
+                                vocabulary={voiceVocabulary}
+                                onResult={(spoken, voiceUrl) =>
+                                  handleSaveVoiceResult(primarySlot.id, spoken, voiceUrl)
+                                }
+                                onOfflineAudio={payload =>
+                                  handleSaveOfflineVoice(primarySlot.id, payload)
+                                }
+                              />
+                            </div>
+
+                            {(savedUrls.length > 0 || pendingList.length > 0) && (
+                              <div className="space-y-1.5">
+                                {savedUrls.map((sUrl, sIdx) => (
+                                  <div
+                                    key={`hall-saved-${primarySlot.id}-${sIdx}`}
+                                    className="rounded-xl bg-sky-500/10 border border-sky-500/35 px-2.5 py-1.5"
+                                  >
+                                    <div className="text-[10px] font-bold text-sky-300 mb-1">
+                                      🎙️ {savedUrls.length > 1 ? `Ghi âm đã lưu #${sIdx + 1}` : 'Ghi âm đã lưu'}
+                                    </div>
+                                    <audio controls preload="metadata" src={sUrl} className="h-7 w-full" />
+                                  </div>
+                                ))}
+                                {pendingList.map((pv, pIdx) => {
+                                  const isTranscribing = Boolean(transcribingVoicesMap[pv.key])
+                                  return (
+                                    <div
+                                      key={pv.key}
+                                      className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border text-[11px] bg-amber-500/10 border-amber-500/35 text-amber-300"
+                                    >
+                                      <span className="truncate font-extrabold">
+                                        {pendingList.length > 1
+                                          ? `Ghi âm #${pIdx + 1} (${pv.durationSec}s)`
+                                          : `Ghi âm local (${pv.durationSec}s)`}
+                                      </span>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <button
+                                          type="button"
+                                          disabled={isTranscribing}
+                                          onClick={() =>
+                                            handleTranscribeOfflineVoice(
+                                              primarySlot.id,
+                                              pv.key,
+                                              primarySlot.code
+                                            )
+                                          }
+                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-500/25 border border-violet-400/50 text-violet-100 font-extrabold text-[11px] disabled:opacity-60"
+                                        >
+                                          {isTranscribing ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                          ) : (
+                                            <Cpu className="w-3 h-3" />
+                                          )}
+                                          <span>{isTranscribing ? 'Đang dịch...' : 'Dịch'}</span>
+                                        </button>
+                                        {!isTranscribing && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleDeleteOfflineVoice(primarySlot.id, pv.key)
+                                            }
+                                            className="text-rose-400 p-0.5"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+
+                      {/* Thẻ Hàng phát sinh / Ngoài danh sách gom nhóm */}
+                      {extraSlots.map((extraSlot, eIdx) => {
+                        const eRes = currentResults[extraSlot.id] || {}
+                        const eSavedUrls = parseVoiceNoteUrls(eRes.voice_note_url)
+                        const ePendingList = pendingVoicesMap[extraSlot.id] || []
+                        return (
+                          <div
+                            key={`hall-extra-${extraSlot.id}`}
+                            className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-1.5"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[11.5px] font-semibold text-amber-200 leading-snug">
+                                  ➕ Hàng phát sinh / Ngoài danh sách
+                                  {extraSlots.length > 1 ? ` #${eIdx + 1}` : ''}
+                                </div>
+                                <div className="text-[10px] text-slate-400 leading-snug">
+                                  Ô trống: {extraSlot.code || 'Sảnh'} · Đồng bộ lên Web
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => togglePositionChecked(extraSlot.id)}
+                                className={`px-2 py-1 rounded-lg text-[10.5px] font-semibold shrink-0 border ${eRes.checked
+                                  ? 'bg-emerald-600 border-emerald-400 text-white'
+                                  : 'bg-slate-800 border-slate-600 text-slate-200'
+                                  }`}
+                              >
+                                {eRes.checked ? '✓ Đã kiểm' : 'Kiểm'}
+                              </button>
+                            </div>
+
+                            <div className="flex items-start gap-1.5">
+                              <textarea
+                                rows={Math.min(6, Math.max(1, (eRes.note || '').split(/\r?\n/).length))}
+                                value={eRes.note || ''}
+                                onChange={e => updatePositionNote(extraSlot.id, e.target.value)}
+                                placeholder="Ghi chú hoặc bấm Micro đọc hàng dư / ngoài danh sách..."
+                                className={`flex-1 min-w-0 px-2.5 py-1 rounded-lg text-[11px] border focus:outline-none resize-none leading-snug ${eRes.note
+                                  ? 'bg-rose-950/40 border-rose-500/60 text-rose-200 placeholder-rose-400/60'
+                                  : 'bg-[#0f172a] border-slate-700 text-white placeholder-slate-400'
+                                  }`}
+                              />
+                              <VoiceMicButton
+                                size="sm"
+                                saveToServer
+                                systemCode={systemCode}
+                                sessionId={currentSessionId}
+                                sessionName={currentSession?.name || null}
+                                positionId={extraSlot.id}
+                                positionCode={extraSlot.code}
+                                companyId={userProfile?.companyId}
+                                vocabulary={voiceVocabulary}
+                                onResult={(spoken, voiceUrl) =>
+                                  handleSaveVoiceResult(extraSlot.id, spoken, voiceUrl)
+                                }
+                                onOfflineAudio={payload =>
+                                  handleSaveOfflineVoice(extraSlot.id, payload)
+                                }
+                              />
+                            </div>
+
+                            {(eSavedUrls.length > 0 || ePendingList.length > 0) && (
+                              <div className="space-y-1.5">
+                                {eSavedUrls.map((sUrl, sIdx) => (
+                                  <div
+                                    key={`hall-extra-saved-${extraSlot.id}-${sIdx}`}
+                                    className="rounded-xl bg-sky-500/10 border border-sky-500/35 px-2.5 py-1.5"
+                                  >
+                                    <div className="text-[10px] font-bold text-sky-300 mb-1">
+                                      🎙️ {eSavedUrls.length > 1 ? `Ghi âm đã lưu #${sIdx + 1}` : 'Ghi âm đã lưu'}
+                                    </div>
+                                    <audio controls preload="metadata" src={sUrl} className="h-7 w-full" />
+                                  </div>
+                                ))}
+                                {ePendingList.map((pv, pIdx) => {
+                                  const isTranscribing = Boolean(transcribingVoicesMap[pv.key])
+                                  return (
+                                    <div
+                                      key={pv.key}
+                                      className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border text-[11px] bg-amber-500/10 border-amber-500/35 text-amber-300"
+                                    >
+                                      <span className="truncate font-extrabold">
+                                        {ePendingList.length > 1
+                                          ? `Ghi âm #${pIdx + 1} (${pv.durationSec}s)`
+                                          : `Ghi âm local (${pv.durationSec}s)`}
+                                      </span>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <button
+                                          type="button"
+                                          disabled={isTranscribing}
+                                          onClick={() =>
+                                            handleTranscribeOfflineVoice(
+                                              extraSlot.id,
+                                              pv.key,
+                                              extraSlot.code
+                                            )
+                                          }
+                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-500/25 border border-violet-400/50 text-violet-100 font-extrabold text-[11px] disabled:opacity-60"
+                                        >
+                                          {isTranscribing ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                          ) : (
+                                            <Cpu className="w-3 h-3" />
+                                          )}
+                                          <span>{isTranscribing ? 'Đang dịch...' : 'Dịch'}</span>
+                                        </button>
+                                        {!isTranscribing && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleDeleteOfflineVoice(extraSlot.id, pv.key)
+                                            }
+                                            className="text-rose-400 p-0.5"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+
+                      {remainingEmptyHallSlots.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => bulkCheckPositions(ids, !allChecked)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold ${
-                            allChecked
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-slate-800 text-slate-300'
-                          }`}
+                          onClick={() => {
+                            const nextSlot = remainingEmptyHallSlots[0]
+                            if (!nextSlot) return
+                            setAddedHallExtraIds(prev =>
+                              prev.includes(nextSlot.id) ? prev : [...prev, nextSlot.id]
+                            )
+                          }}
+                          className="w-full py-3 px-4 rounded-2xl border border-dashed border-amber-400/50 bg-amber-500/10 text-amber-200 text-xs font-extrabold flex items-center justify-center gap-2 hover:bg-amber-500/15"
                         >
-                          {allChecked ? 'Đã kiểm nhóm' : 'Kiểm cả nhóm'}
+                          <Plus className="w-4 h-4 text-amber-300" />
+                          <span>
+                            Thêm hàng phát sinh mới (còn {remainingEmptyHallSlots.length} ô trống)
+                          </span>
                         </button>
-                      </div>
-                    )
-                  })
+                      )}
+                    </>
+                  )
                 })()}
               </div>
             ) : (
@@ -2457,7 +2980,14 @@ export function InventoryTab({
                     const uniqueProdKeys: string[] = []
                     const prodInfoMap = new Map<
                       string,
-                      { name: string; sku: string; color: string; count: number }
+                      {
+                        name: string
+                        sku: string
+                        color: string
+                        count: number
+                        totalQty: number
+                        unit: string
+                      }
                     >()
                     row.allRowSlots.forEach(s => {
                       const pk = getProductKey(s)
@@ -2467,13 +2997,19 @@ export function InventoryTab({
                     const isMultiProdRow = uniqueProdKeys.length >= 2
                     uniqueProdKeys.forEach((pk, idx) => {
                       const color = PRODUCT_DOT_PALETTE[idx % PRODUCT_DOT_PALETTE.length]
-                      const sample = row.allRowSlots.find(s => getProductKey(s) === pk)
-                      const cnt = row.allRowSlots.filter(s => getProductKey(s) === pk).length
+                      const matching = row.allRowSlots.filter(s => getProductKey(s) === pk)
+                      const sample = matching[0]
+                      const totalQty = matching.reduce(
+                        (sum, s) => sum + (Number(s.quantity) || 0),
+                        0
+                      )
                       prodInfoMap.set(pk, {
                         name: sample?.product_name || pk,
                         sku: sample?.sku || '',
                         color,
-                        count: cnt,
+                        count: matching.length,
+                        totalQty,
+                        unit: sample?.unit || 'Thùng',
                       })
                     })
                     const productsInRow = Array.from(prodInfoMap.values())
@@ -2499,11 +3035,10 @@ export function InventoryTab({
                                       [row.bin.id]: !isLegendOpen,
                                     }))
                                   }
-                                  className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition ${
-                                    isMultiProdRow
-                                      ? 'bg-indigo-950/80 border-indigo-500/50 text-indigo-200'
-                                      : 'bg-[#1e293b] border-amber-500/40 text-amber-300'
-                                  }`}
+                                  className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition ${isMultiProdRow
+                                    ? 'bg-indigo-950/80 border-indigo-500/50 text-indigo-200'
+                                    : 'bg-[#1e293b] border-amber-500/40 text-amber-300'
+                                    }`}
                                 >
                                   <span className="flex items-center gap-[3px]">
                                     {productsInRow.slice(0, 4).map((prod, pidx) => (
@@ -2529,30 +3064,10 @@ export function InventoryTab({
                           </div>
                         )}
 
-                        {productsInRow.length > 0 && isLegendOpen && (
-                          <div className="p-2 rounded-xl bg-[#0f172a] border border-slate-800 space-y-1">
-                            {productsInRow.map((info, i) => (
-                              <div key={i} className="flex items-center gap-2 text-[11px]">
-                                <span
-                                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                                  style={{ backgroundColor: info.color }}
-                                />
-                                <span className="text-white font-bold truncate flex-1">
-                                  {info.name}
-                                </span>
-                                <span className="text-slate-400 font-semibold shrink-0">
-                                  {info.count} VT
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
                         {/* Lưới các Tầng trong Ô: 5 cột trên 1 hàng (T1..T5) giống App Android */}
                         <div
-                          className={`grid gap-1.5 ${
-                            isSelectedDetailHall ? 'grid-cols-2' : 'grid-cols-5'
-                          }`}
+                          className={`grid gap-1.5 ${isSelectedDetailHall ? 'grid-cols-2' : 'grid-cols-5'
+                            }`}
                         >
                           {row.levels.map(lvl => {
                             const total = lvl.slots.length
@@ -2584,15 +3099,14 @@ export function InventoryTab({
                                   }
                                   setSelectedLevelModalData(lvl)
                                 }}
-                                className={`px-1.5 py-2 rounded-xl border text-left flex flex-col justify-between gap-1.5 transition active:scale-[0.97] select-none ${
-                                  hasDiscrepancy
-                                    ? 'bg-rose-950/35 border-rose-500/60'
-                                    : allDone
-                                      ? 'bg-emerald-950/35 border-emerald-500/60'
-                                      : checked > 0
-                                        ? 'bg-sky-950/30 border-sky-500/50'
-                                        : 'bg-[#0f172a] border-slate-700/80'
-                                }`}
+                                className={`px-1.5 py-2 rounded-xl border text-left flex flex-col justify-between gap-1.5 transition active:scale-[0.97] select-none ${hasDiscrepancy
+                                  ? 'bg-rose-950/35 border-rose-500/60'
+                                  : allDone
+                                    ? 'bg-emerald-950/35 border-emerald-500/60'
+                                    : checked > 0
+                                      ? 'bg-sky-950/30 border-sky-500/50'
+                                      : 'bg-[#0f172a] border-slate-700/80'
+                                  }`}
                               >
                                 <div className="flex items-center justify-between gap-0.5 w-full">
                                   <span className="text-[11px] font-black text-white leading-none">
@@ -2601,11 +3115,10 @@ export function InventoryTab({
                                       : lvl.name.replace(/Tầng\s*/i, 'T')}
                                   </span>
                                   <span
-                                    className={`px-1 py-0.5 rounded text-[9px] font-extrabold leading-none ${
-                                      allDone
-                                        ? 'bg-emerald-500 text-emerald-950'
-                                        : 'bg-[#1e293b] text-slate-300'
-                                    }`}
+                                    className={`px-1 py-0.5 rounded text-[9px] font-extrabold leading-none ${allDone
+                                      ? 'bg-emerald-500 text-emerald-950'
+                                      : 'bg-[#1e293b] text-slate-300'
+                                      }`}
                                   >
                                     {checked}/{total}
                                   </span>
@@ -2648,6 +3161,40 @@ export function InventoryTab({
                             )
                           })}
                         </div>
+
+                        {/* Chú thích thông tin sản phẩm trong Ô (giống 100% App Android: đầy đủ tên + số vị trí + tổng số lượng) */}
+                        {productsInRow.length > 0 && isLegendOpen && (
+                          <div className="p-2 rounded-xl bg-[#0f172a] border border-slate-800 space-y-1.5">
+                            {productsInRow.map((info, i) => (
+                              <div
+                                key={`${info.sku}-${i}`}
+                                className="flex items-start gap-2 text-[10.5px]"
+                              >
+                                <span
+                                  className="w-2 h-2 rounded-full shrink-0 mt-1"
+                                  style={{ backgroundColor: info.color }}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-slate-100 font-medium leading-snug break-words">
+                                    {info.name}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] font-semibold">
+                                    <span style={{ color: info.color }}>
+                                      {info.count} vị trí
+                                    </span>
+                                    <span className="text-slate-600">•</span>
+                                    <span className="text-slate-400">
+                                      Tổng:{' '}
+                                      <span style={{ color: info.color }}>
+                                        {info.totalQty} {info.unit}
+                                      </span>
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -2694,11 +3241,10 @@ export function InventoryTab({
                 <button
                   type="button"
                   onClick={() => setNewSessionZoneId('ALL')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
-                    newSessionZoneId === 'ALL'
-                      ? 'bg-emerald-600 border-emerald-400 text-white'
-                      : 'bg-[#1e293b] border-slate-700 text-slate-300'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${newSessionZoneId === 'ALL'
+                    ? 'bg-emerald-600 border-emerald-400 text-white'
+                    : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                    }`}
                 >
                   🌐 Toàn bộ kho
                 </button>
@@ -2707,11 +3253,10 @@ export function InventoryTab({
                     key={wh.id}
                     type="button"
                     onClick={() => setNewSessionZoneId(wh.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
-                      newSessionZoneId === wh.id
-                        ? 'bg-emerald-600 border-emerald-400 text-white'
-                        : 'bg-[#1e293b] border-slate-700 text-slate-300'
-                    }`}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${newSessionZoneId === wh.id
+                      ? 'bg-emerald-600 border-emerald-400 text-white'
+                      : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                      }`}
                   >
                     🏢 {wh.name}
                   </button>

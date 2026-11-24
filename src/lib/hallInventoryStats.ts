@@ -16,6 +16,7 @@ export interface HallGroup {
     positionIds: string[]
     checkedCount: number
     notes: string[]
+    isExtra?: boolean
 }
 
 export interface HallScope {
@@ -37,6 +38,7 @@ export interface HallZoneLike {
 
 export interface HallPositionLike {
     id: string
+    code?: string | null
     zone_id?: string | null
     lot_id?: string | null
 }
@@ -49,6 +51,7 @@ export interface HallLotLike {
 export interface HallItemResultLike {
     checked?: boolean | null
     note?: string | null
+    voice_note_url?: string | null
 }
 
 export const HALL_ALL_TAB_ID = 'all'
@@ -103,10 +106,34 @@ export function buildHallStats(opts: {
     const positionCountByHall: Record<string, number> = {}
     const allGroups: Record<string, HallGroup> = {}
 
-    const addTo = (groups: Record<string, HallGroup>, groupKey: string, sku: string, name: string, quantity: number, unit: string, tag: string, positionId: string, checked: boolean, note: string | null) => {
+    const addTo = (
+        groups: Record<string, HallGroup>,
+        groupKey: string,
+        sku: string,
+        name: string,
+        quantity: number,
+        unit: string,
+        tag: string,
+        positionId: string,
+        checked: boolean,
+        note: string | null,
+        isExtra = false
+    ) => {
         const existing = groups[groupKey]
         if (!existing) {
-            groups[groupKey] = { groupKey, sku, name, quantity, unit, tag, count: 1, positionIds: [positionId], checkedCount: checked ? 1 : 0, notes: note ? [note] : [] }
+            groups[groupKey] = {
+                groupKey,
+                sku,
+                name,
+                quantity,
+                unit,
+                tag,
+                count: 1,
+                positionIds: [positionId],
+                checkedCount: checked ? 1 : 0,
+                notes: note ? [note] : [],
+                ...(isExtra ? { isExtra: true } : {}),
+            }
         } else {
             existing.count++
             existing.positionIds.push(positionId)
@@ -119,8 +146,42 @@ export function buildHallStats(opts: {
         const hallId = topHallOfZone(zones, p.zone_id)
         if (!hallId || !scopeIds.includes(hallId)) return
         const lot = p.lot_id ? lotInfo[p.lot_id] : null
-        if (!lot?.items) return
         const res = itemsMap[p.id] || {}
+        if (!lot?.items) {
+            // Mỗi ô trống trong Sảnh có ghi chú / ghi âm phát sinh -> 1 thẻ riêng biệt (khớp 1-1 với App Android)
+            if (res.note || res.voice_note_url) {
+                const extraKey = `__EXTRA_HALL_ITEM__${p.id}`
+                const slotCode = p.code || 'PHÁT SINH'
+                if (!byHall[hallId]) byHall[hallId] = {}
+                addTo(
+                    byHall[hallId],
+                    extraKey,
+                    slotCode,
+                    'Hàng phát sinh / Ngoài danh sách',
+                    1,
+                    'Ô',
+                    'PHÁT SINH',
+                    p.id,
+                    Boolean(res.checked),
+                    res.note || null,
+                    true
+                )
+                addTo(
+                    allGroups,
+                    extraKey,
+                    slotCode,
+                    'Hàng phát sinh / Ngoài danh sách',
+                    1,
+                    'Ô',
+                    'PHÁT SINH',
+                    p.id,
+                    Boolean(res.checked),
+                    res.note || null,
+                    true
+                )
+            }
+            return
+        }
         positionCountByHall[hallId] = (positionCountByHall[hallId] || 0) + 1
         lot.items.forEach(it => {
             const tag = lot.tags?.[0] || ''
@@ -132,7 +193,10 @@ export function buildHallStats(opts: {
         })
     })
 
-    const bySku = (a: HallGroup, b: HallGroup) => (a.sku || '').localeCompare(b.sku || '')
+    const bySku = (a: HallGroup, b: HallGroup) => {
+        if (Boolean(a.isExtra) !== Boolean(b.isExtra)) return a.isExtra ? 1 : -1
+        return (a.sku || '').localeCompare(b.sku || '')
+    }
     const halls: HallScope[] = hallsInScope.map(z => ({
         id: z.id,
         name: z.name || z.code || 'Sảnh',

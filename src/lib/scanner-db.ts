@@ -645,6 +645,28 @@ export async function getOfflineInventoryVoicesBySession(
     }
 }
 
+export async function getOfflineVoiceCountsBySession(): Promise<Record<string, number>> {
+    try {
+        const db = await openDatabase()
+        return new Promise((resolve) => {
+            const tx = db.transaction('offline_inventory_voices', 'readonly')
+            const req = tx.objectStore('offline_inventory_voices').getAll()
+            req.onsuccess = () => {
+                const list: OfflineInventoryVoiceItem[] = req.result || []
+                const counts: Record<string, number> = {}
+                for (const it of list) {
+                    if (!it.sessionId) continue
+                    counts[it.sessionId] = (counts[it.sessionId] || 0) + 1
+                }
+                resolve(counts)
+            }
+            req.onerror = () => resolve({})
+        })
+    } catch {
+        return {}
+    }
+}
+
 export async function deleteOfflineInventoryVoiceByKey(voiceKey: string): Promise<void> {
     try {
         const db = await openDatabase()

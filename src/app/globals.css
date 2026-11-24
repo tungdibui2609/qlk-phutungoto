@@ -698,3 +698,19 @@ body::before {
 .scanner-app-shell.scanner-theme-light .text-rose-400 {
   color: #be123c !important;
 }
+
+/* Font chữ thon gọn, nét thanh giống App Android (Roboto / Segoe UI) cho màn Kiểm kê trên /scanner */
+.scanner-inventory-compact {
+  font-family: 'Roboto', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  letter-spacing: -0.015em;
+  font-feature-settings: "tnum" 1;
+}
+.scanner-inventory-compact .font-black {
+  font-weight: 700;
+}
+.scanner-inventory-compact .font-extrabold {
+  font-weight: 600;
+}
+.scanner-inventory-compact .font-bold {
+  font-weight: 600;
+}
