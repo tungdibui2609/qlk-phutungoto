@@ -2058,51 +2058,60 @@ export function InventoryTab({
          * MODE 1: DANH SÁCH PHIÊN KIỂM KÊ
          * ========================================================= */
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-4 py-3 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between gap-2">
-            <div>
-              <div className="text-xs font-black text-white tracking-wide">
-                KIỂM KÊ KHO - THEO TẦNG &amp; PHIÊN
+          <div className="px-3.5 py-2.5 bg-[#0f172a] border-b border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-bold text-white tracking-tight">KIỂM KÊ KHO</span>
+                  <span className="px-2 py-0.5 rounded-md bg-violet-950/90 border border-violet-500/40 text-violet-300 text-[9.5px] font-bold uppercase">
+                    THEO TẦNG &amp; PHIÊN
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  {positions.length.toLocaleString('vi-VN')} vị trí • {rootWarehouses.length} kho
+                </div>
               </div>
-              <div className="text-[11px] text-slate-400">
-                {positions.length.toLocaleString('vi-VN')} vị trí • {rootWarehouses.length} kho
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => {
                   setHallModalDefaultId(null)
                   setHallModalOpen(true)
                 }}
-                className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-xs font-extrabold flex items-center gap-1"
+                className="px-2.5 py-1.5 rounded-lg bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-bold flex items-center gap-1 shrink-0"
               >
                 <Layers className="w-3.5 h-3.5" />
                 <span>LOT Sảnh</span>
               </button>
+            </div>
 
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 disabled={loading}
                 onClick={() => fetchOnlineData(true)}
-                className="px-2.5 py-1.5 rounded-xl bg-[#1e293b] border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1"
+                className="h-9 rounded-xl bg-emerald-950/60 border border-emerald-500/50 text-emerald-200 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-[0.99]"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${loading ? 'animate-spin' : ''}`} />
                 <span>Tải mới</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setNewSessionModalOpen(true)}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-extrabold flex items-center gap-1"
+                className="h-9 rounded-xl bg-violet-400 border border-violet-300 text-slate-950 text-xs font-extrabold flex items-center justify-center gap-1 transition active:scale-[0.99]"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-4 h-4 stroke-[2.5]" />
                 <span>Tạo phiếu</span>
               </button>
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-2.5 pb-20">
+            {sessions.length > 0 && (
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 px-0.5">
+                DANH SÁCH PHIẾU ĐANG KIỂM ({sessions.length})
+              </div>
+            )}
             {loading && sessions.length === 0 ? (
               <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400">
                 <Loader2 className="w-7 h-7 animate-spin text-emerald-400" />
@@ -2121,7 +2130,7 @@ export function InventoryTab({
                 </button>
               </div>
             ) : (
-              sessions.map(sess => {
+              sessions.map((sess, sIdx) => {
                 const resMap = allSessionResults[sess.id] || {}
                 const scopeZoneId = sess.warehouse_id || sess.zone_id || null
                 const scopePos = scopeZoneId
@@ -2142,95 +2151,124 @@ export function InventoryTab({
                 const scopeZoneName = scopeZoneId
                   ? zones.find(z => z.id === scopeZoneId)?.name || 'Theo khu vực'
                   : 'Toàn bộ kho'
+                const isLocalOnly = !isUUID(sess.id)
+                const pendingVoices = pendingVoiceCountBySession[sess.id] || 0
+                const isTranscribingSess = transcribingSessionId === sess.id
+                const cardToneCls = [
+                  'bg-[#151933] border-indigo-700/70',
+                  'bg-[#0f2136] border-sky-700/70',
+                  'bg-[#0d2624] border-teal-700/70',
+                ][sIdx % 3]
+
+                const openSession = () => {
+                  setCurrentSessionId(sess.id)
+                  if (scopeZoneId && rootWarehouses.some(w => w.id === scopeZoneId)) {
+                    setSelectedWarehouseId(scopeZoneId)
+                  }
+                  setViewMode('detail')
+                }
 
                 return (
                   <div
                     key={sess.id}
-                    className="p-3.5 rounded-2xl bg-[#1e293b] border border-slate-700 space-y-2.5"
+                    className={`p-3 rounded-2xl border space-y-2 transition ${cardToneCls} ${
+                      currentSessionId === sess.id ? 'ring-1 ring-violet-400/70' : ''
+                    }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCurrentSessionId(sess.id)
-                          if (scopeZoneId && rootWarehouses.some(w => w.id === scopeZoneId)) {
-                            setSelectedWarehouseId(scopeZoneId)
-                          }
-                          setViewMode('detail')
-                        }}
-                        className="text-left flex-1 min-w-0"
-                      >
-                        <div className="text-sm font-black text-white truncate">{sess.name}</div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          📍 {scopeZoneName} •{' '}
+                    {/* Hàng 1 & 2 & 3: Chạm vào mở phiếu kiểm kê */}
+                    <button
+                      type="button"
+                      onClick={openSession}
+                      className="w-full text-left space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[14px] font-bold text-white truncate">
+                          {sess.name}
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-md border text-[9.5px] font-bold uppercase shrink-0 ${
+                            isLocalOnly
+                              ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
+                              : 'bg-indigo-950/90 border-violet-500/50 text-violet-300'
+                          }`}
+                        >
+                          {isLocalOnly
+                            ? 'Offline'
+                            : sess.status === 'active'
+                              ? 'Đang kiểm'
+                              : 'Hoàn thành'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center flex-wrap gap-1.5 text-[11px] text-slate-400">
+                        <span className="text-slate-200 font-semibold">📍 {scopeZoneName}</span>
+                        <span className="text-slate-600">•</span>
+                        <span>
                           {sess.created_at
                             ? new Date(sess.created_at).toLocaleDateString('vi-VN')
                             : ''}
-                        </div>
-                      </button>
-
-                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                        {(pendingVoiceCountBySession[sess.id] || 0) > 0 && (
-                          <button
-                            type="button"
-                            disabled={transcribingSessionId === sess.id}
-                            onClick={() => handleTranscribeSessionVoices(sess)}
-                            className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400/50 text-amber-200 text-[11px] font-extrabold flex items-center gap-1 shrink-0 disabled:opacity-60"
-                          >
-                            {transcribingSessionId === sess.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Cpu className="w-3.5 h-3.5" />
-                            )}
-                            <span>
-                              {transcribingSessionId === sess.id
-                                ? 'Đang dịch...'
-                                : `Dịch (${pendingVoiceCountBySession[sess.id]})`}
-                            </span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          disabled={syncing}
-                          onClick={() => handleSyncSessionToCloud(sess)}
-                          className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-extrabold flex items-center gap-1 shrink-0"
-                        >
-                          {syncing ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <CloudUpload className="w-3.5 h-3.5" />
-                          )}
-                          <span>Đồng bộ lên Web</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Progress bar */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentSessionId(sess.id)
-                        setViewMode('detail')
-                      }}
-                      className="w-full text-left space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-emerald-400">
-                          Đã kiểm: {sChecked} / {sTotal} vị trí ({pct}%)
                         </span>
-                        {sDiscrepancy > 0 && (
-                          <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px] font-black">
-                            ⚠️ {sDiscrepancy} SAI LỆCH
-                          </span>
-                        )}
                       </div>
-                      <div className="w-full h-2 rounded-full bg-[#0f172a] overflow-hidden">
-                        <div
-                          className="h-full bg-emerald-500 transition-all"
-                          style={{ width: `${Math.min(100, pct)}%` }}
-                        />
+
+                      <div className="pt-1 space-y-1">
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-slate-400">
+                            Đã kiểm:{' '}
+                            <span className="text-emerald-400 font-bold">{sChecked}</span>
+                            /{sTotal} vị trí ({pct}%)
+                          </span>
+                          {sDiscrepancy > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[10px] font-bold shrink-0">
+                              ⚠️ {sDiscrepancy} sai lệch
+                            </span>
+                          )}
+                        </div>
+                        <div className="w-full h-1 rounded-full bg-[#0f172a] overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-500 transition-all"
+                            style={{ width: `${Math.min(100, pct)}%` }}
+                          />
+                        </div>
                       </div>
                     </button>
+
+                    {/* Hàng 4: Nút Dịch (N) & Đồng bộ lên Web chia đều full bề ngang giống App Android */}
+                    <div
+                      className={`grid gap-2 pt-0.5 ${
+                        pendingVoices > 0 ? 'grid-cols-2' : 'grid-cols-1'
+                      }`}
+                    >
+                      {pendingVoices > 0 && (
+                        <button
+                          type="button"
+                          disabled={isTranscribingSess}
+                          onClick={() => handleTranscribeSessionVoices(sess)}
+                          className="h-8.5 rounded-xl bg-amber-700 hover:bg-amber-600 border border-amber-400/80 text-white text-[11.5px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-60 transition"
+                        >
+                          {isTranscribingSess ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Cpu className="w-3.5 h-3.5" />
+                          )}
+                          <span>
+                            {isTranscribingSess ? 'Đang dịch...' : `Dịch (${pendingVoices})`}
+                          </span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={syncing}
+                        onClick={() => handleSyncSessionToCloud(sess)}
+                        className="h-8.5 rounded-xl bg-violet-600 hover:bg-violet-500 border border-violet-400/70 text-white text-[11.5px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-60 transition"
+                      >
+                        {syncing ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CloudUpload className="w-3.5 h-3.5" />
+                        )}
+                        <span>Đồng bộ lên Web</span>
+                      </button>
+                    </div>
                   </div>
                 )
               })
