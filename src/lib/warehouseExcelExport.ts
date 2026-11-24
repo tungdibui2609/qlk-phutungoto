@@ -383,6 +383,7 @@ export interface ExportWarehouseGridData {
     systemName: string;
     zoneName?: string;
     searchTerm?: string;
+    splitHalf?: boolean;
     grids: Array<{
         name: string;
         parentName?: string;
@@ -403,68 +404,26 @@ function getExcelColumnLetter(colIndex: number): string {
     return letter;
 }
 
+function makeSafeSheetName(rawName: string, usedNames: Set<string>): string {
+    const cleaned = rawName
+        .replace(/[\\/*?:[\]]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim() || 'Sheet';
+    let candidate = cleaned.slice(0, 31);
+    let suffix = 2;
+    while (usedNames.has(candidate.toLowerCase())) {
+        const suffixStr = ` (${suffix++})`;
+        candidate = cleaned.slice(0, 31 - suffixStr.length).trim() + suffixStr;
+    }
+    usedNames.add(candidate.toLowerCase());
+    return candidate;
+}
+
 export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) {
     const workbook = new ExcelJS.Workbook();
+    const isSplitHalf = Boolean(data.splitHalf);
 
-    // 1. Tính toán số cột thực tế tối đa để bảng vừa khít khổ giấy và không sinh cột rỗng thừa
-    let maxBins = 1;
-    data.grids.forEach((g: any) => {
-        if (g.bins && g.bins.length > maxBins) {
-            maxBins = g.bins.length;
-        }
-    });
-    // Cột 1 là Tên Tầng / Dãy, các cột tiếp theo là các Ô (Bins)
-    const totalCols = Math.max(maxBins + 1, 6);
-    const lastColLetter = getExcelColumnLetter(totalCols);
-
-    const worksheet = workbook.addWorksheet('Sơ đồ mặt bằng', {
-        pageSetup: {
-            paperSize: 8 as any, // 8 = Khổ A3 (297 mm x 420 mm)
-            orientation: 'landscape', // Khổ ngang
-            fitToPage: true, // Kích hoạt chế độ Fit to page
-            fitToWidth: 1, // Chiều rộng vừa khít đúng 1 trang giấy
-            fitToHeight: 2, // Chiều cao không vượt quá 2 trang giấy
-            horizontalCentered: true, // Căn giữa nội dung trên khổ in
-            verticalCentered: false,
-            margins: {
-                left: 0.1, // Bỏ qua lề (sát mép in tối đa diện tích)
-                right: 0.1,
-                top: 0.15,
-                bottom: 0.15,
-                header: 0,
-                footer: 0
-            }
-        },
-        views: [{ showGridLines: true }]
-    });
-
-    // 1. Header Tiêu đề chung (merge chuẩn xác theo số cột thực tế)
-    worksheet.mergeCells(`A1:${lastColLetter}1`);
-    const titleCell = worksheet.getCell('A1');
-    titleCell.value = 'MẪU XUẤT FILE EXCEL SƠ ĐỒ';
-    titleCell.font = { bold: true, size: 16 };
-    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    worksheet.getRow(1).height = 28;
-
-    worksheet.mergeCells(`A2:${lastColLetter}2`);
-    const subTitle1 = worksheet.getCell('A2');
-    subTitle1.value = 'DÃY : XẾP DỌC';
-    subTitle1.alignment = { horizontal: 'center' };
-
-    worksheet.mergeCells(`A3:${lastColLetter}3`);
-    const subTitle2 = worksheet.getCell('A3');
-    subTitle2.value = 'Ô : XẾP NGANG';
-    subTitle2.alignment = { horizontal: 'center' };
-
-    worksheet.mergeCells(`A4:${lastColLetter}4`);
-    const subTitle3 = worksheet.getCell('A4');
-    subTitle3.value = `Hệ thống: ${data.systemName}${data.zoneName ? ` | Khu vực: ${data.zoneName}` : ''}${data.searchTerm ? ` | Lọc theo: "${data.searchTerm}"` : ''} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
-    subTitle3.alignment = { horizontal: 'center' };
-    subTitle3.font = { italic: true };
-
-    let currentRowIdx = 6;
-
-    // 2. Phân loại và sắp xếp Grids theo Parent (KHO 1, KHO 2...)
+    // Phân loại và sắp xếp Grids theo Parent (KHO 1, KHO 2...)
     const extractNumber = (name: string) => {
         const match = name.match(/\d+/);
         return match ? parseInt(match[0], 10) : 999;
@@ -482,21 +441,10 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
 
     const parents = Object.keys(gridsByParent).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-    parents.forEach(pName => {
-        // Render Group Header (KHO 1, KHO 2...)
-        worksheet.mergeCells(`A${currentRowIdx}:${lastColLetter}${currentRowIdx}`);
-        const groupCell = worksheet.getCell(`A${currentRowIdx}`);
-        groupCell.value = `KHU VỰC: ${pName.toUpperCase()}`;
-        groupCell.font = { bold: true, size: 12 };
-        groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD700' } }; // Gold/Darker Yellow
-        groupCell.alignment = { horizontal: 'left' };
-        groupCell.border = { bottom: { style: 'medium' } };
-        currentRowIdx++; // Spacer gọn gàng
-
-        const groupGrids = gridsByParent[pName];
+    const buildOrderedGridsForParent = (groupGrids: any[]) => {
         let dayGrids = groupGrids.filter(g => dayRegex.test(g.name))
             .sort((a, b) => extractNumber(a.name) - extractNumber(b.name));
-        
+
         let sanhGrids = groupGrids.filter(g => sanhRegex.test(g.name))
             .sort((a, b) => extractNumber(a.name) - extractNumber(b.name));
 
@@ -518,166 +466,464 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                 orderedGrids.push({ type: sanhRegex.test(g.name) ? 'sanh' : 'day', grid: g });
             });
         }
+        return { dayGrids, sanhGrids, orderedGrids };
+    };
 
-        // Render Grids for this group
-        orderedGrids.forEach((item) => {
-            const { type, grid } = item;
-            
-            if (type === 'day') {
-                // --- RENDER DÃY ---
-                const headerRow = worksheet.getRow(currentRowIdx);
-                headerRow.getCell(1).value = grid.name.toUpperCase();
-                headerRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF00' } }; // Yellow
-                headerRow.getCell(1).font = { bold: true };
-                headerRow.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    const renderSanhRow = (
+        ws: ExcelJS.Worksheet,
+        rowIdx: number,
+        grid: any,
+        totalCols: number,
+        headerFontSize: number,
+        itemFontSize: number,
+        colWidth: number
+    ) => {
+        const row = ws.getRow(rowIdx);
+        row.getCell(1).value = grid.name.toUpperCase();
+        row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF00' } };
+        row.getCell(1).font = { bold: true, size: headerFontSize };
+        row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
 
-                grid.bins.forEach((binName: string, bIdx: number) => {
-                    const cell = headerRow.getCell(bIdx + 2);
-                    cell.value = binName;
-                    cell.font = { bold: true };
-                    cell.alignment = { horizontal: 'center' };
-                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                    worksheet.getColumn(bIdx + 2).width = 24;
+        const allSanhItems: any[] = [];
+        grid.cells.forEach((c: any) => allSanhItems.push(...c.items));
+
+        if (totalCols >= 2) {
+            try {
+                ws.mergeCells(rowIdx, 2, rowIdx, totalCols);
+            } catch (e) {
+                // ignore overlap
+            }
+        }
+
+        let estimatedTextLen = 0;
+
+        if (allSanhItems.length > 0) {
+            const richText: any[] = [];
+            const summary: Record<string, { name: string, qty: number, unit: string, lotCodes: Set<string> }> = {};
+            allSanhItems.forEach(it => {
+                const normUnit = normalizeUnit(it.unit);
+                const key = `${normalizeUnit(it.sku || it.productName)}_${normUnit}`;
+                if (!summary[key]) summary[key] = { name: it.productName, qty: 0, unit: normUnit, lotCodes: new Set() };
+                summary[key].qty += (Number(it.quantity) || 0);
+                if (it.lotCode) summary[key].lotCodes.add(it.lotCode);
+                if (it.lotCodes) it.lotCodes.forEach((code: string) => summary[key].lotCodes.add(code));
+            });
+
+            const summaryEntries = Object.values(summary);
+            summaryEntries.forEach((v: any, idx) => {
+                const roundedQty = Math.round(v.qty * 1000) / 1000;
+
+                let plSuffix = '';
+                if (v.lotCodes && v.lotCodes.size > 0) {
+                    const uniquePLs = Array.from(v.lotCodes) as string[];
+                    plSuffix = ` (${uniquePLs.length} PL)`;
+                }
+
+                const part1 = `• ${v.name} : `;
+                const part2 = `${roundedQty} ${v.unit}${plSuffix}`;
+                const sep = idx < summaryEntries.length - 1 ? '    |    ' : '';
+                estimatedTextLen += part1.length + part2.length + sep.length;
+
+                richText.push({ text: part1, font: { size: itemFontSize, bold: true } });
+                richText.push({ text: part2, font: { size: itemFontSize, bold: true, color: { argb: '0000FF' } } });
+                if (sep) richText.push({ text: sep, font: { size: itemFontSize, color: { argb: '888888' } } });
+            });
+
+            row.getCell(2).value = { richText };
+            row.getCell(2).alignment = { wrapText: true, vertical: 'middle', horizontal: 'left' };
+        } else {
+            row.getCell(2).value = 'TRỐNG';
+            row.getCell(2).font = { size: itemFontSize };
+            row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+
+        for (let c = 2; c <= totalCols; c++) {
+            row.getCell(c).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        }
+
+        // Excel không tự AutoFit cho ô đã merge ngang, nên tự tính chiều cao vừa sát nội dung thực tế
+        const mergedWidthChars = Math.max((totalCols - 1) * colWidth * 0.9, 40);
+        const estimatedLines = estimatedTextLen > 0 ? Math.ceil(estimatedTextLen / mergedWidthChars) : 1;
+        const lineHeight = itemFontSize >= 11 ? 19 : 16;
+        row.height = Math.max(24, estimatedLines * lineHeight + 8);
+    };
+
+    if (isSplitHalf) {
+        // ============================================================
+        // CHẾ ĐỘ CHIA ĐÔI A3 (½): MỖI DÃY 1 SHEET RIÊNG + 1 SHEET TỔNG HỢP SẢNH
+        // ============================================================
+        const usedSheetNames = new Set<string>(['thống kê khu vực', 'thống kê tổng hợp']);
+        const itemFontSize = 11;
+        const headerFontSize = 11;
+        const binColWidth = 36;
+
+        const allSanhByParent: Array<{ parentName: string; sanhList: any[] }> = [];
+
+        parents.forEach(pName => {
+            const { orderedGrids } = buildOrderedGridsForParent(gridsByParent[pName]);
+            const dayItems = orderedGrids.filter(i => i.type === 'day');
+            const sanhItems = orderedGrids.filter(i => i.type === 'sanh').map(i => i.grid);
+
+            if (sanhItems.length > 0) {
+                allSanhByParent.push({ parentName: pName, sanhList: sanhItems });
+            }
+
+            dayItems.forEach(({ grid }) => {
+                const binsCount = (grid.bins || []).length;
+                const splitPoint = binsCount > 1 ? Math.ceil(binsCount / 2) : Math.max(binsCount, 1);
+                const binChunks = binsCount > 1
+                    ? [
+                        { label: `Ô 1-${splitPoint}`, binStart: 0, binEnd: splitPoint },
+                        { label: `Ô ${splitPoint + 1}-${binsCount}`, binStart: splitPoint, binEnd: binsCount }
+                    ]
+                    : [{ label: '', binStart: 0, binEnd: binsCount }];
+
+                const totalCols = Math.max(splitPoint + 1, 6);
+                const lastColLetter = getExcelColumnLetter(totalCols);
+
+                const rawSheetTitle = `${pName} - ${grid.name}`;
+                const sheetName = makeSafeSheetName(rawSheetTitle, usedSheetNames);
+
+                const ws = workbook.addWorksheet(sheetName, {
+                    pageSetup: {
+                        paperSize: 8 as any, // Khổ A3
+                        orientation: 'landscape',
+                        fitToPage: true,
+                        fitToWidth: 1, // Vừa đúng 1 trang ngang A3
+                        fitToHeight: 1, // 1 Dãy (2 nửa trên-dưới) gói gọn trong đúng 1 tờ A3
+                        horizontalCentered: true,
+                        verticalCentered: false,
+                        margins: { left: 0.1, right: 0.1, top: 0.15, bottom: 0.15, header: 0, footer: 0 }
+                    },
+                    views: [{ showGridLines: true }]
                 });
-                const dãyStartRowIdx = currentRowIdx;
-                currentRowIdx++;
 
-                // Levels: [TẦNG X] [Chi tiết] [Chi tiết] ...
-                const sortedLevels = [...grid.levels].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+                // Header riêng cho Sheet Dãy
+                ws.mergeCells(`A1:${lastColLetter}1`);
+                const titleCell = ws.getCell('A1');
+                titleCell.value = `SƠ ĐỒ MẶT BẰNG KHO — ${pName.toUpperCase()} - ${grid.name.toUpperCase()}`;
+                titleCell.font = { bold: true, size: 17, color: { argb: '1E3A8A' } };
+                titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+                ws.getRow(1).height = 26;
 
-                sortedLevels.forEach((lvlName, lIdx) => {
-                    const row = worksheet.getRow(currentRowIdx);
-                    row.getCell(1).value = lvlName === 'DỮ LIỆU' ? '' : lvlName.toUpperCase();
-                    row.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                    
-                    grid.bins.forEach((binName: string, bIdx: number) => {
-                        const excelColIdx = bIdx + 2;
-                        const cell = row.getCell(excelColIdx);
-                        
-                        const levelIdxInOriginal = grid.levels.indexOf(lvlName);
-                        const cellData = grid.cells.find((c: any) => c.binIndex === bIdx && c.levelIndex === levelIdxInOriginal);
-                        
-                        if (cellData && cellData.items.length > 0) {
-                            const richText: any[] = [];
-                            cellData.items.forEach((it: any, itIdx: number) => {
-                                const roundedQty = Math.round((Number(it.quantity) || 0) * 1000) / 1000;
-                                const sttPrefix = it.batchCode ? `[${it.batchCode}] ` : '';
-                                
-                                let plSuffix = '';
-                                if (it.lotCodes && it.lotCodes.length > 0) {
-                                    const uniquePLs = Array.from(new Set(it.lotCodes)) as string[];
-                                    plSuffix = ` (${uniquePLs.length} PL)`;
-                                } else if (it.lotCode) {
-                                    plSuffix = ` (1 PL)`;
-                                }
+                ws.mergeCells(`A2:${lastColLetter}2`);
+                const subCell = ws.getCell('A2');
+                subCell.value = `Hệ thống: ${data.systemName}${data.zoneName ? ` | Khu vực: ${data.zoneName}` : ''}${data.searchTerm ? ` | Lọc theo: "${data.searchTerm}"` : ''} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
+                subCell.font = { italic: true, size: 11 };
+                subCell.alignment = { horizontal: 'center', vertical: 'middle' };
+                ws.getRow(2).height = 18;
+                ws.getRow(3).height = 6;
 
-                                richText.push({ text: `• ${sttPrefix}${it.productName}`, font: { bold: true, size: 9 } });
-                                richText.push({ text: ` : ${roundedQty} ${it.unit}${plSuffix}`, font: { size: 9, bold: true, color: { argb: '0000FF' } } }); // Blue for qty
-                                
-                                if (itIdx < cellData.items.length - 1) {
-                                    richText.push({ text: '\n', font: { size: 2 } });
-                                    richText.push({ text: '----------------------------------', font: { size: 4, color: { argb: 'BBBBBB' } } });
-                                    richText.push({ text: '\n', font: { size: 2 } });
-                                }
-                            });
-                            cell.value = { richText };
-                            cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
+                let rowIdx = 4;
 
-                            // Handle Vertical Merging for "Gộp ô"
-                            if (cellData.isMerged && cellData.rowSpan && cellData.rowSpan > 1) {
-                                try {
-                                    worksheet.mergeCells(dãyStartRowIdx + 1, excelColIdx, dãyStartRowIdx + cellData.rowSpan, excelColIdx);
-                                } catch (e) {
-                                    // Overlap catch
+                binChunks.forEach((chunk, chunkIdx) => {
+                    const slicedBins = (grid.bins || []).slice(chunk.binStart, chunk.binEnd);
+                    if (slicedBins.length === 0) return;
+
+                    if (chunkIdx > 0) {
+                        ws.getRow(rowIdx).height = 6;
+                        rowIdx++;
+                    }
+
+                    const headerRow = ws.getRow(rowIdx);
+                    headerRow.getCell(1).value = chunk.label
+                        ? `${grid.name.toUpperCase()} (${chunk.label})`
+                        : grid.name.toUpperCase();
+                    headerRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF00' } };
+                    headerRow.getCell(1).font = { bold: true, size: headerFontSize };
+                    headerRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+                    headerRow.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                    headerRow.height = 24;
+
+                    slicedBins.forEach((binName: string, localIdx: number) => {
+                        const cell = headerRow.getCell(localIdx + 2);
+                        cell.value = binName;
+                        cell.font = { bold: true, size: headerFontSize };
+                        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                        ws.getColumn(localIdx + 2).width = binColWidth;
+                    });
+                    const dayStartRowIdx = rowIdx;
+                    rowIdx++;
+
+                    const sortedLevels = [...grid.levels].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+                    sortedLevels.forEach((lvlName) => {
+                        const row = ws.getRow(rowIdx);
+                        row.getCell(1).value = lvlName === 'DỮ LIỆU' ? '' : lvlName.toUpperCase();
+                        row.getCell(1).font = { bold: true, size: headerFontSize };
+                        row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+                        row.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+
+                        let maxItems = 1;
+                        slicedBins.forEach((_binName: string, localIdx: number) => {
+                            const origBinIdx = chunk.binStart + localIdx;
+                            const excelColIdx = localIdx + 2;
+                            const cell = row.getCell(excelColIdx);
+
+                            const levelIdxInOriginal = grid.levels.indexOf(lvlName);
+                            const cellData = grid.cells.find((c: any) => c.binIndex === origBinIdx && c.levelIndex === levelIdxInOriginal);
+
+                            if (cellData && cellData.items.length > 0) {
+                                if (cellData.items.length > maxItems) maxItems = cellData.items.length;
+                                const richText: any[] = [];
+                                cellData.items.forEach((it: any, itIdx: number) => {
+                                    const roundedQty = Math.round((Number(it.quantity) || 0) * 1000) / 1000;
+                                    const sttPrefix = it.batchCode ? `[${it.batchCode}] ` : '';
+
+                                    let plSuffix = '';
+                                    if (it.lotCodes && it.lotCodes.length > 0) {
+                                        const uniquePLs = Array.from(new Set(it.lotCodes)) as string[];
+                                        plSuffix = ` (${uniquePLs.length} PL)`;
+                                    } else if (it.lotCode) {
+                                        plSuffix = ` (1 PL)`;
+                                    }
+
+                                    richText.push({ text: `• ${sttPrefix}${it.productName}`, font: { bold: true, size: itemFontSize } });
+                                    richText.push({ text: ` : ${roundedQty} ${it.unit}${plSuffix}`, font: { size: itemFontSize, bold: true, color: { argb: '0000FF' } } });
+
+                                    if (itIdx < cellData.items.length - 1) {
+                                        richText.push({ text: '\n', font: { size: itemFontSize } });
+                                    }
+                                });
+                                cell.value = { richText };
+                                cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
+
+                                if (cellData.isMerged && cellData.rowSpan && cellData.rowSpan > 1) {
+                                    try {
+                                        ws.mergeCells(dayStartRowIdx + 1, excelColIdx, dayStartRowIdx + cellData.rowSpan, excelColIdx);
+                                    } catch (e) {
+                                        // Overlap catch
+                                    }
                                 }
                             }
-                        }
-                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                        });
+
+                        // Không gán cứng row.height để Excel tự động co giãn độ cao (AutoFit) theo nội dung
+                        rowIdx++;
                     });
-                    
-                    // Tự động chỉnh độ cao hợp lý cho dòng Tầng để không bị quá dài
-                    let maxItems = 1;
-                    grid.bins.forEach((_: string, bIdx: number) => {
-                        const levelIdxInOriginal = grid.levels.indexOf(lvlName);
-                        const cellData = grid.cells.find((c: any) => c.binIndex === bIdx && c.levelIndex === levelIdxInOriginal);
-                        if (cellData && cellData.items.length > maxItems) maxItems = cellData.items.length;
-                    });
-                    row.height = Math.max(26, maxItems * 22);
-                    
-                    currentRowIdx++;
                 });
 
-            } else if (type === 'sanh') {
-                // --- RENDER SẢNH ---
-                const row = worksheet.getRow(currentRowIdx);
-                row.getCell(1).value = grid.name.toUpperCase();
-                row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF00' } }; // Yellow
-                row.getCell(1).font = { bold: true };
-                row.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-
-                const allSanhItems: any[] = [];
-                grid.cells.forEach((c: any) => allSanhItems.push(...c.items));
-
-                // Merge từ cột 2 đến cột cuối cùng để trải dài đẹp mắt trên khổ A3
-                if (totalCols >= 2) {
-                    try {
-                        worksheet.mergeCells(currentRowIdx, 2, currentRowIdx, totalCols);
-                    } catch (e) {
-                        // ignore overlap
-                    }
-                }
-
-                if (allSanhItems.length > 0) {
-                    const richText: any[] = [];
-                    const summary: Record<string, { name: string, qty: number, unit: string, lotCodes: Set<string> }> = {};
-                    allSanhItems.forEach(it => {
-                        const normUnit = normalizeUnit(it.unit);
-                        const key = `${normalizeUnit(it.sku || it.productName)}_${normUnit}`;
-                        if (!summary[key]) summary[key] = { name: it.productName, qty: 0, unit: normUnit, lotCodes: new Set() };
-                        summary[key].qty += (Number(it.quantity) || 0);
-                        if (it.lotCode) summary[key].lotCodes.add(it.lotCode);
-                        if (it.lotCodes) it.lotCodes.forEach((code: string) => summary[key].lotCodes.add(code));
-                    });
-
-                    const summaryEntries = Object.values(summary);
-                    summaryEntries.forEach((v: any, idx) => {
-                        const roundedQty = Math.round(v.qty * 1000) / 1000;
-                        
-                        let plSuffix = '';
-                        if (v.lotCodes && v.lotCodes.size > 0) {
-                            const uniquePLs = Array.from(v.lotCodes) as string[];
-                            plSuffix = ` (${uniquePLs.length} PL)`;
-                        }
-
-                        richText.push({ text: `• ${v.name} : `, font: { size: 9, bold: true } });
-                        richText.push({ text: `${roundedQty} ${v.unit}${plSuffix}`, font: { size: 9, bold: true, color: { argb: '0000FF' } } });
-                        if (idx < summaryEntries.length - 1) richText.push({ text: '    |    ', font: { size: 9, color: { argb: '888888' } } });
-                    });
-
-                    row.getCell(2).value = { richText };
-                    row.getCell(2).alignment = { wrapText: true, vertical: 'middle', horizontal: 'left' };
-                } else {
-                    row.getCell(2).value = 'TRỐNG';
-                    row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
-                }
-
-                // Kẻ border cho toàn bộ hàng sảnh
-                for (let c = 2; c <= totalCols; c++) {
-                    row.getCell(c).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                }
-
-                row.height = 26;
-                currentRowIdx++;
-            }
-            currentRowIdx++; // Spacer nhẹ giữa các khối Dãy / Sảnh
+                ws.getColumn(1).width = 15;
+                ws.pageSetup.printArea = `A1:${lastColLetter}${Math.max(rowIdx - 1, 1)}`;
+            });
         });
-        
-        currentRowIdx++; // Spacer giữa các khu vực
-    });
 
-    worksheet.getColumn(1).width = 14;
-    // Đặt vùng in chính xác theo dữ liệu thực tế
-    worksheet.pageSetup.printArea = `A1:${lastColLetter}${Math.max(currentRowIdx - 1, 1)}`;
+        // Sheet riêng bao gồm TẤT CẢ CÁC SẢNH
+        if (allSanhByParent.length > 0) {
+            const sanhSheetName = makeSafeSheetName('Tổng hợp Sảnh', usedSheetNames);
+            const sanhCols = 8;
+            const sanhLastCol = getExcelColumnLetter(sanhCols);
+            const sanhWs = workbook.addWorksheet(sanhSheetName, {
+                pageSetup: {
+                    paperSize: 8 as any,
+                    orientation: 'landscape',
+                    fitToPage: true,
+                    fitToWidth: 1,
+                    fitToHeight: 0,
+                    horizontalCentered: true,
+                    verticalCentered: false,
+                    margins: { left: 0.15, right: 0.15, top: 0.2, bottom: 0.2, header: 0, footer: 0 }
+                },
+                views: [{ showGridLines: true }]
+            });
+
+            sanhWs.mergeCells(`A1:${sanhLastCol}1`);
+            const sTitle = sanhWs.getCell('A1');
+            sTitle.value = 'SƠ ĐỒ TỔNG HỢP TẤT CẢ CÁC SẢNH';
+            sTitle.font = { bold: true, size: 17, color: { argb: '1E3A8A' } };
+            sTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+            sanhWs.getRow(1).height = 30;
+
+            sanhWs.mergeCells(`A2:${sanhLastCol}2`);
+            const sSub = sanhWs.getCell('A2');
+            sSub.value = `Hệ thống: ${data.systemName}${data.zoneName ? ` | Khu vực: ${data.zoneName}` : ''}${data.searchTerm ? ` | Lọc theo: "${data.searchTerm}"` : ''} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
+            sSub.font = { italic: true, size: 11 };
+            sSub.alignment = { horizontal: 'center', vertical: 'middle' };
+            sanhWs.getRow(2).height = 20;
+
+            let sRowIdx = 4;
+            allSanhByParent.forEach(({ parentName, sanhList }) => {
+                sanhWs.mergeCells(`A${sRowIdx}:${sanhLastCol}${sRowIdx}`);
+                const grpCell = sanhWs.getCell(`A${sRowIdx}`);
+                grpCell.value = `KHU VỰC: ${parentName.toUpperCase()}`;
+                grpCell.font = { bold: true, size: 13 };
+                grpCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD700' } };
+                grpCell.alignment = { horizontal: 'left', vertical: 'middle' };
+                grpCell.border = { bottom: { style: 'medium' } };
+                sanhWs.getRow(sRowIdx).height = 24;
+                sRowIdx++;
+
+                sanhList.forEach(sanhGrid => {
+                    renderSanhRow(sanhWs, sRowIdx, sanhGrid, sanhCols, headerFontSize, itemFontSize, binColWidth);
+                    sRowIdx++;
+                });
+
+                sRowIdx++; // Spacer giữa các khu vực
+            });
+
+            sanhWs.getColumn(1).width = 18;
+            for (let c = 2; c <= sanhCols; c++) {
+                sanhWs.getColumn(c).width = binColWidth;
+            }
+            sanhWs.pageSetup.printArea = `A1:${sanhLastCol}${Math.max(sRowIdx - 1, 1)}`;
+        }
+    } else {
+        // ============================================================
+        // CHẾ ĐỘ MẶC ĐỊNH (FULL A3): GIỮ NGUYÊN 100% NHƯ BAN ĐẦU
+        // ============================================================
+        let maxBins = 1;
+        data.grids.forEach((g: any) => {
+            if (g.bins && g.bins.length > maxBins) {
+                maxBins = g.bins.length;
+            }
+        });
+        const totalCols = Math.max(maxBins + 1, 6);
+        const lastColLetter = getExcelColumnLetter(totalCols);
+
+        const worksheet = workbook.addWorksheet('Sơ đồ mặt bằng', {
+            pageSetup: {
+                paperSize: 8 as any, // 8 = Khổ A3 (297 mm x 420 mm)
+                orientation: 'landscape',
+                fitToPage: true,
+                fitToWidth: 1,
+                fitToHeight: 2,
+                horizontalCentered: true,
+                verticalCentered: false,
+                margins: { left: 0.1, right: 0.1, top: 0.15, bottom: 0.15, header: 0, footer: 0 }
+            },
+            views: [{ showGridLines: true }]
+        });
+
+        worksheet.mergeCells(`A1:${lastColLetter}1`);
+        const titleCell = worksheet.getCell('A1');
+        titleCell.value = 'MẪU XUẤT FILE EXCEL SƠ ĐỒ';
+        titleCell.font = { bold: true, size: 16 };
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        worksheet.getRow(1).height = 28;
+
+        worksheet.mergeCells(`A2:${lastColLetter}2`);
+        const subTitle1 = worksheet.getCell('A2');
+        subTitle1.value = 'DÃY : XẾP DỌC';
+        subTitle1.alignment = { horizontal: 'center' };
+
+        worksheet.mergeCells(`A3:${lastColLetter}3`);
+        const subTitle2 = worksheet.getCell('A3');
+        subTitle2.value = 'Ô : XẾP NGANG';
+        subTitle2.alignment = { horizontal: 'center' };
+
+        worksheet.mergeCells(`A4:${lastColLetter}4`);
+        const subTitle3 = worksheet.getCell('A4');
+        subTitle3.value = `Hệ thống: ${data.systemName}${data.zoneName ? ` | Khu vực: ${data.zoneName}` : ''}${data.searchTerm ? ` | Lọc theo: "${data.searchTerm}"` : ''} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
+        subTitle3.alignment = { horizontal: 'center' };
+        subTitle3.font = { italic: true };
+
+        let currentRowIdx = 6;
+
+        parents.forEach(pName => {
+            worksheet.mergeCells(`A${currentRowIdx}:${lastColLetter}${currentRowIdx}`);
+            const groupCell = worksheet.getCell(`A${currentRowIdx}`);
+            groupCell.value = `KHU VỰC: ${pName.toUpperCase()}`;
+            groupCell.font = { bold: true, size: 12 };
+            groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD700' } };
+            groupCell.alignment = { horizontal: 'left' };
+            groupCell.border = { bottom: { style: 'medium' } };
+            currentRowIdx++;
+
+            const { orderedGrids } = buildOrderedGridsForParent(gridsByParent[pName]);
+
+            orderedGrids.forEach((item) => {
+                const { type, grid } = item;
+
+                if (type === 'day') {
+                    const headerRow = worksheet.getRow(currentRowIdx);
+                    headerRow.getCell(1).value = grid.name.toUpperCase();
+                    headerRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF00' } };
+                    headerRow.getCell(1).font = { bold: true };
+                    headerRow.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+
+                    grid.bins.forEach((binName: string, bIdx: number) => {
+                        const cell = headerRow.getCell(bIdx + 2);
+                        cell.value = binName;
+                        cell.font = { bold: true };
+                        cell.alignment = { horizontal: 'center' };
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                        worksheet.getColumn(bIdx + 2).width = 24;
+                    });
+                    const dãyStartRowIdx = currentRowIdx;
+                    currentRowIdx++;
+
+                    const sortedLevels = [...grid.levels].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+                    sortedLevels.forEach((lvlName) => {
+                        const row = worksheet.getRow(currentRowIdx);
+                        row.getCell(1).value = lvlName === 'DỮ LIỆU' ? '' : lvlName.toUpperCase();
+                        row.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+
+                        let maxItems = 1;
+                        grid.bins.forEach((_binName: string, bIdx: number) => {
+                            const excelColIdx = bIdx + 2;
+                            const cell = row.getCell(excelColIdx);
+
+                            const levelIdxInOriginal = grid.levels.indexOf(lvlName);
+                            const cellData = grid.cells.find((c: any) => c.binIndex === bIdx && c.levelIndex === levelIdxInOriginal);
+
+                            if (cellData && cellData.items.length > 0) {
+                                if (cellData.items.length > maxItems) maxItems = cellData.items.length;
+                                const richText: any[] = [];
+                                cellData.items.forEach((it: any, itIdx: number) => {
+                                    const roundedQty = Math.round((Number(it.quantity) || 0) * 1000) / 1000;
+                                    const sttPrefix = it.batchCode ? `[${it.batchCode}] ` : '';
+
+                                    let plSuffix = '';
+                                    if (it.lotCodes && it.lotCodes.length > 0) {
+                                        const uniquePLs = Array.from(new Set(it.lotCodes)) as string[];
+                                        plSuffix = ` (${uniquePLs.length} PL)`;
+                                    } else if (it.lotCode) {
+                                        plSuffix = ` (1 PL)`;
+                                    }
+
+                                    richText.push({ text: `• ${sttPrefix}${it.productName}`, font: { bold: true, size: 9 } });
+                                    richText.push({ text: ` : ${roundedQty} ${it.unit}${plSuffix}`, font: { size: 9, bold: true, color: { argb: '0000FF' } } });
+
+                                    if (itIdx < cellData.items.length - 1) {
+                                        richText.push({ text: '\n', font: { size: 2 } });
+                                        richText.push({ text: '----------------------------------', font: { size: 4, color: { argb: 'BBBBBB' } } });
+                                        richText.push({ text: '\n', font: { size: 2 } });
+                                    }
+                                });
+                                cell.value = { richText };
+                                cell.alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
+
+                                if (cellData.isMerged && cellData.rowSpan && cellData.rowSpan > 1) {
+                                    try {
+                                        worksheet.mergeCells(dãyStartRowIdx + 1, excelColIdx, dãyStartRowIdx + cellData.rowSpan, excelColIdx);
+                                    } catch (e) {
+                                        // Overlap catch
+                                    }
+                                }
+                            }
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                        });
+
+                        // Không gán cứng row.height để Excel tự động co giãn độ cao (AutoFit) theo nội dung
+                        currentRowIdx++;
+                    });
+                } else if (type === 'sanh') {
+                    renderSanhRow(worksheet, currentRowIdx, grid, totalCols, 10, 9, 24);
+                    currentRowIdx++;
+                }
+                currentRowIdx++;
+            });
+
+            currentRowIdx++;
+        });
+
+        worksheet.getColumn(1).width = 14;
+        worksheet.pageSetup.printArea = `A1:${lastColLetter}${Math.max(currentRowIdx - 1, 1)}`;
+    }
 
     // --- SHEET 2: THỐNG KÊ KHU VỰC ---
     const sheet2 = workbook.addWorksheet('Thống kê Khu vực', {
@@ -787,7 +1033,8 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
         });
 
     const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `So_do_kho_Custom_${data.systemName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const filePrefix = isSplitHalf ? 'So_do_kho_A3_ChiaDoi' : 'So_do_kho_Custom';
+    const fileName = `${filePrefix}_${data.systemName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
     saveAs(new Blob([buffer]), fileName);
 }
 

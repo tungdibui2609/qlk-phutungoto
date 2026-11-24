@@ -52,6 +52,7 @@ export default function WarehouseMapPrintPage() {
     const [categories, setCategories] = useState<any[]>([])
     const [orientation, setOrientation] = useState<'portrait' | 'landscape'>(orientationParam || 'landscape')
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+    const [isExcelMenuOpen, setIsExcelMenuOpen] = useState(false)
     const [isZonePickerOpen, setIsZonePickerOpen] = useState(false)
     const [zoneSearchTerm, setZoneSearchTerm] = useState('')
     const [expandedZoneIds, setExpandedZoneIds] = useState<Set<string>>(new Set())
@@ -403,7 +404,8 @@ export default function WarehouseMapPrintPage() {
             children.forEach(walk)
         }
 
-        const roots = displayZones.filter(z => !z.parent_id || !displayZones.find(pz => pz.id === z.parent_id))
+        const zoneIdSet = new Set(displayZones.map(z => z.id))
+        const roots = displayZones.filter(z => !z.parent_id || !zoneIdSet.has(z.parent_id))
             .sort((a, b) => {
                 const nameA = (a.code || a.name || '').toUpperCase()
                 const nameB = (b.code || b.name || '').toUpperCase()
@@ -548,7 +550,7 @@ export default function WarehouseMapPrintPage() {
                 await supabase.auth.setSession({ access_token: token, refresh_token: '' })
             }
 
-            const fetchAll = async (table: string, filter?: (query: any) => any, select = '*', limit = 1000) => {
+            const fetchAll = async (table: string, filter?: (query: any) => any, select = '*', limit = 5000) => {
                 let allRecs: any[] = []
                 let from = 0
                 while (true) {
@@ -574,11 +576,22 @@ export default function WarehouseMapPrintPage() {
             }
 
             const [posData, zoneData, zpData, layoutData, lotsData] = await Promise.all([
-                fetchAll('positions', q => q.eq('system_type', systemType).order('code', { numeric: true }).order('id')),
+                fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('display_order').order('code').order('id')),
-                fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemType).order('zone_id', { ascending: true }).order('position_id', { ascending: true })),
+                fetchAll(
+                    'zone_positions',
+                    q => q.eq('positions.system_type', systemType).order('zone_id', { ascending: true }).order('position_id', { ascending: true }),
+                    'zone_id, position_id, positions!inner(system_type)'
+                ),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.order('id'), '*, suppliers(name), qc_info(name), products(id, name, unit, sku, internal_code, internal_name, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, category_id, products(id, name, unit, sku, internal_code, internal_name, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)), product_units(unit_id, conversion_rate))), lot_tags(tag, lot_item_id)')
+                fetchAll(
+                    'lots',
+                    q => q
+                        .eq('system_code', systemType)
+                        .not('status', 'in', '("exported","Archived","archived","Đã xuất hết cho công trình")')
+                        .order('id'),
+                    'id, code, status, quantity, batch_code, notes, inbound_date, created_at, daily_seq, peeling_date, packaging_date, raw_material_date, is_locked, system_code, production_code, product_id, suppliers(name), qc_info(name), products(id, name, unit, sku, internal_code, internal_name, aliases, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, category_id, products(id, name, unit, sku, internal_code, internal_name, aliases, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)))), lot_tags(tag, lot_item_id)'
+                )
             ])
 
             const zpLookup: Record<string, string> = {}
@@ -613,6 +626,7 @@ export default function WarehouseMapPrintPage() {
                             sku: item.products?.sku,
                             internal_code: item.products?.internal_code,
                             internal_name: item.products?.internal_name,
+                            aliases: item.products?.aliases || '',
                             unit: item.unit || item.products?.unit,
                             base_unit: item.products?.unit,
                             quantity: item.quantity,
@@ -636,6 +650,7 @@ export default function WarehouseMapPrintPage() {
                         sku: l.products.sku,
                         internal_code: l.products.internal_code,
                         internal_name: l.products.internal_name,
+                        aliases: l.products.aliases || '',
                         unit: l.products.unit,
                         base_unit: l.products.unit,
                         quantity: l.quantity,
@@ -776,7 +791,7 @@ export default function WarehouseMapPrintPage() {
         await exportWarehouseToExcel({ systemName: systemType || 'KHO', zoneName: displayZones.find(z => z.id === selectedZoneId)?.name, searchTerm: searchTerm, positions: excelPositions })
     }
 
-    const handleExportExcelGrid = async () => {
+    const handleExportExcelGrid = async (splitHalf = false) => {
         const grids: any[] = []
         const containerRegex = /D[ÃãYy]|S[ẢảÀà]nh|K[Ệệ]|KHU|S[Àà]NH|CH[Ũũ]|PH[Òò]NG/i;
         const potentialRoots = filteredZones.filter(z => containerRegex.test(z.name) || z.name.toUpperCase().includes('DÃY'));
@@ -880,7 +895,7 @@ export default function WarehouseMapPrintPage() {
             })
             grids.push({ name: root.name, parentName, bins: binNames, levels: sortedLevels, cells })
         })
-        if (grids.length > 0) await exportWarehouseGridToExcel({ systemName: systemType || 'KHO', zoneName: displayZones.find(z => z.id === selectedZoneId)?.name, searchTerm, grids })
+        if (grids.length > 0) await exportWarehouseGridToExcel({ systemName: systemType || 'KHO', zoneName: displayZones.find(z => z.id === selectedZoneId)?.name, searchTerm, splitHalf, grids })
     }
 
     const handleExportExcelLobbyDetail = async () => {
@@ -916,21 +931,45 @@ export default function WarehouseMapPrintPage() {
 
     return (
         <>
-            {/* Toolbar */}
-            <div className={`fixed top-4 right-4 z-50 print:hidden flex gap-3 items-center ${isSnapshotMode ? 'hidden' : ''}`}>
-                {/* Unified Settings Dropdown */}
-                <div className="relative">
-                    <button
-                        onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-                        className={`flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-xl border transition-all cursor-pointer hover:bg-gray-50 group ${isSettingsOpen ? 'border-indigo-500 ring-2 ring-indigo-50' : 'border-gray-200'}`}
-                    >
-                        <SettingsIcon size={18} className={`text-gray-600 group-hover:text-indigo-600 transition-transform ${isSettingsOpen ? 'rotate-90' : ''}`} />
-                        <span className="text-sm font-semibold text-gray-700">Cấu hình in</span>
-                        <ChevronDown size={14} className="text-gray-400" />
-                    </button>
+            {/* Top Sticky Header Bar (Screen Only) */}
+            <header className={`sticky top-0 z-50 print:hidden bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-sm ${isSnapshotMode ? 'hidden' : ''}`}>
+                <div className="max-w-[1700px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
+                    {/* Left: Context + Settings + Marked Toggle */}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="hidden md:flex items-center gap-2 pr-3 border-r border-slate-200 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                <Printer size={16} />
+                            </div>
+                            <div className="min-w-0">
+                                <div className="text-xs font-bold text-slate-800 truncate leading-tight">
+                                    {displayZones.find(z => z.id === selectedZoneId)?.name || 'Toàn bộ sơ đồ kho'}
+                                </div>
+                                <div className="text-[11px] text-slate-500 truncate leading-tight">
+                                    {systemType} • {orientation === 'landscape' ? 'Khổ ngang' : 'Khổ dọc'}
+                                </div>
+                            </div>
+                        </div>
 
-                    {isSettingsOpen && (
-                        <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-y-auto max-h-[85vh] custom-scrollbar flex flex-col p-4 gap-6 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+                        {/* Unified Settings Dropdown */}
+                        <div className="relative">
+                            <button
+                                onClick={() => {
+                                    setIsSettingsOpen(!isSettingsOpen)
+                                    setIsExcelMenuOpen(false)
+                                }}
+                                className={`h-9 px-3.5 rounded-lg border text-xs sm:text-sm font-semibold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer ${
+                                    isSettingsOpen
+                                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700 ring-2 ring-indigo-100'
+                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                                }`}
+                            >
+                                <SettingsIcon size={15} className={`transition-transform duration-200 ${isSettingsOpen ? 'rotate-90 text-indigo-600' : 'text-slate-500'}`} />
+                                <span>Cấu hình in</span>
+                                <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${isSettingsOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {isSettingsOpen && (
+                                <div className="absolute top-full left-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-y-auto max-h-[82vh] custom-scrollbar flex flex-col p-4 gap-5 animate-in fade-in slide-in-from-top-2 duration-150 z-50">
                             {/* 0. Product Search */}
                             <div className="flex flex-col gap-2">
                                 <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2"><Search size={12} /> Tìm kiếm Sản phẩm / Vị trí</label>
@@ -976,7 +1015,7 @@ export default function WarehouseMapPrintPage() {
                                     </button>
 
                                     {isZonePickerOpen && (
-                                        <div className="absolute right-full mr-2 top-0 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[400px] z-[60]">
+                                        <div className="absolute left-full ml-2 top-0 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[400px] z-[60]">
                                             <div className="p-2 border-b bg-gray-50/50">
                                                 <div className="relative">
                                                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={12} />
@@ -1126,59 +1165,174 @@ export default function WarehouseMapPrintPage() {
                                     </button>
                                 </div>
                             )}
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>
 
-                <div className="flex bg-white rounded-lg shadow-xl border border-gray-200 p-1 gap-1 flex-wrap">
-                    {markedPositionIds.size > 0 && (
+                        {markedPositionIds.size > 0 && (
+                            <button
+                                onClick={() => {
+                                    const next = !onlyMarked
+                                    setOnlyMarked(next)
+                                    if (next) {
+                                        setEditReportTitle('SƠ ĐỒ VỊ TRÍ ĐÁNH DẤU KIỂM TRA')
+                                    } else {
+                                        setEditReportTitle('SƠ ĐỒ BỐ TRÍ KHO')
+                                    }
+                                }}
+                                className={`h-9 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer border ${
+                                    onlyMarked
+                                        ? 'bg-amber-500 text-white border-amber-500 shadow-sm hover:bg-amber-600'
+                                        : 'bg-amber-50/80 text-amber-800 border-amber-200 hover:bg-amber-100'
+                                }`}
+                                title={onlyMarked ? "Hiện toàn bộ sơ đồ" : "Chỉ in các vị trí đã đánh dấu"}
+                            >
+                                <Bookmark size={14} className={onlyMarked ? "fill-white" : "fill-amber-500 text-amber-600"} />
+                                <span>{onlyMarked ? `Đang lọc (${markedPositionIds.size})` : `Đánh dấu (${markedPositionIds.size})`}</span>
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Right: Export Excel Dropdown + Download Image + Primary Print */}
+                    <div className="flex items-center gap-2 shrink-0">
+                        {/* Excel Export Dropdown */}
+                        <div className="relative">
+                            <button
+                                onClick={() => {
+                                    setIsExcelMenuOpen(!isExcelMenuOpen)
+                                    setIsSettingsOpen(false)
+                                    setIsZonePickerOpen(false)
+                                }}
+                                disabled={isCapturing}
+                                className={`h-9 px-3.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer border ${
+                                    isExcelMenuOpen
+                                        ? 'bg-emerald-700 text-white border-emerald-700 ring-2 ring-emerald-100'
+                                        : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-sm'
+                                }`}
+                            >
+                                <FileSpreadsheet size={15} />
+                                <span>Xuất Excel</span>
+                                <ChevronDown size={14} className={`transition-transform duration-200 ${isExcelMenuOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {isExcelMenuOpen && (
+                                <div className="absolute top-full right-0 mt-2 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 py-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                                    <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                        Chọn định dạng Excel
+                                    </div>
+
+                                    <button
+                                        onClick={() => { setIsExcelMenuOpen(false); handleExportExcelGrid(true) }}
+                                        className="w-full px-3 py-2.5 text-left hover:bg-teal-50/80 flex items-start gap-2.5 transition-colors cursor-pointer group"
+                                    >
+                                        <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 group-hover:bg-teal-100 flex items-center justify-center shrink-0 mt-0.5">
+                                            <Maximize2 size={15} />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-xs font-bold text-slate-800">Excel Lưới ½ A3</span>
+                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-100 text-teal-700">Dễ đọc</span>
+                                            </div>
+                                            <div className="text-[11px] text-slate-500 leading-snug mt-0.5">Mỗi dãy 1 sheet (Ô 1-7 trên, 8-14 dưới) & sheet Sảnh riêng</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        onClick={() => { setIsExcelMenuOpen(false); handleExportExcelGrid(false) }}
+                                        className="w-full px-3 py-2 text-left hover:bg-emerald-50/80 flex items-start gap-2.5 transition-colors cursor-pointer group"
+                                    >
+                                        <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
+                                            <Layout size={15} />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-xs font-bold text-slate-800">Excel Lưới (1 trang A3)</div>
+                                            <div className="text-[11px] text-slate-500 leading-snug mt-0.5">Toàn bộ sơ đồ dạng lưới chuẩn</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        onClick={() => { setIsExcelMenuOpen(false); handleExportExcelTable() }}
+                                        className="w-full px-3 py-2 text-left hover:bg-indigo-50/80 flex items-start gap-2.5 transition-colors cursor-pointer group"
+                                    >
+                                        <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 flex items-center justify-center shrink-0 mt-0.5">
+                                            <FileSpreadsheet size={15} />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-xs font-bold text-slate-800">Excel Dạng Bảng</div>
+                                            <div className="text-[11px] text-slate-500 leading-snug mt-0.5">Danh sách vị trí chi tiết & báo cáo tổng hợp</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        onClick={() => { setIsExcelMenuOpen(false); handleExportExcelLobbyDetail() }}
+                                        className="w-full px-3 py-2 text-left hover:bg-amber-50/80 flex items-start gap-2.5 transition-colors cursor-pointer group"
+                                    >
+                                        <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 group-hover:bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
+                                            <Monitor size={15} />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-xs font-bold text-slate-800">Excel Chi tiết Sảnh</div>
+                                            <div className="text-[11px] text-slate-500 leading-snug mt-0.5">Sơ đồ tọa độ từng vị trí trong sảnh</div>
+                                        </div>
+                                    </button>
+
+                                    {markedPositionIds.size > 0 && (
+                                        <>
+                                            <div className="my-1 border-t border-slate-100" />
+                                            <button
+                                                onClick={() => { setIsExcelMenuOpen(false); handleExportExcelMarked() }}
+                                                className="w-full px-3 py-2 text-left hover:bg-amber-50/80 flex items-start gap-2.5 transition-colors cursor-pointer group"
+                                            >
+                                                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                                                    <Bookmark size={15} />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="text-xs font-bold text-amber-800">Excel Vị trí Đánh dấu ({markedPositionIds.size})</div>
+                                                    <div className="text-[11px] text-slate-500 leading-snug mt-0.5">Chỉ xuất các ô đang đánh dấu kiểm tra</div>
+                                                </div>
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
                         <button
-                            onClick={() => {
-                                const next = !onlyMarked
-                                setOnlyMarked(next)
-                                if (next) {
-                                    setEditReportTitle('SƠ ĐỒ VỊ TRÍ ĐÁNH DẤU KIỂM TRA')
-                                } else {
-                                    setEditReportTitle('SƠ ĐỒ BỐ TRÍ KHO')
-                                }
-                            }}
-                            className={`px-3 py-2 rounded-md text-sm font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm ${
-                                onlyMarked
-                                    ? 'bg-amber-500 text-white hover:bg-amber-600 ring-2 ring-amber-300'
-                                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300'
-                            }`}
-                            title={onlyMarked ? "Hiện toàn bộ sơ đồ" : "Chỉ in các vị trí đã đánh dấu"}
+                            onClick={handleDownload}
+                            disabled={isCapturing}
+                            className="h-9 px-3.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer"
+                            title="Tải ảnh phiếu dạng JPG"
                         >
-                            <Bookmark size={15} className={onlyMarked ? "fill-white" : "fill-amber-500 text-amber-600"} />
-                            {onlyMarked ? `Đang lọc Đánh dấu (${markedPositionIds.size})` : `Chỉ vị trí Đánh dấu (${markedPositionIds.size})`}
+                            {isCapturing ? <Loader2 className="animate-spin text-slate-500" size={15} /> : <Download size={15} className="text-slate-500" />}
+                            <span>Tải ảnh</span>
                         </button>
-                    )}
-                    {markedPositionIds.size > 0 && (
-                        <button onClick={handleExportExcelMarked} className="px-4 py-2 bg-amber-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-amber-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}>
-                            <FileSpreadsheet size={16} /> Excel (Đánh dấu)
-                        </button>
-                    )}
-                    <button onClick={handleDownload} className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}>{isCapturing ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />} Tải ảnh phiếu</button>
-                    <button onClick={handleExportExcelTable} className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}><FileSpreadsheet size={16} /> Excel (Bảng)</button>
-                    <button onClick={handleExportExcelGrid} className="px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-emerald-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}><Layout size={16} /> Excel (Lưới)</button>
-                    <button onClick={handleExportExcelLobbyDetail} className="px-4 py-2 bg-amber-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-amber-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}><Monitor size={16} /> Excel (Sảnh)</button>
-                    <button onClick={handlePrint} className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}><Printer size={16} /> In sơ đồ</button>
-                </div>
-            </div>
 
-            {/* Backdrop for Settings */}
-            {isSettingsOpen && (
-                <div 
-                    className="fixed inset-0 z-40 cursor-default" 
-                    onClick={() => { 
-                        setIsSettingsOpen(false); 
-                        setIsZonePickerOpen(false); 
-                    }} 
+                        <button
+                            onClick={handlePrint}
+                            disabled={isCapturing}
+                            className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-bold flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer shadow-sm"
+                        >
+                            <Printer size={15} />
+                            <span>In sơ đồ</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            {/* Backdrop for Dropdowns */}
+            {(isSettingsOpen || isExcelMenuOpen) && (
+                <div
+                    className="fixed inset-0 z-40 cursor-default"
+                    onClick={() => {
+                        setIsSettingsOpen(false)
+                        setIsZonePickerOpen(false)
+                        setIsExcelMenuOpen(false)
+                    }}
                 />
             )}
 
             {/* Main Wrapper for better screen presentation */}
-            <div className={`min-h-screen print:min-h-0 bg-gray-100/50 print:bg-white py-8 print:py-0 ${isCapturing ? '!p-0 !bg-white' : ''}`}>
+            <div className={`min-h-screen print:min-h-0 bg-slate-100/70 print:bg-white py-5 print:py-0 ${isCapturing ? '!p-0 !bg-white' : ''}`}>
                 <div
                     id="print-ready"
                     data-ready="true"

@@ -1,10 +1,11 @@
 'use client'
 
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Calendar, Download, Loader2, Printer } from 'lucide-react'
-import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
+import { Download, FileSpreadsheet, FileText, LayoutGrid, Loader2, Map as MapIcon, Printer } from 'lucide-react'
+import { ExportOrderDiagram } from '@/components/print/ExportOrderDiagram'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { Database } from '@/lib/database.types'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
@@ -101,6 +102,8 @@ function ExportOrderPrintContent() {
     const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
     const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set())
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const [binsPerRow, setBinsPerRow] = useState<2 | 3>(2)
+    const [printMode, setPrintMode] = useState<'all' | 'table' | 'diagram'>('all')
     const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
     const [allowEditDates, setAllowEditDates] = useState(false)
     const [itemDates, setItemDates] = useState<Record<string, { inboundDate: string; productionDate: string }>>({})
@@ -157,7 +160,7 @@ function ExportOrderPrintContent() {
             }
 
             try {
-                const fetchAll = async (table: string, filter?: (query: any) => any, select = '*', limit = 1000) => {
+                const fetchAll = async (table: string, filter?: (query: any) => any, select = '*', limit = 5000) => {
                     let allRecs: any[] = []
                     let from = 0
                     while (true) {
@@ -263,9 +266,13 @@ function ExportOrderPrintContent() {
                 const systemCode = (taskData as any)?.system_code
                 if (systemCode) {
                     const [posDataRaw, zoneDataRaw, zpDataRaw, layoutDataRaw] = await Promise.all([
-                        fetchAll('positions', q => q.eq('system_type', systemCode).order('code', { numeric: true }).order('id')),
+                        fetchAll('positions', q => q.eq('system_type', systemCode).order('code').order('id')),
                         fetchAll('zones', q => q.eq('system_type', systemCode).order('level').order('display_order').order('code').order('id')),
-                        fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemCode).order('zone_id', { ascending: true }).order('position_id', { ascending: true })),
+                        fetchAll(
+                            'zone_positions',
+                            q => q.eq('positions.system_type', systemCode).order('zone_id', { ascending: true }).order('position_id', { ascending: true }),
+                            'zone_id, position_id, positions!inner(system_type)'
+                        ),
                         fetchAll('zone_layouts', q => q.order('id')),
                     ])
 
@@ -497,23 +504,6 @@ function ExportOrderPrintContent() {
                     setEditYear(d.getFullYear().toString())
                     setNotes(taskInfo.notes || '')
 
-                    // Lấy thông tin người đăng nhập hiện tại
-                    const { data: { user } } = await supabase.auth.getUser()
-                    let loggedInName = ''
-                    if (user) {
-                        const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user.id).single() as any
-                        if (profile && profile.full_name) loggedInName = profile.full_name
-                    }
-
-                    if (loggedInName) {
-                        setSignPerson1(loggedInName)
-                        setTask(prev => prev ? { ...prev, created_by_profile: { full_name: loggedInName } } : null)
-                    } else {
-                        if (taskInfo.created_by_profile?.full_name) {
-                            setSignPerson1(taskInfo.created_by_profile.full_name as string)
-                        }
-                    }
-
                     // Initialize logistics fields
                     setBranch('Kho mặc định')
                     setReason(taskInfo.notes || '')
@@ -529,8 +519,19 @@ function ExportOrderPrintContent() {
         fetchData()
     }, [taskId])
 
-    const handlePrint = () => {
-        window.print()
+    useEffect(() => {
+        const handleAfterPrint = () => setPrintMode('all')
+        window.addEventListener('afterprint', handleAfterPrint)
+        return () => window.removeEventListener('afterprint', handleAfterPrint)
+    }, [])
+
+    const handlePrint = (mode: 'all' | 'table' | 'diagram' = 'all') => {
+        flushSync(() => {
+            setPrintMode(mode)
+        })
+        setTimeout(() => {
+            window.print()
+        }, 40)
     }
 
     const toggleSelectItem = (id: string) => {
@@ -685,68 +686,122 @@ function ExportOrderPrintContent() {
     }
 
     return (
-        <div id="print-ready" className={`print:p-0 mx-auto text-black bg-stone-100 print:bg-white text-[13px] leading-relaxed font-serif py-8 print:py-0 min-h-screen flex flex-col items-center gap-8 print:block print:gap-0`}>
+        <div id="print-ready" className={`print:p-0 mx-auto text-black bg-stone-100 print:bg-white text-[13px] leading-relaxed pb-8 print:pb-0 min-h-screen flex flex-col items-center gap-6 print:block print:gap-0`}>
             <style jsx global>{`
                 @media print {
                     @page {
                         margin: 10mm;
-                        size: portrait;
+                        size: ${printMode === 'diagram' ? 'landscape' : 'portrait'};
                     }
                     @page landscape-page {
                         size: landscape;
                         margin: 10mm;
                     }
                     .landscape-section {
-                        page: landscape-page;
+                        ${printMode === 'diagram' ? '' : 'page: landscape-page;'}
                     }
                     body {
                         print-color-adjust: exact;
                         -webkit-print-color-adjust: exact;
-                        font-family: 'Times New Roman', Times, serif !important;
                     }
                     .page-break {
                         page-break-before: always;
+                        break-before: page;
                     }
                 }
-                #print-ready {
+                .export-serif-sheet {
                     font-family: 'Times New Roman', Times, serif;
                 }
             `}</style>
 
-            {/* Toolbar */}
-            <div className={`fixed top-4 right-4 print:hidden z-50 flex items-center gap-4 ${isSnapshotMode ? 'hidden' : ''}`}>
-                <div 
-                    title="Toggle Edit Mode"
-                    onClick={() => setAllowEditDates(!allowEditDates)}
-                    className={`w-4 h-4 rounded-full flex items-center justify-center cursor-pointer transition-colors ${allowEditDates ? 'bg-blue-100 text-blue-600' : 'text-stone-300 hover:text-stone-400'}`}
-                >
-                    <span className="text-[10px] leading-none">.</span>
+            {/* Top Sticky Header Bar */}
+            <header className={`sticky top-0 w-full print:hidden z-50 bg-white/95 backdrop-blur-md border-b border-stone-200/80 shadow-xs font-sans ${isSnapshotMode ? 'hidden' : ''}`}>
+                <div className="max-w-[297mm] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div
+                            title="Bật/tắt chỉnh sửa ngày SX & ngày nhập"
+                            onClick={() => setAllowEditDates(!allowEditDates)}
+                            className={`w-5 h-5 rounded-full flex items-center justify-center cursor-pointer transition-colors ${allowEditDates ? 'bg-blue-100 text-blue-600' : 'text-stone-300 hover:text-stone-500'}`}
+                        >
+                            <span className="text-xs leading-none">•</span>
+                        </div>
+                        <div className="min-w-0">
+                            <div className="text-xs font-bold text-stone-800 truncate">Phiếu & Sơ đồ xuất kho • {task.code}</div>
+                            <div className="text-[11px] text-stone-500 truncate">{items.length} dòng hàng xuất</div>
+                        </div>
+
+                        {/* Bố cục cột sơ đồ */}
+                        <div className="hidden sm:flex items-center gap-1 ml-2 bg-stone-100 p-1 rounded-lg border border-stone-200/80">
+                            <LayoutGrid size={13} className="text-stone-400 ml-1.5 mr-0.5" />
+                            <button
+                                type="button"
+                                onClick={() => setBinsPerRow(2)}
+                                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${binsPerRow === 2 ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500 hover:text-stone-700'}`}
+                                title="Mỗi trang 4 khung tầng (2 cột x 2 hàng)"
+                            >
+                                4 khung / trang
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setBinsPerRow(3)}
+                                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${binsPerRow === 3 ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500 hover:text-stone-700'}`}
+                                title="Mỗi trang 6 khung tầng (3 cột x 2 hàng)"
+                            >
+                                6 khung / trang
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                        <button
+                            onClick={handleExcelExport}
+                            className="h-9 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg shadow-xs transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                            <FileSpreadsheet size={14} />
+                            <span>Excel</span>
+                        </button>
+                        <button
+                            onClick={handleDownload}
+                            disabled={isDownloadingState}
+                            className="h-9 px-3 bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 font-semibold rounded-lg transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                            {isDownloadingState ? <Loader2 size={14} className="animate-spin text-stone-500" /> : <Download size={14} className="text-stone-500" />}
+                            <span>Tải ảnh</span>
+                        </button>
+
+                        <div className="h-5 w-px bg-stone-200 mx-0.5 hidden sm:block" />
+
+                        <button
+                            onClick={() => handlePrint('table')}
+                            title="Chỉ in bảng Lệnh xuất kho (Khổ dọc — chọn Flip on long edge khi in 2 mặt)"
+                            className="h-9 px-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-xs transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                            <FileText size={14} />
+                            <span>In Phiếu</span>
+                        </button>
+
+                        {zones.length > 0 && (
+                            <button
+                                onClick={() => handlePrint('diagram')}
+                                title="Chỉ in Sơ đồ vị trí (Khổ ngang — chọn Flip on short edge khi in 2 mặt)"
+                                className="h-9 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-xs transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <MapIcon size={14} />
+                                <span>In Sơ đồ</span>
+                            </button>
+                        )}
+
+                        <button
+                            onClick={() => handlePrint('all')}
+                            title="In gộp cả Phiếu & Sơ đồ (dùng khi in 1 mặt)"
+                            className="h-9 px-3 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 font-semibold rounded-lg transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                            <Printer size={14} />
+                            <span className="hidden md:inline">In tất cả</span>
+                        </button>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                <button
-                    onClick={handleDownload}
-                    disabled={isDownloadingState}
-                    className="flex items-center gap-2 px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium rounded-lg transition-colors font-sans text-sm"
-                >
-                    {isDownloadingState ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                    Tải ảnh
-                </button>
-                <button
-                    onClick={handleExcelExport}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg shadow-sm transition-colors font-sans text-sm"
-                >
-                    <Download size={16} />
-                    Xuất Excel
-                </button>
-                    <button
-                        onClick={handlePrint}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors font-sans text-sm"
-                    >
-                        <Printer size={16} />
-                        In phiếu
-                    </button>
-                </div>
-            </div>
+            </header>
 
             {/* Bulk Edit Bar */}
             {allowEditDates && selectedIds.size > 0 && (
@@ -797,7 +852,7 @@ function ExportOrderPrintContent() {
             )}
 
             {/* PAGE 1: EXPORT ORDER DETAIL */}
-            <div className={`pt-8 px-8 pb-8 print:p-0 w-full max-w-[210mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[210mm]' : ''}`}>
+            <div className={`export-serif-sheet pt-8 px-8 pb-8 print:p-0 w-full max-w-[210mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[210mm]' : ''} ${printMode === 'diagram' ? 'print:hidden' : ''}`}>
                 {/* Header with Shared Component */}
                 <div className="mb-6">
                     <PrintHeader
@@ -1138,29 +1193,23 @@ function ExportOrderPrintContent() {
                 </div>
             </div>
 
-            {/* PAGE 2: DIAGRAM */}
-            <div className={`landscape-section pt-8 px-8 pb-8 print:p-0 w-full max-w-[297mm] print:max-w-none bg-white shadow-md print:shadow-none ${isCapturing ? 'w-[297mm]' : ''} page-break`}>
-                <h2 className="font-bold text-lg mb-4 text-center uppercase border-b border-black pb-2">Sơ đồ vị trí xuất kho</h2>
-                {zones.length > 0 && (
-                    <FlexibleZoneGrid
+            {/* PAGES 2..N: DIAGRAM (Each page = A4 Landscape with Header + 4 Frames) */}
+            {zones.length > 0 && (
+                <div className={`w-full flex flex-col items-center print:block ${printMode === 'table' ? 'print:hidden' : ''}`}>
+                    <ExportOrderDiagram
                         zones={zones}
                         positions={positions}
-                        layouts={layouts}
                         occupiedIds={occupiedIds}
                         lotInfo={lotInfo as any}
-                        collapsedZones={new Set()}
-                        selectedPositionIds={new Set()}
-                        onToggleCollapse={() => { }}
-                        pageBreakIds={new Set()}
                         displayInternalCode={displayInternalCode}
-                        isDesignMode={false}
-                        isGrouped={true}
-                        mergedZones={mergedZones}
+                        binsPerPage={binsPerRow}
+                        orderCode={task.code}
+                        dateText={`${editDay}/${editMonth}/${editYear}`}
                         isCapturing={isCapturing}
-                        isPrintPage={true}
+                        skipFirstPageBreak={printMode === 'diagram'}
                     />
-                )}
-            </div>
+                </div>
+            )}
         </div>
     )
 }
