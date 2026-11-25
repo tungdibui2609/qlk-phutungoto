@@ -497,9 +497,12 @@ export async function syncWarehouseMapOfflineWeb(
             )
             const tagsStr = tags.join(', ')
             const allItems = l.lot_items || []
+            const itemProdNames = allItems.map((it: any) => it.products?.name).filter(Boolean)
             const allProdNames = Array.from(
               new Set(
-                [l.products?.name, ...allItems.map((it: any) => it.products?.name)].filter(Boolean)
+                itemProdNames.length > 0
+                  ? itemProdNames
+                  : [l.products?.name, l.metadata?.product_name].filter(Boolean)
               )
             ) as string[]
             const prodName =
@@ -509,8 +512,13 @@ export async function syncWarehouseMapOfflineWeb(
                 ? `Hàng ${tagsStr}`
                 : 'Hàng đông lạnh'
 
+            const itemSkus = allItems.map((it: any) => it.products?.sku).filter(Boolean)
             const allSkus = Array.from(
-              new Set([l.products?.sku, ...allItems.map((it: any) => it.products?.sku)].filter(Boolean))
+              new Set(
+                itemSkus.length > 0
+                  ? itemSkus
+                  : [l.products?.sku].filter(Boolean)
+              )
             ) as string[]
             const sku =
               allSkus.length > 0
@@ -518,12 +526,12 @@ export async function syncWarehouseMapOfflineWeb(
                 : tags.length > 0
                 ? tags[0]
                 : '---'
+            const itemAliases = allItems.map((it: any) => it.products?.aliases).filter(Boolean)
             const allAliases = Array.from(
               new Set(
-                [
-                  l.products?.aliases,
-                  ...allItems.map((it: any) => it.products?.aliases),
-                ].filter(Boolean)
+                itemAliases.length > 0
+                  ? itemAliases
+                  : [l.products?.aliases].filter(Boolean)
               )
             ) as string[]
 

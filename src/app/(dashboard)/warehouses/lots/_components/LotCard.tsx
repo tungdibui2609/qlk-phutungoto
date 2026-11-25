@@ -276,18 +276,19 @@ export function LotCard({ affixTagSet, lot, isModuleEnabled, isUtilityEnabled, i
         if (unitName.includes('(')) return unitName
         const normU = normalizeUnit(unitName)
         
-        // Find base weight for this specific product from the lot object
+        // Find base weight for this specific product from the lot object (prefer lot_items first)
         let baseWeight = 0
         let baseUnitName = ''
-        if (lot.products) {
-            baseWeight = (lot.products as any).weight_kg || 0
-            baseUnitName = lot.products.unit || ''
-        } else if (lot.lot_items) {
-            const item = lot.lot_items.find((i: any) => i.product_id === productId)
+        if (lot.lot_items && lot.lot_items.length > 0) {
+            const item = lot.lot_items.find((i: any) => i.product_id === productId) || lot.lot_items[0]
             if (item?.products) {
                 baseWeight = (item.products as any).weight_kg || 0
                 baseUnitName = item.products.unit || ''
             }
+        }
+        if (!baseUnitName && lot.products) {
+            baseWeight = (lot.products as any).weight_kg || 0
+            baseUnitName = lot.products.unit || ''
         }
 
         // Fallback: If base unit is Kg and weight is not set, assume 1kg

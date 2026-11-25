@@ -1016,13 +1016,23 @@ export function InventoryTab({
             chunkResults.forEach((res: any) => {
               ; (res?.data || []).forEach((l: any) => {
                 const allItems = l.lot_items || []
+                const itemProdNames = Array.from(
+                  new Set(allItems.map((it: any) => it.products?.name).filter(Boolean))
+                ) as string[]
                 const prodName =
-                  l.products?.name ||
-                  allItems[0]?.products?.name ||
-                  l.metadata?.product_name ||
-                  'Hàng đông lạnh'
-                const sku = l.products?.sku || allItems[0]?.products?.sku || null
-                const aliases = l.products?.aliases || allItems[0]?.products?.aliases || null
+                  itemProdNames.length > 0
+                    ? itemProdNames.join(', ')
+                    : l.products?.name || l.metadata?.product_name || 'Hàng đông lạnh'
+                const itemSkus = Array.from(
+                  new Set(allItems.map((it: any) => it.products?.sku).filter(Boolean))
+                ) as string[]
+                const sku =
+                  itemSkus.length > 0 ? itemSkus.join(', ') : l.products?.sku || null
+                const itemAliases = Array.from(
+                  new Set(allItems.map((it: any) => it.products?.aliases).filter(Boolean))
+                ) as string[]
+                const aliases =
+                  itemAliases.length > 0 ? itemAliases.join(', ') : l.products?.aliases || null
                 const unit = allItems[0]?.unit || l.products?.unit || 'Thùng'
                 const itemsList = allItems.map((it: any) => ({
                   product_id: it.product_id,

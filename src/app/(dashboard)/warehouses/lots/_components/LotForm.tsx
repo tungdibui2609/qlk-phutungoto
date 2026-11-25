@@ -1095,6 +1095,7 @@ export function LotForm({
 
         const lotData = {
             code: newLotCode,
+            product_id: validItems[0]?.productId || null,
             notes: newLotNotes,
             supplier_id: selectedSupplierId || null,
             qc_id: selectedQCId || null,
