@@ -319,14 +319,37 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
             lotUpdates.metadata = lotMeta
         }
 
-        // 5. Đồng bộ ảnh con dấu Google Drive từ các thùng vào LOT (hiển thị trên trang Quản lý LOT)
+        // 5. Đồng bộ ảnh con dấu Google Drive / Supabase Storage từ các thùng vào LOT (hiển thị trên trang Quản lý LOT)
         const newStampImages: any[] = []
         const seenFileIds = new Set<string>()
+        let detectedPalletStt = ''
+        let hasLocalOnlyStampPhoto = false
 
         boxes.forEach(b => {
             const meta = b.metadata || {}
-            const fileId = meta.drive_file_id
-            const link = meta.drive_view_url || meta.stamp_image_url
+            if (!detectedPalletStt && meta.pallet_stt) {
+                detectedPalletStt = String(meta.pallet_stt).trim().toUpperCase()
+            }
+            let fileId = meta.drive_file_id || null
+            let link = meta.drive_view_url || meta.stamp_image_url || null
+
+            // Nếu link là đường dẫn local trên điện thoại (file://...) thì bỏ qua và đánh dấu để tìm ảnh fallback trên Storage
+            if (link && String(link).startsWith('file://')) {
+                hasLocalOnlyStampPhoto = true
+                link = null
+            }
+
+            // Nếu có link http/https hợp lệ nhưng chưa có drive_file_id (VD: ảnh fallback trên Supabase Storage hoặc link Drive)
+            if (!fileId && link && /^https?:\/\//i.test(String(link))) {
+                const driveMatch = String(link).match(/\/d\/([a-zA-Z0-9_-]+)/) || String(link).match(/[?&]id=([a-zA-Z0-9_-]+)/)
+                if (driveMatch && driveMatch[1]) {
+                    fileId = driveMatch[1]
+                } else {
+                    const tail = String(link).split('/').pop()?.replace(/[^a-zA-Z0-9._-]/g, '') || `img_${newStampImages.length + 1}`
+                    fileId = `storage_${tail}`
+                }
+            }
+
             if (fileId && link && !seenFileIds.has(fileId)) {
                 seenFileIds.add(fileId)
                 newStampImages.push({
@@ -337,6 +360,43 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
                 })
             }
         })
+
+        // Khôi phục tự động từ Supabase Storage (stamp-queue/<STT>_*.jpg) nếu thùng bị đẩy lên khi ảnh chỉ mới có đường dẫn file://
+        if ((newStampImages.length === 0 || hasLocalOnlyStampPhoto) && detectedPalletStt) {
+            try {
+                const { data: storageFiles } = await supabase.storage
+                    .from('operation-images')
+                    .list('stamp-queue', { search: `${detectedPalletStt}_` })
+                if (Array.isArray(storageFiles) && storageFiles.length > 0) {
+                    for (const sf of storageFiles) {
+                        if (!sf.name || !sf.name.toUpperCase().startsWith(`${detectedPalletStt}_`)) continue
+                        const fid = `storage_${sf.name}`
+                        if (seenFileIds.has(fid)) continue
+                        const { data: pub } = supabase.storage
+                            .from('operation-images')
+                            .getPublicUrl(`stamp-queue/${sf.name}`)
+                        const pubUrl = pub?.publicUrl
+                            ? pub.publicUrl.replace(/^https?:\/\/(?:127\.0\.0\.1|localhost):64321/, 'https://api.chanhthu.click')
+                            : null
+                        if (pubUrl) {
+                            seenFileIds.add(fid)
+                            newStampImages.push({
+                                name: `ConDau_STT_${detectedPalletStt}_${newStampImages.length + 1}.jpg`,
+                                link: pubUrl,
+                                fileId: fid,
+                                uploadedAt: sf.created_at || new Date().toISOString()
+                            })
+                        }
+                    }
+                }
+            } catch {}
+        }
+
+        if (newStampImages.length > 1) {
+            newStampImages.forEach((img, idx) => {
+                img.name = `ConDau_STT_${detectedPalletStt || 'Pallet'}_${idx + 1}.jpg`
+            })
+        }
 
         if (newStampImages.length > 0) {
             const currentItemImages = lotMeta.item_images || {}

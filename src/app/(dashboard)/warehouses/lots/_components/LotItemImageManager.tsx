@@ -194,17 +194,26 @@ export function LotItemImageManager({ lot, item, triggerOpen = false, onCloseTri
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                                    {itemImages.map((img) => (
+                                    {itemImages.map((img) => {
+                                        const isDirectHttp =
+                                            img.fileId?.startsWith('storage_') ||
+                                            (img.link && /^https?:\/\//i.test(img.link) && !img.link.includes('drive.google.com'))
+                                        const thumbSrc = isDirectHttp
+                                            ? img.link
+                                            : `https://lh3.googleusercontent.com/d/${img.fileId}=s600`
+                                        return (
                                         <div key={img.fileId} className="group relative aspect-square rounded-2xl overflow-hidden border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
                                             <img 
-                                                src={`https://lh3.googleusercontent.com/d/${img.fileId}=s600`} 
+                                                src={thumbSrc} 
                                                 alt={img.name}
                                                 referrerPolicy="no-referrer"
                                                 className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-500"
                                                 onError={(e) => {
                                                     const target = e.target as HTMLImageElement;
-                                                    if (!target.src.includes('drive.google.com')) {
+                                                    if (!isDirectHttp && !target.src.includes('drive.google.com')) {
                                                         target.src = `https://drive.google.com/thumbnail?id=${img.fileId}&sz=w600`;
+                                                    } else if (img.link && target.src !== img.link) {
+                                                        target.src = img.link;
                                                     }
                                                 }}
                                                 onClick={() => setViewDocUrl({ url: img.link, title: img.name })}
@@ -226,7 +235,8 @@ export function LotItemImageManager({ lot, item, triggerOpen = false, onCloseTri
                                                 </button>
                                             </div>
                                         </div>
-                                    ))}
+                                        )
+                                    })}
                                     <button
                                         onClick={handleUpload}
                                         disabled={isUploading}
