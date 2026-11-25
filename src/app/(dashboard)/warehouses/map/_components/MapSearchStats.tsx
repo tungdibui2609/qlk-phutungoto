@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye, ArrowUpDown, Bookmark, FileSpreadsheet } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { PositionWithZone } from '../_hooks/useWarehouseData'
-import { advancedMatchSearch } from '@/lib/searchUtils'
+import { advancedMatchSearch, matchSearch, normalizeSearchString } from '@/lib/searchUtils'
 import { decodeSTT } from '@/lib/numberUtils'
 import { WarehouseSearchReportModal } from '@/components/warehouse/map/WarehouseSearchReportModal'
 
@@ -16,6 +16,8 @@ interface MapSearchStatsProps {
     lotInfo: Record<string, any>
     searchTerm: string
     categoryName?: string
+    selectedUnit?: string | null
+    selectedTag?: string | null
     onPositionSelect?: (positionId: string) => void
     onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
     onViewDetails?: (lotId: string) => void
@@ -343,6 +345,8 @@ export function MapSearchStats({
     lotInfo,
     searchTerm,
     categoryName,
+    selectedUnit,
+    selectedTag,
     onPositionSelect,
     onPositionMenu,
     onViewDetails,
@@ -373,22 +377,25 @@ export function MapSearchStats({
     }
 
     const stats = useMemo(() => {
-        if (!searchTerm && !categoryName) return null
+        if (!searchTerm && !categoryName && !selectedUnit && !selectedTag) return null
 
-        const groupingMap: Record<string, { id: string; count: number; quantity: number; name: string; oldestDate: string | null; newestDate: string | null; positionIds: string[] }> = {}
+        const groupingMap: Record<string, { id: string; count: number; quantity: number; unitsMap: Record<string, number>; name: string; oldestDate: string | null; newestDate: string | null; positionIds: string[] }> = {}
         let totalQty = 0
+        const globalUnitsMap: Record<string, number> = {}
         let globalOldest: string | null = null
         let globalNewest: string | null = null
+        const normSelectedUnit = selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : null
 
         filteredPositions.forEach(pos => {
             // Calculate Quantity
             let qty = 0
+            const posUnitsMap: Record<string, number> = {}
             let posDate: string | null = null
             if (pos.lot_id && lotInfo[pos.lot_id]) {
                 const lot = lotInfo[pos.lot_id]
                 const items = lot.items || []
 
-                // If searching specifically by position code, lot code, or STT: count entire pallet
+                // If searching specifically by position code, lot code, or STT: count entire pallet (filtered by unit if selected)
                 // If searching by product name, SKU, internal code, tags, or category: only count matching items
                 const isPosOrLotSearch = !!(
                     searchTerm && (
@@ -398,10 +405,14 @@ export function MapSearchStats({
                     )
                 )
 
-                if (isPosOrLotSearch || (!searchTerm && !categoryName)) {
-                    qty = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
-                } else {
+                let itemsToCount = items
+                if (!isPosOrLotSearch && (searchTerm || categoryName || normSelectedUnit)) {
                     const matchedItems = items.filter((item: any) => {
+                        if (normSelectedUnit) {
+                            const itUnit = normalizeSearchString(item.unit || lot.products?.unit || '', true)
+                            if (itUnit !== normSelectedUnit) return false
+                        }
+
                         let matchesSearch = true
                         if (searchTerm) {
                             const searchVals = [
@@ -410,9 +421,17 @@ export function MapSearchStats({
                                 item.internal_code || lot.products?.internal_code,
                                 item.internal_name || lot.products?.internal_name,
                                 item.aliases || lot.products?.aliases,
-                                ...(item.categoryNames || [])
+                                ...(item.categoryNames || []),
+                                ...(item.tags || []),
+                                ...(lot.tags || [])
                             ].filter(Boolean)
-                            matchesSearch = advancedMatchSearch(searchVals, searchTerm)
+                            matchesSearch = advancedMatchSearch(searchVals, searchTerm) || matchSearch({
+                                name: item.product_name || lot.products?.name,
+                                internal_name: item.internal_name || lot.products?.internal_name,
+                                aliases: item.aliases || lot.products?.aliases,
+                                sku: item.sku || lot.products?.sku,
+                                internal_code: item.internal_code || lot.products?.internal_code
+                            }, searchTerm)
                         }
 
                         let matchesCat = true
@@ -427,10 +446,24 @@ export function MapSearchStats({
                         return matchesSearch && matchesCat
                     })
 
-                    qty = matchedItems.length > 0
-                        ? matchedItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
-                        : items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+                    if (matchedItems.length > 0) {
+                        itemsToCount = matchedItems
+                    } else if (normSelectedUnit) {
+                        itemsToCount = items.filter((item: any) => normalizeSearchString(item.unit || lot.products?.unit || '', true) === normSelectedUnit)
+                    }
+                } else if (normSelectedUnit) {
+                    itemsToCount = items.filter((item: any) => normalizeSearchString(item.unit || lot.products?.unit || '', true) === normSelectedUnit)
                 }
+
+                itemsToCount.forEach((item: any) => {
+                    const itemQty = Number(item.quantity) || 0
+                    qty += itemQty
+                    const u = (item.unit || lot.products?.unit || '').trim()
+                    if (u && itemQty > 0) {
+                        posUnitsMap[u] = (posUnitsMap[u] || 0) + itemQty
+                        globalUnitsMap[u] = (globalUnitsMap[u] || 0) + itemQty
+                    }
+                })
 
                 posDate = lot.inbound_date || lot.created_at || null
             }
@@ -444,17 +477,13 @@ export function MapSearchStats({
 
             // Determine grouping ID
             let groupId = pos.zone_id || 'unknown'
-            let groupName = ''
-
-            // Note: We don't override groupId with parent_id (Bin) anymore.
-            // By grouping by pos.zone_id (which is the Virtual Level when isGrouped is true),
-            // we correctly group A10, B10, C10 positions under the same "Ô 10 • Tầng X" header.
 
             if (!groupingMap[groupId]) {
                 groupingMap[groupId] = {
                     id: groupId,
                     count: 0,
                     quantity: 0,
+                    unitsMap: {},
                     name: getZonePath(groupId),
                     oldestDate: null,
                     newestDate: null,
@@ -465,6 +494,9 @@ export function MapSearchStats({
             const g = groupingMap[groupId]
             g.count++
             g.quantity += qty
+            Object.entries(posUnitsMap).forEach(([u, q]) => {
+                g.unitsMap[u] = (g.unitsMap[u] || 0) + q
+            })
             g.positionIds.push(pos.id)
             if (posDate) {
                 if (!g.oldestDate || posDate < g.oldestDate) g.oldestDate = posDate
@@ -497,11 +529,12 @@ export function MapSearchStats({
         return {
             totalPositions: filteredPositions.length,
             totalQuantity: totalQty,
+            globalUnitsMap,
             zoneBreakdown: sortedGroups,
             oldestDate: globalOldest,
             newestDate: globalNewest
         }
-    }, [filteredPositions, zones, lotInfo, searchTerm, categoryName, isFifoEnabled, isGrouped])
+    }, [filteredPositions, zones, lotInfo, searchTerm, categoryName, selectedUnit, selectedTag, isFifoEnabled, isGrouped])
 
     // State for expanded zones
     const [expandedZoneId, setExpandedZoneId] = useState<string | null>(null)
@@ -537,10 +570,17 @@ export function MapSearchStats({
         )
     }
 
-    if (!stats || (!searchTerm && !categoryName)) return null
+    if (!stats || (!searchTerm && !categoryName && !selectedUnit && !selectedTag)) return null
 
-    const displayTitle = searchTerm ? "Kết quả tìm kiếm:" : "Kết quả danh mục:"
-    const displayLabel = searchTerm || categoryName
+    const displayTitle = searchTerm ? "Kết quả tìm kiếm:" : "Kết quả bộ lọc:"
+    const labelParts = [
+        searchTerm,
+        categoryName ? `Danh mục: ${categoryName}` : '',
+        selectedUnit ? `ĐVT: ${selectedUnit}` : '',
+        selectedTag ? `Mã phụ: ${selectedTag}` : ''
+    ].filter(Boolean)
+    const displayLabel = labelParts.join(' • ')
+    const unitsEntries = Object.entries(stats.globalUnitsMap || {})
 
     return (
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm animate-in fade-in slide-in-from-top-2">
@@ -599,7 +639,17 @@ export function MapSearchStats({
                     <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Tổng số lượng</div>
                     <div className="text-xl font-bold text-slate-900 dark:text-white">
                         {stats.totalQuantity.toLocaleString()}
+                        {selectedUnit && <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 ml-1.5">{selectedUnit}</span>}
                     </div>
+                    {unitsEntries.length > 1 && !selectedUnit && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                            {unitsEntries.map(([u, q]) => (
+                                <span key={u} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100/80 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60">
+                                    {q.toLocaleString('vi-VN')} {u}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -709,7 +759,9 @@ export function MapSearchStats({
                                 </span>
                                 {group.quantity > 0 && (
                                     <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 px-1.5 py-0.5 rounded font-bold">
-                                        {group.quantity.toLocaleString()}
+                                        {Object.keys(group.unitsMap || {}).length > 0
+                                            ? Object.entries(group.unitsMap).map(([u, q]) => `${q.toLocaleString()} ${u}`).join(' + ')
+                                            : group.quantity.toLocaleString()}
                                     </span>
                                 )}
                             </div>

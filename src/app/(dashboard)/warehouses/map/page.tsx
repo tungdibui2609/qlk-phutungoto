@@ -165,6 +165,10 @@ function WarehouseMapContent() {
     const {
         selectedZoneId, setSelectedZoneId,
         selectedCategoryId, setSelectedCategoryId,
+        selectedUnit, setSelectedUnit,
+        selectedTag, setSelectedTag,
+        availableUnits,
+        availableTags,
         searchTerm, setSearchTerm,
         searchMode, setSearchMode,
         dateFilterField, setDateFilterField,
@@ -245,12 +249,12 @@ function WarehouseMapContent() {
             })
     }, [systemType])
 
-    // Auto expand root zones when a filter (category or search) is selected
+    // Auto expand root zones when a filter (category, unit, tag or search) is selected
     useEffect(() => {
-        if (selectedCategoryId || searchTerm) {
+        if (selectedCategoryId || selectedUnit || selectedTag || searchTerm) {
             setCollapsedZones(new Set())
         }
-    }, [selectedCategoryId, searchTerm, setCollapsedZones])
+    }, [selectedCategoryId, selectedUnit, selectedTag, searchTerm, setCollapsedZones])
 
     // 3. UI State
     const [isMobile, setIsMobile] = useState(false)
@@ -1006,6 +1010,12 @@ function WarehouseMapContent() {
                         categories={categories}
                         selectedCategoryId={selectedCategoryId}
                         onCategorySelect={setSelectedCategoryId}
+                        availableUnits={availableUnits}
+                        selectedUnit={selectedUnit}
+                        onUnitSelect={setSelectedUnit}
+                        availableTags={availableTags}
+                        selectedTag={selectedTag}
+                        onTagSelect={setSelectedTag}
                         products={products}
                         onlyShowMarked={onlyShowMarked}
                         onToggleOnlyShowMarked={toggleOnlyShowMarked}
@@ -1075,6 +1085,8 @@ function WarehouseMapContent() {
                         lotInfo={lotInfo}
                         searchTerm={effectiveSearchTerm}
                         categoryName={selectedCatName}
+                        selectedUnit={selectedUnit}
+                        selectedTag={selectedTag}
                         onPositionSelect={handlePositionSelect}
                         onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
                         onViewDetails={fetchFullLotDetails}

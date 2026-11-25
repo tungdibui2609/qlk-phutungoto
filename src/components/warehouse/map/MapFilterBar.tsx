@@ -1,13 +1,28 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, X, ClipboardList, Sparkles, CornerDownLeft, Bookmark, RotateCcw } from 'lucide-react'
+import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, X, ClipboardList, Sparkles, CornerDownLeft, Bookmark, RotateCcw, Scale } from 'lucide-react'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { DateRangeFilter, DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
-import { calculateSearchScore, matchSearch } from '@/lib/searchUtils'
+import { calculateSearchScore, matchSearch, normalizeSearchString } from '@/lib/searchUtils'
 
 import { DeepDateField } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
 import { Calendar, Building2, CheckCircle2, SlidersHorizontal, Check, ArrowRight } from 'lucide-react'
+
+export interface AvailableUnitOption {
+    unit: string
+    count: number
+    totalQty: number
+}
+
+export interface AvailableTagOption {
+    tag: string
+    count: number
+    totalQty: number
+    productNames: string[]
+    skus: string[]
+    units: string[]
+}
 
 interface MapFilterBarProps {
     searchTerm: string
@@ -31,6 +46,12 @@ interface MapFilterBarProps {
     categories?: any[]
     selectedCategoryId?: string | null
     onCategorySelect?: (catId: string | null) => void
+    availableUnits?: AvailableUnitOption[]
+    selectedUnit?: string | null
+    onUnitSelect?: (unit: string | null) => void
+    availableTags?: AvailableTagOption[]
+    selectedTag?: string | null
+    onTagSelect?: (tag: string | null) => void
     products?: any[]
     onlyShowMarked?: boolean
     onToggleOnlyShowMarked?: () => void
@@ -86,6 +107,12 @@ export function MapFilterBar({
     categories,
     selectedCategoryId,
     onCategorySelect,
+    availableUnits = [],
+    selectedUnit,
+    onUnitSelect,
+    availableTags = [],
+    selectedTag,
+    onTagSelect,
     products,
     onlyShowMarked,
     onToggleOnlyShowMarked,
@@ -165,24 +192,74 @@ export function MapFilterBar({
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
 
-    // Tính toán gợi ý thông minh từ danh sách sản phẩm theo từng chế độ tìm kiếm riêng biệt
+    // Tính toán gợi ý thông minh từ danh sách sản phẩm và mã phụ (tag) theo từng chế độ tìm kiếm riêng biệt
     const suggestions = useMemo(() => {
         const term = localSearchTerm.trim()
-        if (!term || !products || products.length === 0) return []
+        if (!term) return []
 
+        const list: Array<{
+            product?: any
+            tagItem?: AvailableTagOption
+            suggestionType?: 'product' | 'tag'
+            score: number
+            fillValue: string
+            selectTag?: string
+            displayTitle: string
+            displaySubtitle?: string
+            badgeType?: 'alias' | 'sku' | 'internal_code' | 'tag'
+            badgeText?: string
+        }> = []
+
+        // Chế độ "Mã phụ (tag)": Khi gõ tên sản phẩm, tên gõ tắt, SKU hoặc mã tag -> hiện các Mã phụ (Tag) liên quan đến sản phẩm đó
+        if (searchMode === 'tag') {
+            if (availableTags && availableTags.length > 0) {
+                for (const t of availableTags) {
+                    const directTagMatch = matchSearch(t.tag, term)
+                    const prodMatch = t.productNames.some(pn => matchSearch(pn, term))
+                    const skuMatch = t.skus.some(s => matchSearch(s, term))
+
+                    // Kiểm tra thêm qua danh sách products (hỗ trợ gõ tên viết tắt aliases để tìm ra tag của sản phẩm đó)
+                    let aliasMatchedName = ''
+                    if (!directTagMatch && !prodMatch && !skuMatch && products && products.length > 0) {
+                        for (const p of products) {
+                            if ((t.productNames.includes(p.name) || (p.sku && t.skus.includes(p.sku))) && calculateSearchScore(p, term) > 0) {
+                                aliasMatchedName = p.name
+                                break
+                            }
+                        }
+                    }
+
+                    if (directTagMatch || prodMatch || skuMatch || aliasMatchedName) {
+                        let score = 1000
+                        if (normalizeSearchString(t.tag, true) === normalizeSearchString(term, true)) score += 3000
+                        else if (directTagMatch) score += 1500
+                        if (prodMatch || aliasMatchedName) score += 1200
+                        score += Math.min(t.count, 200)
+
+                        const prodPreview = t.productNames.slice(0, 2).join(', ') + (t.productNames.length > 2 ? ` (+${t.productNames.length - 2})` : '')
+                        const unitPreview = t.units.length > 0 ? ` • ĐVT: ${t.units.join(', ')}` : ''
+
+                        list.push({
+                            tagItem: t,
+                            suggestionType: 'tag',
+                            score,
+                            fillValue: t.tag,
+                            selectTag: t.tag,
+                            displayTitle: `🏷️ ${t.tag}`,
+                            displaySubtitle: `${prodPreview || 'Mã phụ'}${unitPreview} • ${t.count} vị trí (${t.totalQty.toLocaleString('vi-VN')})`,
+                            badgeType: 'tag',
+                            badgeText: `${t.count} vị trí`
+                        })
+                    }
+                }
+            }
+            return list.sort((a, b) => b.score - a.score).slice(0, 12)
+        }
+
+        if (!products || products.length === 0) return []
         if (searchMode !== 'all' && searchMode !== 'name' && searchMode !== 'code') {
             return []
         }
-
-        const list: Array<{
-            product: any
-            score: number
-            fillValue: string
-            displayTitle: string
-            displaySubtitle?: string
-            badgeType?: 'alias' | 'sku' | 'internal_code'
-            badgeText?: string
-        }> = []
 
         if (searchMode === 'code') {
             for (const p of products) {
@@ -210,6 +287,7 @@ export function MapFilterBar({
 
                     list.push({
                         product: p,
+                        suggestionType: 'product',
                         score,
                         fillValue,
                         displayTitle: fillValue,
@@ -238,6 +316,7 @@ export function MapFilterBar({
 
                     list.push({
                         product: p,
+                        suggestionType: 'product',
                         score,
                         fillValue: p.name,
                         displayTitle: p.name,
@@ -280,6 +359,7 @@ export function MapFilterBar({
 
                     list.push({
                         product: p,
+                        suggestionType: 'product',
                         score,
                         fillValue,
                         displayTitle: p.name,
@@ -289,12 +369,32 @@ export function MapFilterBar({
                     })
                 }
             }
+
+            // Gợi ý thêm các Mã phụ (Tag) khớp trong chế độ Tổng hợp
+            if (availableTags && availableTags.length > 0) {
+                for (const t of availableTags) {
+                    if (matchSearch(t.tag, term)) {
+                        const prodPreview = t.productNames.slice(0, 2).join(', ')
+                        list.push({
+                            tagItem: t,
+                            suggestionType: 'tag',
+                            score: 1400,
+                            fillValue: t.tag,
+                            selectTag: t.tag,
+                            displayTitle: `🏷️ Mã phụ: ${t.tag}`,
+                            displaySubtitle: `${prodPreview ? `${prodPreview} • ` : ''}${t.count} vị trí (${t.totalQty.toLocaleString('vi-VN')})`,
+                            badgeType: 'tag',
+                            badgeText: `TAG (${t.count} vt)`
+                        })
+                    }
+                }
+            }
         }
 
         return list
             .sort((a, b) => b.score - a.score)
-            .slice(0, 8)
-    }, [localSearchTerm, products, searchMode])
+            .slice(0, 10)
+    }, [localSearchTerm, products, searchMode, availableTags])
 
     // Manual trigger function
     const handleSearch = (termToSearch?: string) => {
@@ -305,6 +405,18 @@ export function MapFilterBar({
     }
 
     const handleSelectSuggestion = (item: typeof suggestions[0]) => {
+        if (item.suggestionType === 'tag' && item.selectTag) {
+            if (onTagSelect) {
+                onTagSelect(item.selectTag)
+            }
+            if (searchMode === 'tag') {
+                setLocalSearchTerm(item.selectTag)
+                handleSearch(item.selectTag)
+            } else {
+                setShowSuggestions(false)
+            }
+            return
+        }
         const targetValue = item.fillValue
         setLocalSearchTerm(targetValue)
         handleSearch(targetValue)
@@ -344,10 +456,13 @@ export function MapFilterBar({
     const hasActiveFilters = Boolean(
         localSearchTerm ||
         (selectedCategoryId && selectedCategoryId !== 'all') ||
+        (selectedUnit && selectedUnit !== 'all') ||
+        (selectedTag && selectedTag !== 'all') ||
         startDate ||
         endDate ||
         onlyShowMarked ||
-        hidePendingExport
+        hidePendingExport ||
+        excludeTags
     )
 
     const handleClearAllFilters = () => {
@@ -355,6 +470,8 @@ export function MapFilterBar({
         onSearchChange('')
         if (onDeepScanTermChange) onDeepScanTermChange('')
         if (onCategorySelect) onCategorySelect(null)
+        if (onUnitSelect) onUnitSelect(null)
+        if (onTagSelect) onTagSelect(null)
         onStartDateChange('')
         onEndDateChange('')
         if (onlyShowMarked && onToggleOnlyShowMarked) onToggleOnlyShowMarked()
@@ -435,7 +552,7 @@ export function MapFilterBar({
                                 searchMode === 'name' ? "Nhập tên sản phẩm (dona A, ri6...) hoặc tên gõ tắt..." :
                                 searchMode === 'code' ? "Nhập mã Lot, SKU..." :
                                 searchMode === 'stamp' ? "Nhập mã thùng STAMP-..., dãy số gốc Dòng 1 / Dòng 2, mã lô..." :
-                                searchMode === 'tag' ? "Nhập mã phụ (tag)..." :
+                                searchMode === 'tag' ? "Nhập mã phụ (tag) hoặc gõ tên sản phẩm để hiện các tag liên quan..." :
                                 searchMode === 'position' ? "Nhập mã vị trí (A01...)..." :
                                 searchMode === 'category' ? "Nhập tên danh mục..." :
                                 searchMode === 'production' ? "Nhập mã LSX hoặc mã lot sản xuất..." :
@@ -498,7 +615,7 @@ export function MapFilterBar({
                             <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                 <span className={`flex items-center gap-1 ${isDeepScanMode ? 'text-purple-600 dark:text-purple-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                                     <Sparkles size={12} />
-                                    {searchMode === 'code' ? 'Gợi ý mã sản phẩm' : searchMode === 'name' ? 'Gợi ý tên sản phẩm' : searchMode === 'stamp' ? 'Gợi ý mã tem' : 'Gợi ý tìm kiếm'} ({suggestions.length})
+                                    {searchMode === 'code' ? 'Gợi ý mã sản phẩm' : searchMode === 'name' ? 'Gợi ý tên sản phẩm' : searchMode === 'tag' ? 'Gợi ý mã phụ (Tag) liên quan đến sản phẩm' : searchMode === 'stamp' ? 'Gợi ý mã tem' : 'Gợi ý tìm kiếm'} ({suggestions.length})
                                 </span>
                                 <span className="text-[10px] font-normal text-slate-400">
                                     Dùng ↑↓ để chọn, Enter để tìm
@@ -512,7 +629,7 @@ export function MapFilterBar({
 
                                     return (
                                         <div
-                                            key={p.id || idx}
+                                            key={p?.id || item.selectTag || idx}
                                             onClick={() => handleSelectSuggestion(item)}
                                             onMouseEnter={() => setHighlightedIndex(idx)}
                                             className={`px-3 py-2 cursor-pointer transition-colors flex items-center justify-between gap-3 ${
@@ -530,7 +647,9 @@ export function MapFilterBar({
                                                         <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide shrink-0 ${
                                                             item.badgeType === 'alias' 
                                                                 ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
-                                                                : 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300'
+                                                                : item.badgeType === 'tag'
+                                                                    ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300'
+                                                                    : 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300'
                                                         }`}>
                                                             {item.badgeText}
                                                         </span>
@@ -816,8 +935,9 @@ export function MapFilterBar({
                     </div>
                 </div>
             ) : (
-                /* Dòng 2 (Desktop): Chi tiết Danh mục, Khoảng ngày & Đặt lại bộ lọc */
-                <div className="hidden lg:flex items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800/60">
+                /* Dòng 2 (Desktop): Chi tiết Danh mục, Đơn vị tính, Mã phụ, Khoảng ngày & Đặt lại bộ lọc */
+                <div className="hidden lg:flex flex-col gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/60">
+                    <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5 flex-wrap min-w-0">
                             <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mr-1 shrink-0">
                                 <Filter size={12} />
@@ -838,6 +958,74 @@ export function MapFilterBar({
                                             <option key={cat.id} value={cat.id}>{cat.name}</option>
                                         ))}
                                     </select>
+                                </div>
+                            )}
+
+                            {/* Bộ lọc Đơn vị tính (ĐVT) */}
+                            {onUnitSelect && availableUnits && availableUnits.length > 0 && (
+                                <div className={`flex items-center gap-1.5 border rounded-xl px-3 py-1.5 shrink-0 shadow-2xs transition-colors ${
+                                    selectedUnit && selectedUnit !== 'all'
+                                        ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 ring-1 ring-emerald-200 dark:ring-emerald-800'
+                                        : 'bg-slate-50/90 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
+                                }`}>
+                                    <Scale size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">Đơn vị tính:</span>
+                                    <select
+                                        value={selectedUnit || 'all'}
+                                        onChange={(e) => onUnitSelect(e.target.value === 'all' ? null : e.target.value)}
+                                        className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none max-w-[220px] truncate"
+                                    >
+                                        <option value="all">Tất cả ĐVT ({availableUnits.length})</option>
+                                        {availableUnits.map((u) => (
+                                            <option key={u.unit} value={u.unit}>
+                                                {u.unit} ({u.count} vt - {u.totalQty.toLocaleString('vi-VN')})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {selectedUnit && selectedUnit !== 'all' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onUnitSelect(null)}
+                                            className="text-emerald-600 hover:text-red-500 transition-colors cursor-pointer"
+                                            title="Bỏ lọc đơn vị tính"
+                                        >
+                                            <X size={13} />
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Bộ lọc Mã phụ (Tag) */}
+                            {onTagSelect && availableTags && availableTags.length > 0 && !excludeTags && (
+                                <div className={`flex items-center gap-1.5 border rounded-xl px-3 py-1.5 shrink-0 shadow-2xs transition-colors ${
+                                    selectedTag && selectedTag !== 'all'
+                                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 ring-1 ring-amber-200 dark:ring-amber-800'
+                                        : 'bg-slate-50/90 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
+                                }`}>
+                                    <Tag size={13} className="text-amber-500 shrink-0" />
+                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">Mã phụ (Tag):</span>
+                                    <select
+                                        value={selectedTag || 'all'}
+                                        onChange={(e) => onTagSelect(e.target.value === 'all' ? null : e.target.value)}
+                                        className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none max-w-[240px] truncate"
+                                    >
+                                        <option value="all">Tất cả mã phụ ({availableTags.length})</option>
+                                        {availableTags.map((t) => (
+                                            <option key={t.tag} value={t.tag}>
+                                                {t.tag} ({t.count} vt - {t.totalQty.toLocaleString('vi-VN')})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {selectedTag && selectedTag !== 'all' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onTagSelect(null)}
+                                            className="text-amber-600 hover:text-red-500 transition-colors cursor-pointer"
+                                            title="Bỏ lọc mã phụ"
+                                        >
+                                            <X size={13} />
+                                        </button>
+                                    )}
                                 </div>
                             )}
 
@@ -864,6 +1052,103 @@ export function MapFilterBar({
                             </button>
                         )}
                     </div>
+
+                    {/* Thanh chọn nhanh Đơn vị tính & Mã phụ (Tag) liên quan khi người dùng tìm kiếm sản phẩm hoặc chọn chế độ Mã phụ */}
+                    {((searchTerm.trim() !== '' || searchMode === 'tag' || selectedUnit || selectedTag) && ((availableUnits && availableUnits.length > 1) || (availableTags && availableTags.length > 0 && !excludeTags))) && (
+                        <div className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/50 animate-in fade-in duration-150">
+                            {/* Chips Đơn vị tính của sản phẩm đang tìm */}
+                            {onUnitSelect && availableUnits && (availableUnits.length > 1 || selectedUnit) && (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mr-1 shrink-0">
+                                        <Scale size={12} />
+                                        <span>Lọc nhanh ĐVT:</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => onUnitSelect(null)}
+                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                                            !selectedUnit || selectedUnit === 'all'
+                                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
+                                        }`}
+                                    >
+                                        Tất cả ĐVT ({availableUnits.length})
+                                    </button>
+                                    {availableUnits.map((u) => {
+                                        const isActive = selectedUnit && normalizeSearchString(selectedUnit, true) === normalizeSearchString(u.unit, true)
+                                        return (
+                                            <button
+                                                key={u.unit}
+                                                type="button"
+                                                onClick={() => onUnitSelect(isActive ? null : u.unit)}
+                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                                                    isActive
+                                                        ? 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-200 dark:ring-emerald-900 shadow-2xs'
+                                                        : 'bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/70 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                                                }`}
+                                            >
+                                                <span>{u.unit}</span>
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                                                    isActive
+                                                        ? 'bg-white/20 text-white'
+                                                        : 'bg-emerald-200/70 dark:bg-emerald-900/70 text-emerald-900 dark:text-emerald-200'
+                                                }`}>
+                                                    {u.count} vt • {u.totalQty.toLocaleString('vi-VN')}
+                                                </span>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Chips Mã phụ (Tag) liên quan đến sản phẩm đang tìm */}
+                            {onTagSelect && availableTags && availableTags.length > 0 && !excludeTags && (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 dark:text-amber-400 mr-1 shrink-0">
+                                        <Tag size={12} />
+                                        <span>Mã phụ liên quan ({availableTags.length}):</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => onTagSelect(null)}
+                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                                            !selectedTag || selectedTag === 'all'
+                                                ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                                        }`}
+                                    >
+                                        Tất cả
+                                    </button>
+                                    {availableTags.slice(0, 20).map((t) => {
+                                        const isActive = selectedTag && normalizeSearchString(selectedTag, true) === normalizeSearchString(t.tag, true)
+                                        return (
+                                            <button
+                                                key={t.tag}
+                                                type="button"
+                                                onClick={() => onTagSelect(isActive ? null : t.tag)}
+                                                title={t.productNames.length > 0 ? `Sản phẩm: ${t.productNames.join(', ')}` : `Mã phụ: ${t.tag}`}
+                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                                                    isActive
+                                                        ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-200 dark:ring-amber-900 shadow-2xs'
+                                                        : 'bg-amber-50/80 dark:bg-amber-950/30 text-amber-900 dark:text-amber-300 border-amber-200 dark:border-amber-800/70 hover:bg-amber-100 dark:hover:bg-amber-900/50'
+                                                }`}
+                                            >
+                                                <span>🏷️ {t.tag}</span>
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                                                    isActive
+                                                        ? 'bg-white/25 text-white'
+                                                        : 'bg-amber-200/80 dark:bg-amber-900/70 text-amber-950 dark:text-amber-200'
+                                                }`}>
+                                                    {t.count} vt • {t.totalQty.toLocaleString('vi-VN')}
+                                                </span>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
             )}
 
             {/* Mobile Expanded Filters */}
@@ -910,6 +1195,42 @@ export function MapFilterBar({
                                 <option value="all">Tất cả danh mục</option>
                                 {categories.map((cat: any) => (
                                     <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    {onUnitSelect && availableUnits && availableUnits.length > 0 && (
+                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 w-full">
+                            <Scale size={14} className="text-emerald-600 shrink-0" />
+                            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Đơn vị tính:</span>
+                            <select
+                                value={selectedUnit || 'all'}
+                                onChange={(e) => onUnitSelect(e.target.value === 'all' ? null : e.target.value)}
+                                className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none w-full"
+                            >
+                                <option value="all">Tất cả ĐVT ({availableUnits.length})</option>
+                                {availableUnits.map((u) => (
+                                    <option key={u.unit} value={u.unit}>
+                                        {u.unit} ({u.count} vt - {u.totalQty.toLocaleString('vi-VN')})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    {onTagSelect && availableTags && availableTags.length > 0 && !excludeTags && (
+                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 w-full">
+                            <Tag size={14} className="text-amber-500 shrink-0" />
+                            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Mã phụ (Tag):</span>
+                            <select
+                                value={selectedTag || 'all'}
+                                onChange={(e) => onTagSelect(e.target.value === 'all' ? null : e.target.value)}
+                                className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none w-full"
+                            >
+                                <option value="all">Tất cả mã phụ ({availableTags.length})</option>
+                                {availableTags.map((t) => (
+                                    <option key={t.tag} value={t.tag}>
+                                        {t.tag} ({t.count} vt - {t.totalQty.toLocaleString('vi-VN')})
+                                    </option>
                                 ))}
                             </select>
                         </div>

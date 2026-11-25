@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { matchDateRange } from '@/lib/dateUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { PositionWithZone } from './useWarehouseData'
-import { matchSearch, advancedMatchSearch } from '@/lib/searchUtils'
+import { matchSearch, advancedMatchSearch, normalizeSearchString } from '@/lib/searchUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { decodeSTT } from '@/lib/numberUtils'
 import { decodeStampBox, matchBoxDeepCriteria, parseDateToComparable } from '@/lib/stampDecoder'
@@ -24,6 +24,8 @@ export type DeepDateField = 'packaging_date' | 'peeling_date' | 'raw_material_da
 export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds, onlyShowMarked, markedPositionIds, markedNotes }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
+    const [selectedUnit, setSelectedUnit] = useState<string | null>(null)
+    const [selectedTag, setSelectedTag] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [searchMode, setSearchMode] = useState<SearchMode>('all')
 
@@ -81,6 +83,44 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                     it.primary_category_id === selectedCategoryId ||
                     (it.category_ids && it.category_ids.includes(selectedCategoryId))
                 )
+            })
+        }
+
+        // Filter by Unit (Đơn vị tính)
+        if (selectedUnit && selectedUnit !== 'all') {
+            const normTargetUnit = normalizeSearchString(selectedUnit, true)
+            result = result.filter(p => {
+                if (!p.lot_id) return false
+                const lot = lotInfo[p.lot_id]
+                if (!lot) return false
+                const items = lot.items || []
+                if (items.length > 0) {
+                    return items.some((it: any) => {
+                        const u = (it.unit || lot.products?.unit || '').trim()
+                        if (!u) return false
+                        return normalizeSearchString(u, true) === normTargetUnit
+                    })
+                }
+                if (lot.products?.unit) {
+                    return normalizeSearchString(lot.products.unit, true) === normTargetUnit
+                }
+                return false
+            })
+        }
+
+        // Filter by Secondary Tag (Mã phụ liên quan)
+        if (selectedTag && selectedTag !== 'all') {
+            const normTargetTag = normalizeSearchString(selectedTag, true)
+            result = result.filter(p => {
+                if (!p.lot_id) return false
+                const lot = lotInfo[p.lot_id]
+                if (!lot) return false
+                const allLotTags: string[] = [
+                    ...(lot.tags || []),
+                    ...((lot.items || []).flatMap((it: any) => it.tags || [])),
+                    ...((lot.lot_tags || []).map((t: any) => typeof t === 'string' ? t : t.tag))
+                ].filter((t: string) => t && !t.startsWith('MERGED_') && !t.startsWith('SPLIT_'))
+                return allLotTags.some(t => normalizeSearchString(t, true) === normTargetTag)
             })
         }
 
@@ -148,7 +188,15 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             if (lot.code) res.push(lot.code)
                         }
 
+                        // Nếu đang lọc theo một đơn vị tính hoặc một tag cụ thể, chỉ khớp từ khóa trên item đúng ĐVT/tag đó (tránh khớp nhầm item khác trong pallet hỗn hợp)
+                        const normSelectedUnit = selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : null
+
                         lot.items?.forEach((it: any) => {
+                            if (normSelectedUnit) {
+                                const itUnit = normalizeSearchString(it.unit || lot.products?.unit || '', true)
+                                if (itUnit !== normSelectedUnit) return
+                            }
+
                             if (mode === 'all' || mode === 'name') {
                                 if (it.product_name) res.push(it.product_name)
                                 if (it.internal_name) res.push(it.internal_name)
@@ -162,12 +210,26 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             if (mode === 'all' || mode === 'category') {
                                 it.categoryNames?.forEach((cn: string) => res.push(cn))
                             }
+                            if (mode === 'all') {
+                                if (it.unit) res.push(it.unit)
+                            }
                         })
 
                         if ((mode === 'all' || mode === 'tag') && !isExcludeTagsActive) {
+                            const hasAnyTag = (lot.tags && lot.tags.length > 0) || (lot.lot_tags && lot.lot_tags.length > 0)
                             lot.tags?.forEach((t: string) => res.push(t))
                             if (!lot.tags?.length && lot.lot_tags) {
                                 lot.lot_tags.forEach((t: any) => res.push(t.tag))
+                            }
+                            // Khi chọn chế độ "Mã phụ (tag)" mà người dùng gõ tên sản phẩm / tên gõ tắt / SKU -> cho phép khớp những lô CÓ mã phụ của sản phẩm đó
+                            if (mode === 'tag' && hasAnyTag) {
+                                lot.items?.forEach((it: any) => {
+                                    if (it.product_name) res.push(it.product_name)
+                                    if (it.internal_name) res.push(it.internal_name)
+                                    if (it.aliases) res.push(it.aliases)
+                                    if (it.sku) res.push(it.sku)
+                                    if (it.internal_code) res.push(it.internal_code)
+                                })
                             }
                         }
 
@@ -412,9 +474,9 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
 
         return result
     }, [
-        positions, selectedZoneId, selectedCategoryId, searchTerm, searchMode, zones, lotInfo, 
+        positions, selectedZoneId, selectedCategoryId, selectedUnit, selectedTag, searchTerm, searchMode, zones, lotInfo, 
         startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds, 
-        onlyShowMarked, markedPositionIds, markedNotes,
+        onlyShowMarked, markedPositionIds, markedNotes, excludeTags,
         isDeepScanMode, deepScanTerm, deepDateField, deepStartDate, deepEndDate, 
         deepRegion, deepFactory, deepGrade, deepVariety, deepPackageSpec
     ])
@@ -534,9 +596,218 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         return zones.filter(z => idsWithAncestors.has(z.id))
     }, [zones, positions, selectedZoneId, onlyShowMarked, markedPositionIds])
 
+    // Danh sách Đơn vị tính (ĐVT) và Mã phụ (Tags) khả dụng theo kết quả tìm kiếm hiện tại
+    // Tính toán trên tập các vị trí thỏa mãn điều kiện tìm kiếm (trước khi ép cứng selectedUnit hoặc selectedTag) để người dùng thấy tất cả ĐVT / Tag liên quan của sản phẩm đang tìm
+    const { availableUnits, availableTags } = useMemo(() => {
+        const unitMap = new Map<string, { unit: string; count: number; totalQty: number; positionIds: Set<string> }>()
+        const tagMap = new Map<string, { tag: string; count: number; totalQty: number; products: Set<string>; skus: Set<string>; units: Set<string> }>()
+
+        const trimmedSearch = searchTerm.replace(/\b(!tag|-tag|notag|kotag|khongtag)\b/gi, '').trim()
+
+        // Helper kiểm tra 1 item có khớp từ khóa sản phẩm không
+        const itemMatchesSearch = (it: any, lot: any) => {
+            if (!trimmedSearch) return true
+            if (searchMode === 'position' || searchMode === 'stt' || searchMode === 'box_count' || searchMode === 'stamp') {
+                return true
+            }
+            // Nếu đang ở chế độ tag và từ khóa là đúng mã tag -> coi như khớp
+            const itemVals = [
+                it.product_name,
+                it.internal_name,
+                it.aliases,
+                it.sku,
+                it.internal_code,
+                ...(it.categoryNames || []),
+                ...(it.tags || []),
+                ...(lot?.tags || [])
+            ].filter(Boolean)
+            return advancedMatchSearch(itemVals, trimmedSearch) || matchSearch({
+                name: it.product_name,
+                internal_name: it.internal_name,
+                aliases: it.aliases,
+                sku: it.sku,
+                internal_code: it.internal_code
+            }, trimmedSearch)
+        }
+
+        // Duyệt trên toàn bộ positions thỏa mãn các điều kiện cơ bản (ngoài selectedUnit / selectedTag)
+        // Để chính xác và nhanh: lấy danh sách vị trí khớp các điều kiện khác
+        positions.forEach(p => {
+            if (!p.lot_id) return
+            const lot = lotInfo[p.lot_id]
+            if (!lot) return
+
+            // Kiểm tra category
+            if (selectedCategoryId && selectedCategoryId !== 'all') {
+                const matchCat = (lot.items || []).some((it: any) =>
+                    it.primary_category_id === selectedCategoryId ||
+                    (it.category_ids && it.category_ids.includes(selectedCategoryId))
+                )
+                if (!matchCat) return
+            }
+
+            // Kiểm tra marked
+            if (onlyShowMarked) {
+                if (!markedPositionIds || markedPositionIds.size === 0) return
+                const isM = markedPositionIds.has(p.id) || ((p as any).realIds && Array.isArray((p as any).realIds) && (p as any).realIds.some((id: string) => markedPositionIds.has(id)))
+                if (!isM) return
+            }
+
+            // Kiểm tra pending export
+            if (hidePendingExport && pendingExportPosIds && pendingExportPosIds.has(p.id)) {
+                return
+            }
+
+            // Kiểm tra từ khóa tìm kiếm nếu có
+            if (trimmedSearch) {
+                const lotSearchVals: string[] = [
+                    p.code,
+                    lot.code,
+                    lot.production_code,
+                    lot.productions?.code,
+                    lot.productions?.name,
+                    ...(lot.production_lot_codes || []),
+                    ...(lot.tags || []),
+                    ...((lot.lot_tags || []).map((t: any) => typeof t === 'string' ? t : t.tag)),
+                    ...((lot.items || []).flatMap((it: any) => [
+                        it.product_name,
+                        it.internal_name,
+                        it.aliases,
+                        it.sku,
+                        it.internal_code,
+                        it.unit,
+                        ...(it.categoryNames || []),
+                        ...(it.tags || [])
+                    ]))
+                ].filter(Boolean)
+
+                const isLotMatch = advancedMatchSearch(lotSearchVals, trimmedSearch) ||
+                    (lot.items || []).some((it: any) => matchSearch({
+                        name: it.product_name,
+                        internal_name: it.internal_name,
+                        aliases: it.aliases,
+                        sku: it.sku,
+                        internal_code: it.internal_code
+                    }, trimmedSearch))
+
+                if (!isLotMatch) return
+            }
+
+            const items = lot.items && lot.items.length > 0 ? lot.items : (lot.products ? [{
+                product_name: lot.products.name,
+                sku: lot.products.sku,
+                internal_code: lot.products.internal_code,
+                internal_name: lot.products.internal_name,
+                aliases: lot.products.aliases,
+                unit: lot.products.unit,
+                quantity: lot.quantity || 0,
+                tags: lot.tags || []
+            }] : [])
+
+            // 1. Gom Đơn vị tính (chỉ gom từ các items khớp với từ khóa tìm kiếm và khớp với selectedTag nếu đang chọn Tag)
+            const normTargetTag = selectedTag && selectedTag !== 'all' ? normalizeSearchString(selectedTag, true) : null
+            const lotAllTags: string[] = Array.from(new Set([
+                ...(lot.tags || []),
+                ...((lot.lot_tags || []).map((t: any) => typeof t === 'string' ? t : t.tag))
+            ])).filter((t: string) => t && !t.startsWith('MERGED_') && !t.startsWith('SPLIT_'))
+
+            const lotMatchesSelectedTag = !normTargetTag || lotAllTags.some(t => normalizeSearchString(t, true) === normTargetTag)
+
+            if (lotMatchesSelectedTag) {
+                items.forEach((it: any) => {
+                    if (!itemMatchesSearch(it, lot)) return
+                    const rawU = (it.unit || lot.products?.unit || '').trim()
+                    if (!rawU) return
+                    const uKey = normalizeSearchString(rawU, true)
+                    const existing = unitMap.get(uKey)
+                    const qty = Number(it.quantity) || 0
+                    if (existing) {
+                        if (!existing.positionIds.has(p.id)) {
+                            existing.positionIds.add(p.id)
+                            existing.count++
+                        }
+                        existing.totalQty += qty
+                    } else {
+                        unitMap.set(uKey, {
+                            unit: rawU,
+                            count: 1,
+                            totalQty: qty,
+                            positionIds: new Set([p.id])
+                        })
+                    }
+                })
+            }
+
+            // 2. Gom Mã phụ (Tags) (chỉ gom từ các vị trí khớp với selectedUnit nếu đang chọn ĐVT)
+            const normTargetUnit = selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : null
+            const matchingItemsForUnit = items.filter((it: any) => {
+                if (!itemMatchesSearch(it, lot)) return false
+                if (!normTargetUnit) return true
+                const rawU = (it.unit || lot.products?.unit || '').trim()
+                return normalizeSearchString(rawU, true) === normTargetUnit
+            })
+
+            if (matchingItemsForUnit.length > 0 && lotAllTags.length > 0) {
+                const posQty = matchingItemsForUnit.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0)
+                lotAllTags.forEach(rawTag => {
+                    const cleanT = rawTag.trim()
+                    if (!cleanT) return
+                    const tKey = normalizeSearchString(cleanT, true)
+                    const existing = tagMap.get(tKey)
+                    if (existing) {
+                        existing.count++
+                        existing.totalQty += posQty
+                        matchingItemsForUnit.forEach((it: any) => {
+                            if (it.product_name) existing.products.add(it.product_name)
+                            if (it.sku) existing.skus.add(it.sku)
+                            if (it.unit) existing.units.add(it.unit)
+                        })
+                    } else {
+                        const prods = new Set<string>()
+                        const skus = new Set<string>()
+                        const units = new Set<string>()
+                        matchingItemsForUnit.forEach((it: any) => {
+                            if (it.product_name) prods.add(it.product_name)
+                            if (it.sku) skus.add(it.sku)
+                            if (it.unit) units.add(it.unit)
+                        })
+                        tagMap.set(tKey, {
+                            tag: cleanT,
+                            count: 1,
+                            totalQty: posQty,
+                            products: prods,
+                            skus,
+                            units
+                        })
+                    }
+                })
+            }
+        })
+
+        return {
+            availableUnits: Array.from(unitMap.values())
+                .map(({ unit, count, totalQty }) => ({ unit, count, totalQty }))
+                .sort((a, b) => b.count - a.count),
+            availableTags: Array.from(tagMap.values())
+                .map(t => ({
+                    tag: t.tag,
+                    count: t.count,
+                    totalQty: t.totalQty,
+                    productNames: Array.from(t.products),
+                    skus: Array.from(t.skus),
+                    units: Array.from(t.units)
+                }))
+                .sort((a, b) => b.count - a.count)
+        }
+    }, [positions, lotInfo, searchTerm, searchMode, selectedCategoryId, selectedUnit, selectedTag, onlyShowMarked, markedPositionIds, hidePendingExport, pendingExportPosIds])
+
     return {
         selectedZoneId, setSelectedZoneId,
         selectedCategoryId, setSelectedCategoryId,
+        selectedUnit, setSelectedUnit,
+        selectedTag, setSelectedTag,
+        availableUnits,
+        availableTags,
         searchTerm, setSearchTerm,
         searchMode, setSearchMode,
         dateFilterField, setDateFilterField,

@@ -34,8 +34,8 @@ export const WAREHOUSE_SEARCH_MODES: {
     id: 'tag',
     label: 'Theo Mã phụ',
     shortLabel: 'Mã phụ',
-    placeholder: 'Nhập mã phụ (tag)...',
-    subHint: 'Tag đính kèm',
+    placeholder: 'Nhập mã phụ (tag) hoặc tên SP để hiện các tag liên quan...',
+    subHint: 'Tag hoặc gõ tên SP',
   },
   {
     id: 'stt',
@@ -91,6 +91,23 @@ export interface UniqueTagItem {
   totalQuantity: number
   unitsMap: Map<string, number>
   sampleProductName: string | null
+  productNames?: string[]
+  skus?: string[]
+  aliasesList?: string[]
+}
+
+export interface AvailableUnitOption {
+  unit: string
+  count: number
+  totalQty: number
+}
+
+export interface AvailableTagOption {
+  tag: string
+  count: number
+  totalQty: number
+  unitsMap: Map<string, number>
+  productNames: string[]
 }
 
 export interface PositionProductSubItem {

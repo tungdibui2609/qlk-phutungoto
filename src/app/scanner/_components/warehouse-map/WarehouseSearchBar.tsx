@@ -14,6 +14,7 @@ import {
   Tag,
   ChevronDown,
   Check,
+  Scale,
 } from 'lucide-react'
 import type {
   DateFilterType,
@@ -21,15 +22,23 @@ import type {
   UniqueSttItem,
   UniqueTagItem,
   WarehouseSearchMode,
+  AvailableUnitOption,
+  AvailableTagOption,
 } from './types'
 import { DATE_FILTER_OPTIONS, WAREHOUSE_SEARCH_MODES } from './types'
 import { formatUnitsSummary } from './mapHelpers'
-import { normalizeSearchString, matchPalletSearch } from '@/lib/searchUtils'
+import { normalizeSearchString, matchPalletSearch, matchSearch } from '@/lib/searchUtils'
 
 export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   uniqueProducts,
   uniqueStts = [],
   uniqueTags = [],
+  availableUnits = [],
+  selectedUnit = 'all',
+  onSelectUnit,
+  availableTags = [],
+  selectedTag = 'all',
+  onSelectTag,
   searchQuery,
   searchMode = 'all',
   onSearchModeChange,
@@ -53,6 +62,12 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   uniqueProducts: UniqueProductItem[]
   uniqueStts?: UniqueSttItem[]
   uniqueTags?: UniqueTagItem[]
+  availableUnits?: AvailableUnitOption[]
+  selectedUnit?: string
+  onSelectUnit?: (unit: string) => void
+  availableTags?: AvailableTagOption[]
+  selectedTag?: string
+  onSelectTag?: (tag: string) => void
   searchQuery: string
   searchMode?: WarehouseSearchMode
   onSearchModeChange?: (mode: WarehouseSearchMode) => void
@@ -123,7 +138,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
     return list.sort((a, b) => b.score - a.score).slice(0, 6)
   }, [inputValue, uniqueStts, searchMode])
 
-  // Fast pre-indexed Tag (Mã phụ) suggestions
+  // Fast pre-indexed Tag (Mã phụ) suggestions - Hỗ trợ gõ cả tên sản phẩm / tên viết tắt để hiện các Tag liên quan
   const tagSuggestions = useMemo(() => {
     if (searchMode !== 'all' && searchMode !== 'tag') return []
     const raw = inputValue.trim()
@@ -135,16 +150,43 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
     const list: Array<{ item: UniqueTagItem; score: number }> = []
     for (let i = 0; i < uniqueTags.length; i++) {
       const t = uniqueTags[i]
+      let score = 0
       if (t.normTag === normQ || t.unaccTag === unaccQ) {
-        list.push({ item: t, score: 4500 })
+        score = 4500
       } else if (t.normTag.startsWith(normQ) || t.unaccTag.startsWith(unaccQ)) {
-        list.push({ item: t, score: 3200 - t.normTag.length })
+        score = 3200 - t.normTag.length
       } else if (t.normTag.includes(normQ) || t.unaccTag.includes(unaccQ)) {
-        list.push({ item: t, score: 2200 - t.normTag.length })
+        score = 2200 - t.normTag.length
+      } else if (searchMode === 'tag') {
+        // Khi ở chế độ Mã phụ: người dùng gõ tên sản phẩm / tên viết tắt / SKU -> hiện các Tag liên quan của sản phẩm đó
+        const prodNames = t.productNames || (t.sampleProductName ? [t.sampleProductName] : [])
+        const skus = t.skus || []
+        const aliases = t.aliasesList || []
+        const prodMatched =
+          prodNames.some(pn => matchSearch(pn, raw)) ||
+          skus.some(s => matchSearch(s, raw)) ||
+          aliases.some(al => matchSearch(al, raw)) ||
+          prodNames.some(pn =>
+            matchPalletSearch(
+              {
+                product_name: pn,
+                aliases: aliases.join(', '),
+                sku: skus.join(', '),
+              },
+              raw
+            )
+          )
+        if (prodMatched) {
+          score = 1800 + Math.min(t.positionCount, 200)
+        }
+      }
+
+      if (score > 0) {
+        list.push({ item: t, score })
       }
     }
 
-    return list.sort((a, b) => b.score - a.score).slice(0, searchMode === 'tag' ? 8 : 4)
+    return list.sort((a, b) => b.score - a.score).slice(0, searchMode === 'tag' ? 12 : 4)
   }, [inputValue, uniqueTags, searchMode])
 
   // Fast pre-indexed product suggestions (takes < 0.01ms, never lags typing)
@@ -281,9 +323,16 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   }
 
   const handleSelectTag = (tag: string) => {
-    setInputValue(tag)
-    setShowSuggestions(false)
-    onExecuteSearch(tag)
+    if (onSelectTag) {
+      onSelectTag(tag)
+    }
+    if (searchMode === 'tag') {
+      setInputValue(tag)
+      setShowSuggestions(false)
+      onExecuteSearch(tag)
+    } else {
+      setShowSuggestions(false)
+    }
   }
 
   const handleSelectMode = (mode: WarehouseSearchMode) => {
@@ -442,10 +491,121 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
         </button>
       </div>
 
+      {/* ── THANH CHỌN NHANH ĐƠN VỊ TÍNH (ĐVT) & MÃ PHỤ (TAG) LIÊN QUAN KHI TÌM SẢN PHẨM ── */}
+      {((searchQuery.trim().length > 0 || searchMode === 'tag' || (selectedUnit && selectedUnit !== 'all') || (selectedTag && selectedTag !== 'all')) &&
+        ((availableUnits && (availableUnits.length > 1 || (selectedUnit && selectedUnit !== 'all'))) || (availableTags && availableTags.length > 0))) && (
+        <div className="pt-2 space-y-1.5 border-t border-slate-800/70 mt-2 animate-in fade-in">
+          {/* 1. Dãy nút lọc Đơn vị tính (ĐVT) */}
+          {onSelectUnit && availableUnits && (availableUnits.length > 1 || (selectedUnit && selectedUnit !== 'all')) && (
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
+              <span className="text-emerald-400 font-bold text-[10px] shrink-0 flex items-center gap-1">
+                <Scale size={11} />
+                <span>ĐVT:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => onSelectUnit('all')}
+                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
+                  !selectedUnit || selectedUnit === 'all'
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
+                    : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                Tất cả ({availableUnits.length})
+              </button>
+              {availableUnits.map(u => {
+                const isSel = selectedUnit !== 'all' && normalizeSearchString(selectedUnit, true) === normalizeSearchString(u.unit, true)
+                return (
+                  <button
+                    key={u.unit}
+                    type="button"
+                    onClick={() => onSelectUnit(isSel ? 'all' : u.unit)}
+                    className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
+                      isSel
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black shadow-xs'
+                        : 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60 hover:bg-emerald-900/50'
+                    }`}
+                  >
+                    {u.unit} ({u.count} ô · {u.totalQty.toLocaleString('vi-VN')})
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 2. Dãy nút lọc Mã phụ (Tag) liên quan đến sản phẩm đang tìm */}
+          {onSelectTag && availableTags && availableTags.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
+              <span className="text-amber-400 font-bold text-[10px] shrink-0 flex items-center gap-1">
+                <Tag size={11} />
+                <span>Tag ({availableTags.length}):</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => onSelectTag('all')}
+                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
+                  !selectedTag || selectedTag === 'all'
+                    ? 'bg-amber-400 text-slate-950 border-amber-300 font-black'
+                    : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                Tất cả
+              </button>
+              {availableTags.slice(0, 20).map(t => {
+                const isSel = selectedTag !== 'all' && normalizeSearchString(selectedTag, true) === normalizeSearchString(t.tag, true)
+                return (
+                  <button
+                    key={t.tag}
+                    type="button"
+                    onClick={() => onSelectTag(isSel ? 'all' : t.tag)}
+                    title={t.productNames.length > 0 ? `Sản phẩm: ${t.productNames.join(', ')}` : `Mã phụ: ${t.tag}`}
+                    className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
+                      isSel
+                        ? 'bg-amber-400 text-slate-950 border-amber-300 font-black shadow-xs'
+                        : 'bg-amber-950/40 text-amber-300 border-amber-800/60 hover:bg-amber-900/50'
+                    }`}
+                  >
+                    🏷️ {t.tag} ({t.count} ô · {formatUnitsSummary(t.unitsMap, { short: true })})
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── THANH CHIPS BỘ LỌC ĐANG HOẠT ĐỘNG (QUICK ACTIVE CHIPS) ── */}
       {hasActiveFilters && (
         <div className="flex items-center gap-1.5 overflow-x-auto pt-2 scrollbar-none text-[11px]">
           <span className="text-slate-400 font-semibold text-[10px] shrink-0">Đang lọc:</span>
+          {selectedUnit && selectedUnit !== 'all' && onSelectUnit && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-medium shrink-0">
+              <Scale size={11} />
+              <span>ĐVT: {selectedUnit}</span>
+              <button
+                type="button"
+                onClick={() => onSelectUnit('all')}
+                className="hover:text-white ml-0.5"
+                title="Xóa lọc ĐVT"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          )}
+          {selectedTag && selectedTag !== 'all' && onSelectTag && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-medium shrink-0">
+              <Tag size={11} />
+              <span>Tag: {selectedTag}</span>
+              <button
+                type="button"
+                onClick={() => onSelectTag('all')}
+                className="hover:text-white ml-0.5"
+                title="Xóa lọc Tag"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          )}
           {(filterStartDate || filterEndDate) && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-medium shrink-0">
               <Calendar size={11} />
@@ -677,6 +837,86 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
               </div>
             )}
           </div>
+
+          {/* 3. Đơn vị tính (ĐVT) */}
+          {onSelectUnit && availableUnits && availableUnits.length > 0 && (
+            <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+              <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                <Scale size={12} className="text-emerald-400" />
+                <span>Đơn vị tính ({availableUnits.length}):</span>
+              </span>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                <button
+                  type="button"
+                  onClick={() => onSelectUnit('all')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
+                    !selectedUnit || selectedUnit === 'all'
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
+                      : 'bg-slate-950 text-slate-300 border-slate-800'
+                  }`}
+                >
+                  Tất cả ĐVT
+                </button>
+                {availableUnits.map(u => {
+                  const isSel = selectedUnit !== 'all' && normalizeSearchString(selectedUnit, true) === normalizeSearchString(u.unit, true)
+                  return (
+                    <button
+                      key={u.unit}
+                      type="button"
+                      onClick={() => onSelectUnit(isSel ? 'all' : u.unit)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
+                        isSel
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
+                          : 'bg-slate-950 text-slate-300 border-slate-800'
+                      }`}
+                    >
+                      {u.unit} ({u.count} ô · {u.totalQty.toLocaleString('vi-VN')})
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 4. Mã phụ (Tag) */}
+          {onSelectTag && availableTags && availableTags.length > 0 && (
+            <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+              <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                <Tag size={12} className="text-amber-400" />
+                <span>Mã phụ / Tag liên quan ({availableTags.length}):</span>
+              </span>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                <button
+                  type="button"
+                  onClick={() => onSelectTag('all')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
+                    !selectedTag || selectedTag === 'all'
+                      ? 'bg-amber-400 text-slate-950 border-amber-300 font-black'
+                      : 'bg-slate-950 text-slate-300 border-slate-800'
+                  }`}
+                >
+                  Tất cả Tag
+                </button>
+                {availableTags.slice(0, 30).map(t => {
+                  const isSel = selectedTag !== 'all' && normalizeSearchString(selectedTag, true) === normalizeSearchString(t.tag, true)
+                  return (
+                    <button
+                      key={t.tag}
+                      type="button"
+                      onClick={() => onSelectTag(isSel ? 'all' : t.tag)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
+                        isSel
+                          ? 'bg-amber-400 text-slate-950 border-amber-300 font-black'
+                          : 'bg-slate-950 text-slate-300 border-slate-800'
+                      }`}
+                    >
+                      🏷️ {t.tag} ({t.count} ô)
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -762,11 +1002,15 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                         <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black font-mono">
                           🏷️ TAG: {t.tag}
                         </span>
-                        {t.sampleProductName && (
+                        {(t.productNames && t.productNames.length > 0) ? (
+                          <span className="text-[11px] text-slate-300 truncate">
+                            {t.productNames.slice(0, 2).join(', ')}{t.productNames.length > 2 ? ` (+${t.productNames.length - 2})` : ''}
+                          </span>
+                        ) : t.sampleProductName ? (
                           <span className="text-[11px] text-slate-300 truncate">
                             {t.sampleProductName}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
                         <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/40">

@@ -37,6 +37,8 @@ import {
   type UniqueProductItem,
   type UniqueSttItem,
   type UniqueTagItem,
+  type AvailableUnitOption,
+  type AvailableTagOption,
   type WarehouseSearchMode,
   WAREHOUSE_SEARCH_MODES,
   type ZoneItem,
@@ -161,11 +163,13 @@ export default function WarehouseMapTab() {
   const [expandedTierIds, setExpandedTierIds] = useState<Set<string>>(new Set())
   const [highlightedPosId, setHighlightedPosId] = useState<string | null>(null)
 
-  // Bộ lọc nâng cao: Ngày tháng & Vùng miền
+  // Bộ lọc nâng cao: Ngày tháng, Vùng miền, Đơn vị tính & Mã phụ (Tag)
   const [filterDateType, setFilterDateType] = useState<DateFilterType>('packaging_date')
   const [filterStartDate, setFilterStartDate] = useState<string>('')
   const [filterEndDate, setFilterEndDate] = useState<string>('')
   const [filterRegion, setFilterRegion] = useState<string>('all')
+  const [selectedUnit, setSelectedUnit] = useState<string>('all')
+  const [selectedTag, setSelectedTag] = useState<string>('all')
   const [isFilterOpen, setIsFilterOpen] = useState<boolean>(false)
 
   // Position detail modal
@@ -909,14 +913,24 @@ export default function WarehouseMapTab() {
     return Array.from(sttMap.values())
   }, [positions])
 
-  // ── Danh sách Mã phụ (Tags) duy nhất đang có trong kho (cho gợi ý & tìm kiếm Mã phụ) ──
+  // ── Danh sách Mã phụ (Tags) duy nhất đang có trong kho (cho gợi ý & tìm kiếm Mã phụ theo tên SP) ──
   const uniqueTags = useMemo(() => {
-    const tagMap = new Map<string, UniqueTagItem>()
+    const tagMap = new Map<
+      string,
+      UniqueTagItem & {
+        prodSet: Set<string>
+        skuSet: Set<string>
+        aliasSet: Set<string>
+      }
+    >()
 
     for (let i = 0; i < positions.length; i++) {
       const p = positions[i]
       if (!p.lot_id) continue
       const tags = p.tags && Array.isArray(p.tags) ? p.tags : []
+      if (tags.length === 0) continue
+
+      const subItems = getPositionProductItems(p)
 
       for (let j = 0; j < tags.length; j++) {
         const rawTag = String(tags[j] || '').trim()
@@ -933,9 +947,28 @@ export default function WarehouseMapTab() {
           if (!existing.sampleProductName && p.product_name) {
             existing.sampleProductName = p.product_name
           }
+          if (p.product_name) existing.prodSet.add(p.product_name)
+          if (p.sku) existing.skuSet.add(p.sku)
+          if (p.aliases) existing.aliasSet.add(p.aliases)
+          subItems.forEach(sub => {
+            if (sub.name) existing.prodSet.add(sub.name)
+            if (sub.sku) existing.skuSet.add(sub.sku)
+            if (sub.aliases) existing.aliasSet.add(sub.aliases)
+          })
         } else {
           const uMap = new Map<string, number>()
           if (qty > 0) uMap.set(uCat, qty)
+          const prodSet = new Set<string>()
+          const skuSet = new Set<string>()
+          const aliasSet = new Set<string>()
+          if (p.product_name) prodSet.add(p.product_name)
+          if (p.sku) skuSet.add(p.sku)
+          if (p.aliases) aliasSet.add(p.aliases)
+          subItems.forEach(sub => {
+            if (sub.name) prodSet.add(sub.name)
+            if (sub.sku) skuSet.add(sub.sku)
+            if (sub.aliases) aliasSet.add(sub.aliases)
+          })
           tagMap.set(key, {
             tag: rawTag,
             normTag: normalizeSearchString(rawTag),
@@ -944,12 +977,22 @@ export default function WarehouseMapTab() {
             totalQuantity: qty,
             unitsMap: uMap,
             sampleProductName: p.product_name || null,
+            prodSet,
+            skuSet,
+            aliasSet,
           })
         }
       }
     }
 
-    return Array.from(tagMap.values()).sort((a, b) => b.positionCount - a.positionCount)
+    return Array.from(tagMap.values())
+      .map(({ prodSet, skuSet, aliasSet, ...rest }) => ({
+        ...rest,
+        productNames: Array.from(prodSet),
+        skus: Array.from(skuSet),
+        aliasesList: Array.from(aliasSet),
+      }))
+      .sort((a, b) => b.positionCount - a.positionCount)
   }, [positions])
 
   const availableRegions = useMemo(() => {
@@ -974,8 +1017,14 @@ export default function WarehouseMapTab() {
   }, [positions])
 
   const hasActiveFilters = useMemo(() => {
-    return !!(filterStartDate || filterEndDate || (filterRegion && filterRegion !== 'all'))
-  }, [filterStartDate, filterEndDate, filterRegion])
+    return !!(
+      filterStartDate ||
+      filterEndDate ||
+      (filterRegion && filterRegion !== 'all') ||
+      (selectedUnit && selectedUnit !== 'all') ||
+      (selectedTag && selectedTag !== 'all')
+    )
+  }, [filterStartDate, filterEndDate, filterRegion, selectedUnit, selectedTag])
 
   const handleSetDatePreset = useCallback(
     (preset: 'today' | 3 | 7 | 'this_month' | 'clear') => {
@@ -1010,6 +1059,8 @@ export default function WarehouseMapTab() {
     setFilterStartDate('')
     setFilterEndDate('')
     setFilterRegion('all')
+    setSelectedUnit('all')
+    setSelectedTag('all')
   }, [])
 
   const handleClearAllSearchAndFilters = useCallback(() => {
@@ -1018,6 +1069,8 @@ export default function WarehouseMapTab() {
     setFilterStartDate('')
     setFilterEndDate('')
     setFilterRegion('all')
+    setSelectedUnit('all')
+    setSelectedTag('all')
     setSearchTab('breakdown')
   }, [])
 
@@ -1156,8 +1209,10 @@ export default function WarehouseMapTab() {
     const hasQuery = q.length > 0
     const hasDateFilter = !!(filterStartDate || filterEndDate)
     const hasRegionFilter = !!(filterRegion && filterRegion !== 'all')
+    const hasUnitFilter = !!(selectedUnit && selectedUnit !== 'all')
+    const hasTagFilter = !!(selectedTag && selectedTag !== 'all')
 
-    if (!hasQuery && !hasDateFilter && !hasRegionFilter) return []
+    if (!hasQuery && !hasDateFilter && !hasRegionFilter && !hasUnitFilter && !hasTagFilter) return []
 
     const isExactProductQuery = hasQuery && exactProductNamesSet.has(q)
     const isSttPrefixQuery = hasQuery && /^(#|stt[:\s-#]+)/i.test(q)
@@ -1166,13 +1221,15 @@ export default function WarehouseMapTab() {
       : ''
     const isLikelyPositionCodeQuery = hasQuery && /^k\d/i.test(q)
     const normRegionFilter = hasRegionFilter ? normalizeSearchString(filterRegion, true) : ''
+    const normUnitFilter = hasUnitFilter ? normalizeSearchString(selectedUnit, true) : ''
+    const normTagFilter = hasTagFilter ? normalizeSearchString(selectedTag, true) : ''
 
     const matched: { pos: PositionItem; score: number }[] = []
 
     for (let i = 0; i < positions.length; i++) {
       const p = positions[i]
 
-      if (!p.lot_id && (hasDateFilter || hasRegionFilter || !isLikelyPositionCodeQuery)) {
+      if (!p.lot_id && (hasDateFilter || hasRegionFilter || hasUnitFilter || hasTagFilter || !isLikelyPositionCodeQuery)) {
         continue
       }
 
@@ -1206,12 +1263,44 @@ export default function WarehouseMapTab() {
         if (!matchedRegion) continue
       }
 
-    if (hasQuery) {
+      // Lọc theo Mã phụ (Tag) đã chọn
+      if (hasTagFilter) {
+        const pTags = p.tags && Array.isArray(p.tags) ? p.tags : []
+        const hasMatchedTag = pTags.some(
+          t => t && !String(t).startsWith('MERGED_') && normalizeSearchString(String(t), true) === normTagFilter
+        )
+        if (!hasMatchedTag) continue
+      }
+
+      // Lọc theo Đơn vị tính (ĐVT) đã chọn
+      if (hasUnitFilter) {
+        const subItems = getPositionProductItems(p)
+        const hasMatchedUnit =
+          subItems.some(sub => {
+            if (normalizeSearchString(sub.unit, true) !== normUnitFilter) return false
+            if (hasQuery && isExactProductQuery) return sub.name === q
+            if (hasQuery && (searchMode === 'name' || searchMode === 'all')) {
+              return matchSearch({ name: sub.name, aliases: sub.aliases || p.aliases, sku: sub.sku }, q)
+            }
+            return true
+          }) ||
+          (subItems.length === 0 && normalizeSearchString(getCleanUnitCategory(p.unit), true) === normUnitFilter) ||
+          (p.items && p.items.some(it => normalizeSearchString(it.unit || p.unit || '', true) === normUnitFilter))
+        if (!hasMatchedUnit) continue
+      }
+
+      if (hasQuery) {
         if (searchMode === 'name') {
           // CHẾ ĐỘ: THEO TÊN (HỖ TRỢ ĐẦY ĐỦ TÊN VIẾT TẮT / ALIASES)
           if (isExactProductQuery) {
             const subItems = getPositionProductItems(p)
-            if (subItems.some(sub => sub.name === q)) {
+            if (
+              subItems.some(
+                sub =>
+                  sub.name === q &&
+                  (!hasUnitFilter || normalizeSearchString(sub.unit, true) === normUnitFilter)
+              )
+            ) {
               matched.push({ pos: p, score: 2000 })
             }
             continue
@@ -1223,6 +1312,7 @@ export default function WarehouseMapTab() {
 
           for (let sIdx = 0; sIdx < subItems.length; sIdx++) {
             const sub = subItems[sIdx]
+            if (hasUnitFilter && normalizeSearchString(sub.unit, true) !== normUnitFilter) continue
             const nameObj = {
               name: sub.name,
               aliases: sub.aliases || p.aliases,
@@ -1234,7 +1324,7 @@ export default function WarehouseMapTab() {
             }
           }
 
-          if (!isNameMatch && p.product_name) {
+          if (!isNameMatch && p.product_name && !hasUnitFilter) {
             const palletNameObj = {
               name: p.product_name,
               aliases: p.aliases,
@@ -1292,15 +1382,16 @@ export default function WarehouseMapTab() {
             matched.push({ pos: p, score })
           }
         } else if (searchMode === 'tag') {
-          // CHẾ ĐỘ: THEO MÃ PHỤ (TAG)
+          // CHẾ ĐỘ: THEO MÃ PHỤ (TAG) - Hỗ trợ gõ trực tiếp Mã phụ HOẶC gõ Tên sản phẩm để lọc các vị trí có Tag của sản phẩm đó
           const qTagNorm = normalizeSearchString(q, true)
-          const tags = p.tags && Array.isArray(p.tags) ? p.tags : []
+          const tags = (p.tags && Array.isArray(p.tags) ? p.tags : []).filter(
+            t => t && !String(t).startsWith('MERGED_')
+          )
           let isTagMatch = false
           let score = 0
 
           for (let tIdx = 0; tIdx < tags.length; tIdx++) {
             const rawTag = String(tags[tIdx] || '').trim()
-            if (!rawTag || rawTag.startsWith('MERGED_')) continue
             const tagNorm = normalizeSearchString(rawTag, true)
             if (tagNorm === qTagNorm) {
               isTagMatch = true
@@ -1309,6 +1400,14 @@ export default function WarehouseMapTab() {
             } else if (tagNorm.includes(qTagNorm)) {
               isTagMatch = true
               score = 3000
+            }
+          }
+
+          // Nếu không khớp trực tiếp chuỗi tag nhưng lô này CÓ tag và khớp Tên sản phẩm / Tên viết tắt / SKU
+          if (!isTagMatch && tags.length > 0) {
+            if (matchPalletSearch(p, q)) {
+              isTagMatch = true
+              score = 2000
             }
           }
 
@@ -1334,7 +1433,13 @@ export default function WarehouseMapTab() {
           // CHẾ ĐỘ: TỔNG HỢP (HỖ TRỢ ĐẦY ĐỦ TÊN VIẾT TẮT, MÃ, MÃ PHỤ, STT, VỊ TRÍ)
           if (isExactProductQuery) {
             const subItems = getPositionProductItems(p)
-            if (subItems.some(sub => sub.name === q)) {
+            if (
+              subItems.some(
+                sub =>
+                  sub.name === q &&
+                  (!hasUnitFilter || normalizeSearchString(sub.unit, true) === normUnitFilter)
+              )
+            ) {
               matched.push({ pos: p, score: 2000 })
             }
             continue
@@ -1383,6 +1488,183 @@ export default function WarehouseMapTab() {
     filterStartDate,
     filterEndDate,
     filterRegion,
+    selectedUnit,
+    selectedTag,
+    exactProductNamesSet,
+  ])
+
+  // ── Danh sách Đơn vị tính (ĐVT) & Mã phụ (Tag) liên quan đến kết quả tìm kiếm hiện tại ──
+  const { availableUnits, availableTags } = useMemo(() => {
+    const unitMap = new Map<string, { unit: string; count: number; totalQty: number; posSet: Set<string> }>()
+    const tagMap = new Map<string, { tag: string; count: number; totalQty: number; unitsMap: Map<string, number>; prodSet: Set<string> }>()
+
+    const q = searchQuery.trim()
+    const hasQuery = q.length > 0
+    const hasDateFilter = !!(filterStartDate || filterEndDate)
+    const hasRegionFilter = !!(filterRegion && filterRegion !== 'all')
+    const isExactProductQuery = hasQuery && exactProductNamesSet.has(q)
+    const normRegionFilter = hasRegionFilter ? normalizeSearchString(filterRegion, true) : ''
+    const normSelectedUnit = selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : ''
+    const normSelectedTag = selectedTag && selectedTag !== 'all' ? normalizeSearchString(selectedTag, true) : ''
+
+    for (let i = 0; i < positions.length; i++) {
+      const p = positions[i]
+      if (!p.lot_id) continue
+
+      if (hasDateFilter) {
+        let targetDate: string | null = null
+        if (filterDateType === 'packaging_date') targetDate = p.packaging_date || null
+        else if (filterDateType === 'peeling_date') targetDate = p.peeling_date || p.packaging_date || null
+        else if (filterDateType === 'raw_material_date') targetDate = p.raw_material_date || null
+        else if (filterDateType === 'inbound_date') targetDate = p.inbound_date || null
+        if (!targetDate) continue
+        if (filterStartDate && targetDate < filterStartDate) continue
+        if (filterEndDate && targetDate > filterEndDate) continue
+      }
+
+      if (hasRegionFilter) {
+        const pZones =
+          p.material_zones && p.material_zones.length > 0
+            ? p.material_zones
+            : p.material_zone
+            ? [p.material_zone]
+            : []
+        if (pZones.length === 0) continue
+        const matchedRegion = pZones.some(z => {
+          const normZ = normalizeSearchString(z, true)
+          return normZ.includes(normRegionFilter) || normRegionFilter.includes(normZ)
+        })
+        if (!matchedRegion) continue
+      }
+
+      if (hasQuery) {
+        if (isExactProductQuery) {
+          const subItems = getPositionProductItems(p)
+          if (!subItems.some(sub => sub.name === q)) continue
+        } else if (!matchPalletSearch(p, q)) {
+          continue
+        }
+      }
+
+      const subItems = getPositionProductItems(p)
+      const pTags = (p.tags && Array.isArray(p.tags) ? p.tags : []).filter(
+        t => t && !String(t).startsWith('MERGED_')
+      )
+      const posMatchesSelectedTag =
+        !normSelectedTag ||
+        pTags.some(t => normalizeSearchString(String(t), true) === normSelectedTag)
+
+      // 1. Gom Đơn vị tính (ĐVT)
+      if (posMatchesSelectedTag) {
+        const matchedSubsForQuery =
+          hasQuery && subItems.length > 1
+            ? isExactProductQuery
+              ? subItems.filter(s => s.name === q)
+              : subItems.filter(s =>
+                  matchSearch({ name: s.name, aliases: s.aliases || p.aliases, sku: s.sku }, q)
+                )
+            : subItems
+        const effectiveSubs = matchedSubsForQuery.length > 0 ? matchedSubsForQuery : subItems
+
+        effectiveSubs.forEach(sub => {
+          const rawU = (sub.unit || getCleanUnitCategory(p.unit)).trim()
+          if (!rawU) return
+          const uKey = normalizeSearchString(rawU, true)
+          const existing = unitMap.get(uKey)
+          if (existing) {
+            if (!existing.posSet.has(p.id)) {
+              existing.posSet.add(p.id)
+              existing.count++
+            }
+            existing.totalQty += sub.quantity || 0
+          } else {
+            unitMap.set(uKey, {
+              unit: rawU,
+              count: 1,
+              totalQty: sub.quantity || 0,
+              posSet: new Set([p.id]),
+            })
+          }
+        })
+      }
+
+      // 2. Gom Mã phụ (Tags) liên quan
+      if (pTags.length > 0) {
+        const subsForUnit = subItems.filter(sub => {
+          if (hasQuery && isExactProductQuery && sub.name !== q) return false
+          if (
+            hasQuery &&
+            subItems.length > 1 &&
+            !isExactProductQuery &&
+            !matchSearch({ name: sub.name, aliases: sub.aliases || p.aliases, sku: sub.sku }, q)
+          ) {
+            return false
+          }
+          if (normSelectedUnit && normalizeSearchString(sub.unit, true) !== normSelectedUnit) {
+            return false
+          }
+          return true
+        })
+
+        if (subsForUnit.length > 0 || (subItems.length === 0 && (!normSelectedUnit || normalizeSearchString(getCleanUnitCategory(p.unit), true) === normSelectedUnit))) {
+          const posQty =
+            subsForUnit.length > 0
+              ? subsForUnit.reduce((s, it) => s + (it.quantity || 0), 0)
+              : p.quantity || 0
+          const posUnit =
+            subsForUnit.length > 0 ? subsForUnit[0].unit : getCleanUnitCategory(p.unit)
+
+          pTags.forEach(rawTag => {
+            const cleanT = String(rawTag).trim()
+            if (!cleanT) return
+            const tKey = cleanT.toUpperCase()
+            const existing = tagMap.get(tKey)
+            if (existing) {
+              existing.count++
+              existing.totalQty += posQty
+              existing.unitsMap.set(posUnit, (existing.unitsMap.get(posUnit) || 0) + posQty)
+              if (p.product_name) existing.prodSet.add(p.product_name)
+            } else {
+              const uMap = new Map<string, number>()
+              if (posQty > 0) uMap.set(posUnit, posQty)
+              const prodSet = new Set<string>()
+              if (p.product_name) prodSet.add(p.product_name)
+              tagMap.set(tKey, {
+                tag: cleanT,
+                count: 1,
+                totalQty: posQty,
+                unitsMap: uMap,
+                prodSet,
+              })
+            }
+          })
+        }
+      }
+    }
+
+    return {
+      availableUnits: Array.from(unitMap.values())
+        .map(({ unit, count, totalQty }) => ({ unit, count, totalQty }))
+        .sort((a, b) => b.count - a.count) as AvailableUnitOption[],
+      availableTags: Array.from(tagMap.values())
+        .map(({ tag, count, totalQty, unitsMap, prodSet }) => ({
+          tag,
+          count,
+          totalQty,
+          unitsMap,
+          productNames: Array.from(prodSet),
+        }))
+        .sort((a, b) => b.count - a.count) as AvailableTagOption[],
+    }
+  }, [
+    positions,
+    searchQuery,
+    filterDateType,
+    filterStartDate,
+    filterEndDate,
+    filterRegion,
+    selectedUnit,
+    selectedTag,
     exactProductNamesSet,
   ])
 
@@ -1450,21 +1732,29 @@ export default function WarehouseMapTab() {
     const grandUnitsMap = new Map<string, number>()
     const qClean = searchQuery.trim()
     const isExactProd = qClean.length > 0 && exactProductNamesSet.has(qClean)
+    const normUnitFilter =
+      selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : ''
 
     matchingPositions.forEach(p => {
       const subItems = getPositionProductItems(p)
       let itemsToSum: Array<{ quantity: number; unit: string }> = []
 
-      if (subItems.length > 1 && qClean) {
-        const matchedSubs = isExactProd
-          ? subItems.filter(s => s.name === qClean)
-          : subItems.filter(
-              s =>
-                matchSearch(s.name, qClean) ||
-                (s.sku ? matchSearch(s.sku, qClean) : false)
-            )
+      if (subItems.length > 1 && (qClean || normUnitFilter)) {
+        const matchedSubs = subItems.filter(s => {
+          if (normUnitFilter && normalizeSearchString(s.unit, true) !== normUnitFilter) return false
+          if (!qClean) return true
+          if (isExactProd) return s.name === qClean
+          return (
+            matchSearch(s.name, qClean) ||
+            (s.sku ? matchSearch(s.sku, qClean) : false)
+          )
+        })
         if (matchedSubs.length > 0) {
           itemsToSum = matchedSubs.map(s => ({ quantity: s.quantity, unit: s.unit }))
+        }
+      } else if (normUnitFilter && subItems.length === 1) {
+        if (normalizeSearchString(subItems[0].unit, true) === normUnitFilter) {
+          itemsToSum = [{ quantity: subItems[0].quantity, unit: subItems[0].unit }]
         }
       }
 
@@ -1624,6 +1914,7 @@ export default function WarehouseMapTab() {
     matchingPositions,
     zoneHierarchyMap,
     searchQuery,
+    selectedUnit,
     exactProductNamesSet,
   ])
 
@@ -2276,6 +2567,12 @@ export default function WarehouseMapTab() {
         uniqueProducts={uniqueProducts}
         uniqueStts={uniqueStts}
         uniqueTags={uniqueTags}
+        availableUnits={availableUnits}
+        selectedUnit={selectedUnit}
+        onSelectUnit={setSelectedUnit}
+        availableTags={availableTags}
+        selectedTag={selectedTag}
+        onSelectTag={setSelectedTag}
         searchQuery={searchQuery}
         searchMode={searchMode}
         onSearchModeChange={setSearchMode}
