@@ -3,6 +3,7 @@
 import React from 'react'
 import {
   Fingerprint,
+  Briefcase,
   Calculator,
   Boxes,
   Map,
@@ -24,6 +25,7 @@ export type FullMenuAppTab =
   | 'label'
   | 'stamp_scanner'
   | 'stamp'
+  | 'work'
   | 'operations'
   | 'inventory'
   | 'warehouse_map'
@@ -45,7 +47,7 @@ export interface FullMenuModalProps {
 }
 
 interface MenuItemConfig {
-  id: 'stamp' | 'operations' | 'pallets' | 'warehouse_map' | 'label' | 'inventory' | 'settings'
+  id: 'stamp' | 'work' | 'operations' | 'pallets' | 'warehouse_map' | 'label' | 'inventory' | 'settings'
   aliases: string[]
   label: string
   desc: string
@@ -70,6 +72,16 @@ const MENU_SECTIONS: {
         Icon: Fingerprint,
         color: '#fbbf24',
         bgColor: 'rgba(251, 191, 36, 0.15)',
+        isPrimary: true,
+      },
+      {
+        id: 'work',
+        aliases: ['work'],
+        label: 'Công Việc (Lệnh Xuất)',
+        desc: 'Thực hiện lệnh xuất kho, quét LOT hạ sảnh & xuất hàng',
+        Icon: Briefcase,
+        color: '#3b82f6',
+        bgColor: 'rgba(59, 130, 246, 0.15)',
         isPrimary: true,
       },
       {

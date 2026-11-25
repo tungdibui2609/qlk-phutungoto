@@ -7,6 +7,7 @@ export type ScannerThemeMode = 'light' | 'dark'
 export type ScannerThemeTabKey =
   | 'stamp'
   | 'operations'
+  | 'work'
   | 'pallets'
   | 'warehouse_map'
   | 'label'
@@ -26,6 +27,12 @@ export const SCANNER_THEME_TAB_META: {
     label: 'Dấu Đóng Thùng',
     desc: 'Quét mã dấu đóng & liên kết tem',
     color: '#d97706',
+  },
+  {
+    key: 'work',
+    label: 'Công Việc (Lệnh Xuất)',
+    desc: 'Lệnh xuất kho, quét LOT hạ sảnh & xuất hàng',
+    color: '#2563eb',
   },
   {
     key: 'operations',
@@ -67,6 +74,7 @@ export const SCANNER_THEME_TAB_META: {
 
 export const DEFAULT_SCANNER_TAB_THEMES: ScannerTabThemesMap = {
   stamp: 'light',
+  work: 'light',
   operations: 'light',
   pallets: 'light',
   warehouse_map: 'light',
@@ -81,6 +89,7 @@ export function normalizeScannerThemeTab(raw: string): ScannerThemeTabKey {
   if (raw === 'stamp_scanner' || raw === 'stamp') return 'stamp'
   if (raw === 'scanner' || raw === 'label') return 'label'
   if (
+    raw === 'work' ||
     raw === 'operations' ||
     raw === 'pallets' ||
     raw === 'warehouse_map' ||
@@ -172,6 +181,7 @@ export function ScannerThemeProvider({ children }: { children: React.ReactNode }
     (nextMode: ScannerThemeMode) => {
       const next: ScannerTabThemesMap = {
         stamp: nextMode,
+        work: nextMode,
         operations: nextMode,
         pallets: nextMode,
         warehouse_map: nextMode,

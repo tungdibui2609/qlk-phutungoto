@@ -93,6 +93,7 @@ import { matchPalletSearch, calculateSearchScore, normalizeSearchString } from '
 import WarehouseMapTab from './_components/WarehouseMapTab'
 import OperationsDataTab from './_components/OperationsDataTab'
 import InventoryTab from './_components/InventoryTab'
+import WorkTab from './_components/WorkTab'
 import FullMenuModal from './_components/FullMenuModal'
 import { useScannerTheme } from './_components/ScannerThemeContext'
 import OperationWatermarkOverlay from './_components/OperationWatermarkOverlay'
@@ -123,6 +124,7 @@ import { PalletSwitchModal } from './_components/PalletSwitchModal'
 type AppTab =
   | 'label'
   | 'stamp'
+  | 'work'
   | 'operations'
   | 'inventory'
   | 'warehouse_map'
@@ -143,6 +145,7 @@ export default function WebScannerPage() {
   const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({
     label: false,
     stamp: true,
+    work: false,
     operations: false,
     inventory: false,
     warehouse_map: false,
@@ -3322,6 +3325,20 @@ export default function WebScannerPage() {
               isActive={activeTab === 'operations'}
               systemCode={systemCode}
               userProfile={userProfile}
+            />
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════
+            TAB: CÔNG VIỆC / LỆNH XUẤT KHO (Keep-Alive: 0ms load sau lần mở đầu)
+           ═══════════════════════════════════════════════════════════ */}
+        {visitedTabs.work && (
+          <div className={activeTab === 'work' ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'hidden'}>
+            <WorkTab
+              isActive={activeTab === 'work'}
+              systemCode={systemCode}
+              userProfile={userProfile}
+              triggerToast={triggerToast}
             />
           </div>
         )}
