@@ -454,8 +454,11 @@ function LevelInventoryModal({
         <div className="p-3 overflow-y-auto overscroll-contain space-y-2.5 flex-1">
           {sortedSlots.map((slot: any) => {
             const res = inventoryResults[slot.id] || {}
-            const isChecked = !!res.checked
-            const hasNote = !!(res.note && res.note.trim())
+            const hasPendingVoice = (pendingVoicesMap[slot.id]?.length || 0) > 0
+            const hasSavedVoice = !!(res.voice_note_url && String(res.voice_note_url).trim())
+            const hasNoteText = !!(res.note && res.note.trim())
+            const hasNote = hasNoteText || hasSavedVoice || hasPendingVoice
+            const isChecked = !!res.checked || hasNote
             const hasLot = !!slot.lot_id
             const detailedItems =
               (Array.isArray(slot.items) && slot.items.length > 0
@@ -937,10 +940,18 @@ export function InventoryTab({
                   const dirtySet = new Set(dirtyMap[it.session_id] || [])
                   if (dirtySet.has(it.position_id)) return
                   if (!next[it.session_id]) next[it.session_id] = {}
+                  const localCur = next[it.session_id][it.position_id] || {}
+                  const localNote = String(localCur.note || '').trim()
+                  const remoteNote = String(it.note || '').trim()
+                  const mergedVoiceUrl = appendVoiceNoteUrl(
+                    localCur.voice_note_url || null,
+                    it.voice_note_url || null
+                  )
+                  const finalNote = remoteNote || localNote
                   next[it.session_id][it.position_id] = {
-                    checked: !!it.checked,
-                    note: it.note || '',
-                    voice_note_url: it.voice_note_url || null,
+                    checked: Boolean(it.checked || finalNote || mergedVoiceUrl),
+                    note: finalNote,
+                    voice_note_url: mergedVoiceUrl,
                   }
                 })
                 try {
@@ -1328,17 +1339,62 @@ export function InventoryTab({
     const cur = currentResults[posId] || {}
     const nextNote = spokenText ? appendWarehouseVoiceText(cur.note || '', spokenText) : cur.note || ''
     const nextVoiceUrl = appendVoiceNoteUrl(cur.voice_note_url, voiceUrl)
+    const nextChecked = nextNote.trim() || nextVoiceUrl ? true : Boolean(cur.checked)
     const nextRes = {
       ...currentResults,
       [posId]: {
         ...cur,
         note: nextNote,
         voice_note_url: nextVoiceUrl,
-        checked: nextNote.trim() || nextVoiceUrl ? true : cur.checked,
+        checked: nextChecked,
       },
     }
     saveResultsToStorage(currentSessionId, nextRes)
     markPositionsDirty(currentSessionId, [posId])
+
+    // Tự động đẩy ngay vị trí vừa dịch lên Supabase để an toàn tuyệt đối (không lo quên bấm Đồng bộ)
+    if (
+      isUUID(currentSessionId) &&
+      !posId.startsWith('summary|') &&
+      isUUID(posId) &&
+      (typeof navigator === 'undefined' || navigator.onLine)
+    ) {
+      const pos = positions.find(p => p.id === posId)
+      const sid = currentSessionId
+      void (supabase.from('internal_inventory_items') as any)
+        .upsert(
+          [
+            {
+              session_id: sid,
+              position_id: posId,
+              zone_id: pos?.zone_ids?.[0] || null,
+              checked: nextChecked,
+              note: nextNote.trim() || null,
+              voice_note_url: nextVoiceUrl || null,
+              checked_by: userProfile?.id || null,
+              checked_at: new Date().toISOString(),
+              lot_id_snapshot: pos?.lot_id || null,
+            },
+          ],
+          { onConflict: 'session_id,position_id' }
+        )
+        .then(({ error }: any) => {
+          if (!error) {
+            setDirtyBySession(prev => {
+              const list = (prev[sid] || []).filter(id => id !== posId)
+              const next = { ...prev }
+              if (list.length > 0) next[sid] = list
+              else delete next[sid]
+              try {
+                localStorage.setItem(INVENTORY_KEYS.DIRTY, JSON.stringify(next))
+              } catch { }
+              return next
+            })
+          }
+        })
+        .catch(() => { })
+    }
+
     if (voiceKey && (spokenText || voiceUrl)) {
       void deleteOfflineInventoryVoiceByKey(voiceKey)
       setPendingVoicesMap(prev => {
@@ -1642,7 +1698,48 @@ export function InventoryTab({
 
       if (syncedVoicesCount > 0) {
         saveResultsToStorage(sid, resMap)
-        markPositionsDirty(sid, Array.from(dirtySet))
+        const touchedIds = Array.from(dirtySet)
+        markPositionsDirty(sid, touchedIds)
+
+        // Tự động đẩy ngay kết quả vừa dịch lên Supabase để an toàn tuyệt đối
+        if (isUUID(sid) && touchedIds.length > 0) {
+          try {
+            const posById = new Map(positions.map(p => [p.id, p]))
+            const autoRows = touchedIds
+              .filter(posId => !posId.startsWith('summary|') && isUUID(posId))
+              .map(posId => {
+                const pos = posById.get(posId)
+                const v = resMap[posId] || {}
+                return {
+                  session_id: sid,
+                  position_id: posId,
+                  zone_id: pos?.zone_ids?.[0] || null,
+                  checked: true,
+                  note: v.note?.trim() || null,
+                  voice_note_url: v.voice_note_url || null,
+                  checked_by: userProfile?.id || null,
+                  checked_at: new Date().toISOString(),
+                  lot_id_snapshot: pos?.lot_id || null,
+                }
+              })
+            if (autoRows.length > 0) {
+              const { error: upErr } = await (
+                supabase.from('internal_inventory_items') as any
+              ).upsert(autoRows, { onConflict: 'session_id,position_id' })
+              if (!upErr) {
+                setDirtyBySession(prev => {
+                  const next = { ...prev }
+                  delete next[sid]
+                  try {
+                    localStorage.setItem(INVENTORY_KEYS.DIRTY, JSON.stringify(next))
+                  } catch { }
+                  return next
+                })
+              }
+            }
+          } catch { }
+        }
+
         if (currentSessionId === sid) {
           const remainingVoices = await getOfflineInventoryVoicesBySession(sid)
           const remMap: Record<string, OfflineInventoryVoiceItem[]> = {}
@@ -1654,7 +1751,7 @@ export function InventoryTab({
         }
         await refreshPendingVoiceCounts()
         showToast(
-          `Đã dịch ${syncedVoicesCount} ghi âm! Hãy kiểm tra lại chữ rồi bấm "Đồng bộ lên Web".`
+          `Đã dịch & lưu ${syncedVoicesCount} ghi âm lên hệ thống thành công!`
         )
       } else {
         showToast('Không dịch được file ghi âm nào — vui lòng kiểm tra mạng hoặc API Key.')
@@ -1902,6 +1999,23 @@ export function InventoryTab({
     [invSearchQuery]
   )
 
+  const hasSlotDiscrepancy = useCallback(
+    (
+      posId: string,
+      resMap: Record<string, { checked?: boolean; note?: string; voice_note_url?: string | null }> = currentResults,
+      sessionId: string | null = currentSessionId
+    ): boolean => {
+      const r = resMap[posId]
+      if (r?.note && r.note.trim()) return true
+      if (r?.voice_note_url && String(r.voice_note_url).trim()) return true
+      if (sessionId && sessionId === currentSessionId && (pendingVoicesMap[posId]?.length || 0) > 0) {
+        return true
+      }
+      return false
+    },
+    [currentResults, currentSessionId, pendingVoicesMap]
+  )
+
   // ── SUMMARY CARDS CHO CÁC DÃY / SẢNH TRONG KHO ĐANG CHỌN ──
   const summaryCards = useMemo(() => {
     if (!selectedWarehouseId) return []
@@ -1941,8 +2055,9 @@ export function InventoryTab({
       let discrepancy = 0
       zonePos.forEach(p => {
         const r = currentResults[p.id]
-        if (r?.checked) checked++
-        if (r?.note && r.note.trim()) discrepancy++
+        const hasDiff = hasSlotDiscrepancy(p.id)
+        if (r?.checked || hasDiff) checked++
+        if (hasDiff) discrepancy++
       })
       const pct = total > 0 ? Math.round((checked / total) * 100) : 0
       return {
@@ -1961,6 +2076,7 @@ export function InventoryTab({
     activePositions,
     getDescendantIds,
     currentResults,
+    hasSlotDiscrepancy,
     matchSlotBySearch,
   ])
 
@@ -2154,8 +2270,9 @@ export function InventoryTab({
                 let sDiscrepancy = 0
                 scopePos.forEach(p => {
                   const r = resMap[p.id]
-                  if (r?.checked) sChecked++
-                  if (r?.note && r.note.trim()) sDiscrepancy++
+                  const hasDiff = hasSlotDiscrepancy(p.id, resMap, sess.id)
+                  if (r?.checked || hasDiff) sChecked++
+                  if (hasDiff) sDiscrepancy++
                 })
                 const pct = sTotal > 0 ? Math.round((sChecked / sTotal) * 100) : 0
                 const scopeZoneName = scopeZoneId
@@ -3121,11 +3238,10 @@ export function InventoryTab({
                             const total = lvl.slots.length
                             const occupied = lvl.slots.filter((s: any) => !!s.lot_id).length
                             const checked = lvl.slots.filter(
-                              (s: any) => currentResults[s.id]?.checked
+                              (s: any) => currentResults[s.id]?.checked || hasSlotDiscrepancy(s.id)
                             ).length
-                            const hasDiscrepancy = lvl.slots.some(
-                              (s: any) =>
-                                currentResults[s.id]?.note && currentResults[s.id]?.note?.trim()
+                            const hasDiscrepancy = lvl.slots.some((s: any) =>
+                              hasSlotDiscrepancy(s.id)
                             )
                             const allDone = total > 0 && checked === total
 
@@ -3176,11 +3292,9 @@ export function InventoryTab({
                                 <div className="flex items-center gap-[2px] w-full h-[5px]">
                                   {sortPositionsByDepthAndCol(lvl.slots).map((s: any) => {
                                     const pk = getProductKey(s)
-                                    const isSlotNote = !!(
-                                      currentResults[s.id]?.note &&
-                                      currentResults[s.id]?.note?.trim()
-                                    )
-                                    const isSlotChecked = !!currentResults[s.id]?.checked
+                                    const isSlotNote = hasSlotDiscrepancy(s.id)
+                                    const isSlotChecked =
+                                      !!currentResults[s.id]?.checked || isSlotNote
                                     const occColor =
                                       isMultiProdRow && pk && prodInfoMap.get(pk)?.color
                                         ? prodInfoMap.get(pk)!.color
