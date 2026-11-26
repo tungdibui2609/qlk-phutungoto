@@ -41,6 +41,7 @@ interface MultiSelectActionBarProps {
     onOpenLooseModal?: (posIds: string[]) => void
     onExportExcel?: (selectedPositions: Position[]) => void
     onBulkEditDates?: (lotIds: string[]) => void
+    onBulkAssignPosition?: (lotIds: string[]) => void
 }
 
 export default function MultiSelectActionBar({
@@ -69,7 +70,8 @@ export default function MultiSelectActionBar({
     isLocked,
     onOpenLooseModal,
     onExportExcel,
-    onBulkEditDates
+    onBulkEditDates,
+    onBulkAssignPosition
 }: MultiSelectActionBarProps) {
     const [isOperationMenuOpen, setIsOperationMenuOpen] = useState(false)
     const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false)
@@ -113,10 +115,16 @@ export default function MultiSelectActionBar({
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
 
+    const clampMenuLeft = (left: number, estimatedWidth: number) => {
+        if (typeof window === 'undefined') return left
+        const maxLeft = Math.max(12, window.innerWidth - estimatedWidth - 12)
+        return Math.max(12, Math.min(left, maxLeft))
+    }
+
     const handleToggleOperationMenu = () => {
         if (!isOperationMenuOpen && operationButtonRef.current) {
             const rect = operationButtonRef.current.getBoundingClientRect()
-            setOperationMenuPos({ top: rect.top - 8, left: rect.left })
+            setOperationMenuPos({ top: rect.top - 8, left: clampMenuLeft(rect.left, 240) })
         }
         setIsOperationMenuOpen(!isOperationMenuOpen)
         setIsUtilityMenuOpen(false)
@@ -127,7 +135,7 @@ export default function MultiSelectActionBar({
     const handleToggleUtilityMenu = () => {
         if (!isUtilityMenuOpen && utilityButtonRef.current) {
             const rect = utilityButtonRef.current.getBoundingClientRect()
-            setUtilityMenuPos({ top: rect.top - 8, left: rect.left })
+            setUtilityMenuPos({ top: rect.top - 8, left: clampMenuLeft(rect.left, 240) })
         }
         setIsUtilityMenuOpen(!isUtilityMenuOpen)
         setIsOperationMenuOpen(false)
@@ -138,7 +146,7 @@ export default function MultiSelectActionBar({
     const handleToggleTagMenu = () => {
         if (!isTagMenuOpen && tagButtonRef.current) {
             const rect = tagButtonRef.current.getBoundingClientRect()
-            setTagMenuPos({ top: rect.top - 8, left: rect.left })
+            setTagMenuPos({ top: rect.top - 8, left: clampMenuLeft(rect.left, 240) })
         }
         setIsTagMenuOpen(!isTagMenuOpen)
         setIsOperationMenuOpen(false)
@@ -149,7 +157,8 @@ export default function MultiSelectActionBar({
     const handleToggleLocationMenu = () => {
         if (!isLocationMenuOpen && locationButtonRef.current) {
             const rect = locationButtonRef.current.getBoundingClientRect()
-            setLocationMenuPos({ top: rect.top - 8, left: rect.left })
+            const menuWidth = typeof window !== 'undefined' && window.innerWidth >= 640 ? 450 : 260
+            setLocationMenuPos({ top: rect.top - 8, left: clampMenuLeft(rect.left - 80, menuWidth) })
         }
         setIsLocationMenuOpen(!isLocationMenuOpen)
         setIsOperationMenuOpen(false)
@@ -292,11 +301,12 @@ export default function MultiSelectActionBar({
                                 {isOperationMenuOpen && (
                                     <div
                                         ref={operationMenuRef}
-                                        className="fixed min-w-[220px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
+                                        className="fixed min-w-[220px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100] overflow-y-auto"
                                         style={{
                                             top: operationMenuPos.top,
                                             left: operationMenuPos.left,
-                                            transform: 'translateY(-100%)'
+                                            transform: 'translateY(-100%)',
+                                            maxHeight: Math.max(180, operationMenuPos.top - 12)
                                         }}
                                     >
                                         <div className="px-2.5 py-1.5 text-[10px] font-extrabold text-blue-500 uppercase tracking-wider select-none border-b border-gray-100 dark:border-gray-700/60 mb-1">
@@ -368,195 +378,217 @@ export default function MultiSelectActionBar({
                                 {isLocationMenuOpen && (
                                     <div
                                         ref={locationMenuRef}
-                                        className="fixed min-w-[220px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
+                                        className="fixed w-[260px] sm:w-[450px] max-w-[calc(100vw-24px)] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-2 animate-in fade-in zoom-in-95 duration-150 z-[100] overflow-y-auto"
                                         style={{
                                             top: locationMenuPos.top,
                                             left: locationMenuPos.left,
-                                            transform: 'translateY(-100%)'
+                                            transform: 'translateY(-100%)',
+                                            maxHeight: Math.max(180, locationMenuPos.top - 12)
                                         }}
                                     >
-                                        <div className="px-2.5 py-1.5 text-[10px] font-extrabold text-indigo-500 uppercase tracking-wider select-none border-b border-gray-100 dark:border-gray-700/60 mb-1">
+                                        <div className="px-2 py-1 text-[10px] font-extrabold text-indigo-500 uppercase tracking-wider select-none border-b border-gray-100 dark:border-gray-700/60 mb-1.5">
                                             Thao tác vị trí & sảnh
                                         </div>
-                                        
-                                        <button
-                                            onClick={() => {
-                                                if (onOpenMove) onOpenMove()
-                                                setIsLocationMenuOpen(false)
-                                            }}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded-xl transition-colors text-left group cursor-pointer"
-                                        >
-                                            <ArrowRightLeft size={16} className="text-indigo-500 group-hover:scale-110 transition-transform shrink-0" />
-                                            <div className="flex flex-col min-w-0">
-                                                <span className="font-bold">Di chuyển</span>
-                                                <span className="text-[10px] text-gray-400 font-normal">Đổi vị trí lưu kho</span>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                                            {/* Cột 1: Chuyển vị trí & Sảnh */}
+                                            <div className="space-y-0.5">
+                                                <button
+                                                    onClick={() => {
+                                                        if (onOpenMove) onOpenMove()
+                                                        setIsLocationMenuOpen(false)
+                                                    }}
+                                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                >
+                                                    <ArrowRightLeft size={15} className="text-indigo-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="font-bold">Di chuyển</span>
+                                                        <span className="text-[10px] text-gray-400 font-normal truncate">Đổi vị trí lưu kho</span>
+                                                    </div>
+                                                </button>
+
+                                                {onBulkAssignPosition && (
+                                                    <button
+                                                        onClick={() => {
+                                                            onBulkAssignPosition(Array.from(selectedLotIds))
+                                                            setIsLocationMenuOpen(false)
+                                                        }}
+                                                        disabled={selectedLotIds.size === 0}
+                                                        className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-violet-50 dark:hover:bg-violet-900/40 rounded-xl transition-colors text-left disabled:opacity-50 group cursor-pointer"
+                                                    >
+                                                        <Layers size={15} className="text-violet-600 dark:text-violet-400 group-hover:scale-110 transition-transform shrink-0" />
+                                                        <div className="flex flex-col min-w-0">
+                                                            <span className="font-bold text-violet-700 dark:text-violet-300">Vị trí hàng loạt</span>
+                                                            <span className="text-[10px] text-gray-400 font-normal truncate">Nhập danh sách vị trí mới</span>
+                                                        </div>
+                                                    </button>
+                                                )}
+
+                                                <button
+                                                    onClick={() => {
+                                                        if (onOpenSelectHall) onOpenSelectHall()
+                                                        setIsLocationMenuOpen(false)
+                                                    }}
+                                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-orange-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                >
+                                                    <ArrowDownToLine size={15} className="text-orange-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="font-bold text-orange-600 dark:text-orange-400">Hạ sảnh</span>
+                                                        <span className="text-[10px] text-gray-400 font-normal truncate">Chuyển LOT ra sảnh chờ xuất</span>
+                                                    </div>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => {
+                                                        if (onOpenAutoAssignWarehouse) onOpenAutoAssignWarehouse()
+                                                        setIsLocationMenuOpen(false)
+                                                    }}
+                                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                >
+                                                    <Zap size={15} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="font-bold text-amber-600 dark:text-amber-400">Gán sảnh tự động</span>
+                                                        <span className="text-[10px] text-gray-400 font-normal truncate">Tự động sắp xếp vị trí sảnh</span>
+                                                    </div>
+                                                </button>
                                             </div>
-                                        </button>
 
-                                        <button
-                                            onClick={() => {
-                                                if (onOpenSelectHall) onOpenSelectHall()
-                                                setIsLocationMenuOpen(false)
-                                            }}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-orange-900/40 rounded-xl transition-colors text-left group cursor-pointer"
-                                        >
-                                            <ArrowDownToLine size={16} className="text-orange-500 group-hover:scale-110 transition-transform shrink-0" />
-                                            <div className="flex flex-col min-w-0">
-                                                <span className="font-bold text-orange-600 dark:text-orange-400">Hạ sảnh</span>
-                                                <span className="text-[10px] text-gray-400 font-normal">Chuyển LOT ra sảnh chờ xuất</span>
-                                            </div>
-                                        </button>
-
-                                        <button
-                                            onClick={() => {
-                                                if (onOpenAutoAssignWarehouse) onOpenAutoAssignWarehouse()
-                                                setIsLocationMenuOpen(false)
-                                            }}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
-                                        >
-                                            <Zap size={16} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
-                                            <div className="flex flex-col min-w-0">
-                                                <span className="font-bold text-amber-600 dark:text-amber-400">Gán sảnh tự động</span>
-                                                <span className="text-[10px] text-gray-400 font-normal">Tự động sắp xếp vị trí sảnh</span>
-                                            </div>
-                                        </button>
-
-                                        <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
-
-                                        {/* Đánh dấu kiểm tra */}
-                                        {(onToggleMark || onOpenMarkModal) && (
-                                            <>
-                                                {allSelectedMarked ? (
+                                            {/* Cột 2: Đánh dấu, Khóa, Hàng lẻ & Gỡ vị trí */}
+                                            <div className="space-y-0.5 sm:border-l sm:border-gray-100 sm:dark:border-gray-700/70 sm:pl-1.5 border-t sm:border-t-0 border-gray-100 dark:border-gray-700/70 pt-1 sm:pt-0">
+                                                {/* Đánh dấu kiểm tra */}
+                                                {(onToggleMark || onOpenMarkModal) && (
                                                     <>
-                                                        {onOpenMarkModal && (
+                                                        {allSelectedMarked ? (
+                                                            <>
+                                                                {onOpenMarkModal && (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            onOpenMarkModal(Array.from(selectedPositionIds))
+                                                                            setIsLocationMenuOpen(false)
+                                                                        }}
+                                                                        className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                                    >
+                                                                        <Bookmark size={15} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                                        <div className="flex flex-col min-w-0">
+                                                                            <span className="font-bold text-amber-600 dark:text-amber-400 truncate">
+                                                                                Sửa ghi chú ({selectedPositionIds.size} ô)
+                                                                            </span>
+                                                                            <span className="text-[10px] text-gray-400 font-normal truncate">
+                                                                                Cập nhật lý do đánh dấu
+                                                                            </span>
+                                                                        </div>
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => {
+                                                                        if (onUnmarkPositions) {
+                                                                            onUnmarkPositions(Array.from(selectedPositionIds))
+                                                                        } else if (onToggleMark) {
+                                                                            onToggleMark(Array.from(selectedPositionIds))
+                                                                        }
+                                                                        setIsLocationMenuOpen(false)
+                                                                    }}
+                                                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                                >
+                                                                    <Bookmark size={15} className="fill-rose-500 text-rose-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="font-bold truncate">
+                                                                            Bỏ đánh dấu ({selectedPositionIds.size} ô)
+                                                                        </span>
+                                                                        <span className="text-[10px] text-gray-400 font-normal truncate">
+                                                                            Hủy đánh dấu các vị trí
+                                                                        </span>
+                                                                    </div>
+                                                                </button>
+                                                            </>
+                                                        ) : (
                                                             <button
                                                                 onClick={() => {
-                                                                    onOpenMarkModal(Array.from(selectedPositionIds))
+                                                                    if (onOpenMarkModal) {
+                                                                        onOpenMarkModal(Array.from(selectedPositionIds))
+                                                                    } else if (onToggleMark) {
+                                                                        onToggleMark(Array.from(selectedPositionIds))
+                                                                    }
                                                                     setIsLocationMenuOpen(false)
                                                                 }}
-                                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                                className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
                                                             >
-                                                                <Bookmark size={16} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                                <Bookmark size={15} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
                                                                 <div className="flex flex-col min-w-0">
-                                                                    <span className="font-bold text-amber-600 dark:text-amber-400">
-                                                                        Sửa ghi chú ({selectedPositionIds.size} ô)
+                                                                    <span className="truncate">
+                                                                        Đánh dấu ({selectedPositionIds.size} ô)
                                                                     </span>
-                                                                    <span className="text-[10px] text-gray-400 font-normal">
-                                                                        Cập nhật lý do đánh dấu chung
+                                                                    <span className="text-[10px] text-gray-400 font-normal truncate">
+                                                                        Đánh dấu kiểm tra & lý do
                                                                     </span>
                                                                 </div>
                                                             </button>
                                                         )}
-                                                        <button
-                                                            onClick={() => {
-                                                                if (onUnmarkPositions) {
-                                                                    onUnmarkPositions(Array.from(selectedPositionIds))
-                                                                } else if (onToggleMark) {
-                                                                    onToggleMark(Array.from(selectedPositionIds))
-                                                                }
-                                                                setIsLocationMenuOpen(false)
-                                                            }}
-                                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors text-left group cursor-pointer"
-                                                        >
-                                                            <Bookmark size={16} className="fill-rose-500 text-rose-500 group-hover:scale-110 transition-transform shrink-0" />
-                                                            <div className="flex flex-col min-w-0">
-                                                                <span className="font-bold">
-                                                                    Bỏ đánh dấu ({selectedPositionIds.size} ô)
-                                                                </span>
-                                                                <span className="text-[10px] text-gray-400 font-normal">
-                                                                    Hủy đánh dấu các vị trí đã chọn
-                                                                </span>
-                                                            </div>
-                                                        </button>
                                                     </>
-                                                ) : (
+                                                )}
+
+                                                {/* Khóa / Mở khóa vị trí */}
+                                                {onToggleLock && (
                                                     <button
                                                         onClick={() => {
-                                                            if (onOpenMarkModal) {
-                                                                onOpenMarkModal(Array.from(selectedPositionIds))
-                                                            } else if (onToggleMark) {
-                                                                onToggleMark(Array.from(selectedPositionIds))
-                                                            }
+                                                            onToggleLock(Array.from(selectedPositionIds))
                                                             setIsLocationMenuOpen(false)
                                                         }}
-                                                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                        className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-rose-50 dark:hover:bg-rose-900/40 rounded-xl transition-colors text-left group cursor-pointer"
                                                     >
-                                                        <Bookmark size={16} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                        {allSelectedLocked ? (
+                                                            <Unlock size={15} className="text-rose-600 dark:text-rose-400 group-hover:scale-110 transition-transform shrink-0" />
+                                                        ) : (
+                                                            <Lock size={15} className="text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform shrink-0" />
+                                                        )}
                                                         <div className="flex flex-col min-w-0">
-                                                            <span>
-                                                                Đánh dấu ({selectedPositionIds.size} ô)
+                                                            <span className={`font-bold truncate ${allSelectedLocked ? 'text-rose-600 dark:text-rose-400' : ''}`}>
+                                                                {allSelectedLocked ? `Mở khóa vị trí (${selectedPositionIds.size})` : `Khóa vị trí (${selectedPositionIds.size})`}
                                                             </span>
-                                                            <span className="text-[10px] text-gray-400 font-normal">
-                                                                Đánh dấu kiểm tra & nhập lý do
+                                                            <span className="text-[10px] text-gray-400 font-normal truncate">
+                                                                {allSelectedLocked ? "Mở khóa vị trí đã chọn" : "Ngăn gán hàng, xuất kho"}
                                                             </span>
                                                         </div>
                                                     </button>
                                                 )}
-                                            </>
-                                        )}
 
-                                        {/* Khóa / Mở khóa vị trí */}
-                                        {onToggleLock && (
-                                            <button
-                                                onClick={() => {
-                                                    onToggleLock(Array.from(selectedPositionIds))
-                                                    setIsLocationMenuOpen(false)
-                                                }}
-                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-rose-50 dark:hover:bg-rose-900/40 rounded-xl transition-colors text-left group cursor-pointer"
-                                            >
-                                                {allSelectedLocked ? (
-                                                    <Unlock size={16} className="text-rose-600 dark:text-rose-400 group-hover:scale-110 transition-transform shrink-0" />
-                                                ) : (
-                                                    <Lock size={16} className="text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform shrink-0" />
+                                                {/* Thiết lập Ô Hàng Lẻ */}
+                                                {onOpenLooseModal && (
+                                                    <button
+                                                        onClick={() => {
+                                                            onOpenLooseModal(Array.from(selectedPositionIds))
+                                                            setIsLocationMenuOpen(false)
+                                                        }}
+                                                        className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                    >
+                                                        <PackageOpen size={15} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                        <div className="flex flex-col min-w-0">
+                                                            <span className="font-bold text-amber-700 dark:text-amber-300 truncate">
+                                                                Ô Hàng Lẻ ({selectedPositionIds.size} ô)
+                                                            </span>
+                                                            <span className="text-[10px] text-gray-400 font-normal truncate">
+                                                                Chủng loại & tính tồn
+                                                            </span>
+                                                        </div>
+                                                    </button>
                                                 )}
-                                                <div className="flex flex-col min-w-0">
-                                                    <span className={`font-bold ${allSelectedLocked ? 'text-rose-600 dark:text-rose-400' : ''}`}>
-                                                        {allSelectedLocked ? `Mở khóa vị trí (${selectedPositionIds.size})` : `Khóa vị trí (${selectedPositionIds.size})`}
-                                                    </span>
-                                                    <span className="text-[10px] text-gray-400 font-normal">
-                                                        {allSelectedLocked ? "Mở khóa các vị trí đã chọn" : "Khóa vị trí (ngăn gán hàng, xuất kho)"}
-                                                    </span>
-                                                </div>
-                                            </button>
-                                        )}
 
-                                        {/* Thiết lập Ô Hàng Lẻ */}
-                                        {onOpenLooseModal && (
-                                            <button
-                                                onClick={() => {
-                                                    onOpenLooseModal(Array.from(selectedPositionIds))
-                                                    setIsLocationMenuOpen(false)
-                                                }}
-                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
-                                            >
-                                                <PackageOpen size={16} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
-                                                <div className="flex flex-col min-w-0">
-                                                    <span className="font-bold text-amber-700 dark:text-amber-300">
-                                                        Thiết lập Ô Hàng Lẻ ({selectedPositionIds.size} ô)
-                                                    </span>
-                                                    <span className="text-[10px] text-gray-400 font-normal">
-                                                        Gán chủng loại & đóng/mở tính tồn
-                                                    </span>
-                                                </div>
-                                            </button>
-                                        )}
-
-                                        <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
-
-                                        <button
-                                            onClick={() => {
-                                                if (onUnassignPosition) onUnassignPosition(Array.from(selectedPositionIds))
-                                                setIsLocationMenuOpen(false)
-                                            }}
-                                            disabled={selectedLotIds.size === 0}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors text-left disabled:opacity-50 group cursor-pointer"
-                                        >
-                                            <MapPinOff size={16} className="text-gray-400 group-hover:scale-110 transition-transform shrink-0" />
-                                            <div className="flex flex-col min-w-0">
-                                                <span>Gỡ vị trí</span>
-                                                <span className="text-[10px] text-gray-400 font-normal">Đưa LOT về chưa gán</span>
+                                                <button
+                                                    onClick={() => {
+                                                        if (onUnassignPosition) onUnassignPosition(Array.from(selectedPositionIds))
+                                                        setIsLocationMenuOpen(false)
+                                                    }}
+                                                    disabled={selectedLotIds.size === 0}
+                                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors text-left disabled:opacity-50 group cursor-pointer"
+                                                >
+                                                    <MapPinOff size={15} className="text-gray-400 group-hover:scale-110 transition-transform shrink-0" />
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="font-bold">Gỡ vị trí</span>
+                                                        <span className="text-[10px] text-gray-400 font-normal truncate">Đưa LOT về chưa gán</span>
+                                                    </div>
+                                                </button>
                                             </div>
-                                        </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -580,11 +612,12 @@ export default function MultiSelectActionBar({
                                 {isUtilityMenuOpen && (
                                     <div
                                         ref={utilityMenuRef}
-                                        className="fixed min-w-[210px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
+                                        className="fixed min-w-[210px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100] overflow-y-auto"
                                         style={{
                                             top: utilityMenuPos.top,
                                             left: utilityMenuPos.left,
-                                            transform: 'translateY(-100%)'
+                                            transform: 'translateY(-100%)',
+                                            maxHeight: Math.max(180, utilityMenuPos.top - 12)
                                         }}
                                     >
                                         <div className="px-2.5 py-1.5 text-[10px] font-extrabold text-emerald-500 uppercase tracking-wider select-none border-b border-gray-100 dark:border-gray-700/60 mb-1">
@@ -662,11 +695,12 @@ export default function MultiSelectActionBar({
                                 {isTagMenuOpen && (
                                     <div
                                         ref={tagMenuRef}
-                                        className="fixed min-w-[210px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
+                                        className="fixed min-w-[210px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100] overflow-y-auto"
                                         style={{
                                             top: tagMenuPos.top,
                                             left: tagMenuPos.left,
-                                            transform: 'translateY(-100%)'
+                                            transform: 'translateY(-100%)',
+                                            maxHeight: Math.max(180, tagMenuPos.top - 12)
                                         }}
                                     >
                                         <div className="px-2.5 py-1.5 text-[10px] font-extrabold text-teal-500 uppercase tracking-wider select-none border-b border-gray-100 dark:border-gray-700/60 mb-1">

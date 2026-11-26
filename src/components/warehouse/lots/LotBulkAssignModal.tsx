@@ -10,13 +10,23 @@ import { logActivity } from '@/lib/audit'
 interface LotBulkAssignModalProps {
     onClose: () => void
     onSuccess: (close?: boolean) => void
-    fetchUnassignedLots: (limit: number) => Promise<Lot[]>
+    fetchUnassignedLots?: (limit: number) => Promise<Lot[]>
     initialUnassignedCount?: number
+    selectedLotIds?: string[]
+    selectedLots?: Lot[]
 }
 
-export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, initialUnassignedCount }: LotBulkAssignModalProps) {
+export function LotBulkAssignModal({
+    onClose,
+    onSuccess,
+    fetchUnassignedLots,
+    initialUnassignedCount,
+    selectedLotIds,
+    selectedLots
+}: LotBulkAssignModalProps) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
+    const isSelectedMode = Boolean(selectedLotIds && selectedLotIds.length > 0)
     const [loading, setLoading] = useState(false)
     const [textInput, setTextInput] = useState('')
     const [activeTab, setActiveTab] = useState<'manual' | 'auto'>('manual')
@@ -25,6 +35,20 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
     const [loadingCount, setLoadingCount] = useState(false)
     const [unassignedCount, setUnassignedCount] = useState(initialUnassignedCount ?? 0)
     const [expandedWarehouse, setExpandedWarehouse] = useState<string | null>(null)
+
+    // Xây dựng danh sách LOT theo đúng thứ tự người dùng tích chọn
+    const orderedSelectedLots: Array<{ id: string; code?: string; positions?: any[]; staging_area_code?: string | null }> = (() => {
+        if (!isSelectedMode || !selectedLotIds) return []
+        const lotMap = new Map<string, Lot>()
+        ;(selectedLots || []).forEach(l => lotMap.set(l.id, l))
+        return selectedLotIds.map(id => lotMap.get(id) || { id })
+    })()
+
+    const alreadyAssignedSelectedCount = orderedSelectedLots.filter(
+        l => (l.positions && l.positions.length > 0) || Boolean(l.staging_area_code)
+    ).length
+
+    const effectiveTargetCount = isSelectedMode ? orderedSelectedLots.length : unassignedCount
 
     // Sync with parent count if it changes
     useEffect(() => {
@@ -104,27 +128,29 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 };
             }));
 
-            // 4. Count Unassigned Lots (Fresh fetch for verification)
-            setLoadingCount(true);
-            try {
-                // Use robust join logic for fresh verification count
-                const { count: lotCount, error: countError } = await supabase.from('lots')
-                    .select('id, positions!positions_lot_id_fkey(id)', { count: 'exact', head: true })
-                    .eq('system_code', currentSystem.code)
-                    .is('positions', null)
-                    .neq('status', 'hidden')
-                    .or('is_locked.eq.false,is_locked.is.null');
+            // 4. Count Unassigned Lots (Fresh fetch for verification - only needed in unassigned mode)
+            if (!isSelectedMode) {
+                setLoadingCount(true);
+                try {
+                    // Use robust join logic for fresh verification count
+                    const { count: lotCount, error: countError } = await supabase.from('lots')
+                        .select('id, positions!positions_lot_id_fkey(id)', { count: 'exact', head: true })
+                        .eq('system_code', currentSystem.code)
+                        .is('positions', null)
+                        .neq('status', 'hidden')
+                        .or('is_locked.eq.false,is_locked.is.null');
 
-                if (countError) {
-                    console.error('Count error from robust query:', countError);
-                    // Keep using initialUnassignedCount
-                } else if (lotCount !== null) {
-                    setUnassignedCount(prev => Math.max(prev, lotCount as number));
+                    if (countError) {
+                        console.error('Count error from robust query:', countError);
+                        // Keep using initialUnassignedCount
+                    } else if (lotCount !== null) {
+                        setUnassignedCount(prev => Math.max(prev, lotCount as number));
+                    }
+                } catch (err) {
+                    console.error('Error in count fetch:', err);
+                } finally {
+                    setLoadingCount(false);
                 }
-            } catch (err) {
-                console.error('Error in count fetch:', err);
-            } finally {
-                setLoadingCount(false);
             }
 
             setHalls(hallResults);
@@ -156,8 +182,8 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             showToast('Không có vị trí trống trong sảnh này.', 'warning');
             return;
         }
-        if (unassignedCount === 0) {
-            showToast('Không có LOT nào chưa gán vị trí.', 'warning');
+        if (effectiveTargetCount === 0) {
+            showToast(isSelectedMode ? 'Không có LOT nào được chọn.' : 'Không có LOT nào chưa gán vị trí.', 'warning');
             return;
         }
 
@@ -191,8 +217,11 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             // Numeric sort in memory since Supabase JS client order() doesn't officially support 'numeric' option in all versions/types
             availablePositions.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }));
 
-            // 3. Fetch unassigned lots
-            const lotsToAssign = await fetchUnassignedLots(availablePositions.length);
+            // 3. Determine lots to assign
+            const lotsToAssign = isSelectedMode
+                ? orderedSelectedLots.slice(0, availablePositions.length)
+                : (fetchUnassignedLots ? await fetchUnassignedLots(availablePositions.length) : []);
+
             if (lotsToAssign.length === 0) {
                 showToast('Không có LOT phù hợp để gán.', 'warning');
                 return;
@@ -204,13 +233,48 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
 
             const lotIdsToAssign = lotsToAssign.slice(0, actualCount).map(l => l.id);
 
+            // Fetch existing positions of these lots for audit trail & history
+            const { data: oldPositionsData } = await supabase
+                .from('positions')
+                .select('id, code, lot_id')
+                .eq('system_type', currentSystem.code)
+                .in('lot_id', lotIdsToAssign);
+
+            const oldPosByLot = new Map<string, string[]>();
+            (oldPositionsData || []).forEach((p: any) => {
+                if (!p.lot_id) return;
+                const list = oldPosByLot.get(p.lot_id) || [];
+                list.push(p.code);
+                oldPosByLot.set(p.lot_id, list);
+            });
+
             // 1. Clear existing mappings for these lots
-            await supabase.from('positions').update({ lot_id: null }).in('lot_id', lotIdsToAssign);
+            await supabase
+                .from('positions')
+                .update({ lot_id: null })
+                .eq('system_type', currentSystem.code)
+                .in('lot_id', lotIdsToAssign);
+
+            // Log removal for old positions
+            if (oldPositionsData && oldPositionsData.length > 0) {
+                for (const oldP of oldPositionsData as any[]) {
+                    await logActivity({
+                        supabase,
+                        tableName: 'positions',
+                        recordId: oldP.id,
+                        action: 'UPDATE',
+                        oldData: { lot_id: oldP.lot_id },
+                        newData: { lot_id: null },
+                        systemCode: currentSystem.code
+                    })
+                }
+            }
 
             // 2. Prepare updates and history
             for (let i = 0; i < actualCount; i++) {
                 const lot = lotsToAssign[i];
                 const pos = availablePositions[i] as any;
+                const previousPositions = oldPosByLot.get(lot.id) || [];
 
                 positionUpdates.push({
                     id: pos.id,
@@ -226,8 +290,10 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                     details: {
                         position_code: pos.code,
                         position_id: pos.id,
+                        previous_positions: previousPositions,
                         auto_assign_hall: hall.name,
-                        bulk_assign: true
+                        bulk_assign: true,
+                        reassigned_selected: isSelectedMode
                     }
                 });
             }
@@ -238,6 +304,15 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                     .from('positions')
                     .upsert(positionUpdates);
                 if (batchError) throw batchError;
+            }
+
+            // Clear staging_area_code for lots now placed in physical positions
+            if (lotIdsToAssign.length > 0) {
+                await supabase
+                    .from('lots')
+                    .update({ staging_area_code: null })
+                    .eq('system_code', currentSystem.code)
+                    .in('id', lotIdsToAssign);
             }
 
             // 4. Batch Insert History (Legacy)
@@ -261,7 +336,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             }
 
             showToast(`Gán thành công ${actualCount} LOT vào ${hall.name}!`, 'success');
-            onSuccess();
+            onSuccess(true);
             onClose();
         } catch (err: any) {
             console.error('Error in auto assign hall:', err);
@@ -291,7 +366,6 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
 
         try {
             // 2. Validate Positions
-            // We might have more than 100 codes, chunk the querying if necessary, but typically < 200.
             const { data: posData, error: posError } = await supabase
                 .from('positions')
                 .select('id, lot_id, code, lots!positions_lot_id_fkey(id)')
@@ -304,6 +378,12 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             const posMap = new Map();
             existingPositions.forEach(p => posMap.set(p.code, p));
 
+            // Trong chế độ gán cho LOT đã chọn: các vị trí đang thuộc chính các LOT sắp được chuyển đi
+            // sẽ được giải phóng ngay trước bước gán, nên cho phép đảo chỗ / dịch chuyển nối đuôi.
+            const movingLotIdSet = isSelectedMode
+                ? new Set(orderedSelectedLots.slice(0, uniqueCodes.length).map(l => l.id))
+                : new Set<string>();
+
             const validPositions: { id: string, code: string }[] = [];
             const missingCodes: string[] = [];
             const assignedCodes: string[] = [];
@@ -312,8 +392,8 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 const p = posMap.get(code) as any;
                 if (!p) {
                     missingCodes.push(code);
-                } else if (p.lot_id && p.lots) {
-                    // Only error if lot_id is present AND the joined lot record exists
+                } else if (p.lot_id && p.lots && !movingLotIdSet.has(p.lot_id)) {
+                    // Only error if occupied by a LOT that is NOT part of the moving set
                     assignedCodes.push(code);
                 } else {
                     validPositions.push({ id: p.id, code: p.code });
@@ -338,11 +418,18 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 return;
             }
 
-            // 3. Fetch Unassigned Lots
-            const lotsToAssign = await fetchUnassignedLots(validPositions.length);
+            // 3. Determine Lots to Assign
+            const lotsToAssign = isSelectedMode
+                ? orderedSelectedLots
+                : (fetchUnassignedLots ? await fetchUnassignedLots(validPositions.length) : []);
 
             if (lotsToAssign.length === 0) {
-                showToast('Không có LOT nào đang trống vị trí phù hợp với bộ lọc hiện tại.', 'warning');
+                showToast(
+                    isSelectedMode
+                        ? 'Không có LOT nào được chọn để gán.'
+                        : 'Không có LOT nào đang trống vị trí phù hợp với bộ lọc hiện tại.',
+                    'warning'
+                );
                 setLoading(false);
                 return;
             }
@@ -351,9 +438,45 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
 
             // 4. Perform Mapping and Update
             const lotIdsToAssign = lotsToAssign.slice(0, actualUpdateCount).map(l => l.id);
-            
-            // 1. Clear existing mappings for these lots defensively
-            await supabase.from('positions').update({ lot_id: null }).in('lot_id', lotIdsToAssign);
+
+            // Fetch existing positions of these lots for audit trail & history
+            const { data: oldPositionsData } = await supabase
+                .from('positions')
+                .select('id, code, lot_id')
+                .eq('system_type', currentSystem.code)
+                .in('lot_id', lotIdsToAssign);
+
+            const oldPosByLot = new Map<string, string[]>();
+            (oldPositionsData || []).forEach((p: any) => {
+                if (!p.lot_id) return;
+                const list = oldPosByLot.get(p.lot_id) || [];
+                list.push(p.code);
+                oldPosByLot.set(p.lot_id, list);
+            });
+
+            // 1. Clear existing mappings for these lots (freeing old positions before assigning new ones)
+            const { error: clearError } = await supabase
+                .from('positions')
+                .update({ lot_id: null })
+                .eq('system_type', currentSystem.code)
+                .in('lot_id', lotIdsToAssign);
+
+            if (clearError) throw clearError;
+
+            // Log removal for old positions
+            if (oldPositionsData && oldPositionsData.length > 0) {
+                for (const oldP of oldPositionsData as any[]) {
+                    await logActivity({
+                        supabase,
+                        tableName: 'positions',
+                        recordId: oldP.id,
+                        action: 'UPDATE',
+                        oldData: { lot_id: oldP.lot_id },
+                        newData: { lot_id: null },
+                        systemCode: currentSystem.code
+                    })
+                }
+            }
 
             const positionUpdates: any[] = [];
             const historyInserts: any[] = [];
@@ -361,6 +484,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             for (let i = 0; i < actualUpdateCount; i++) {
                 const lot = lotsToAssign[i];
                 const pos = validPositions[i];
+                const previousPositions = oldPosByLot.get(lot.id) || [];
 
                 positionUpdates.push({
                     id: pos.id,
@@ -376,7 +500,9 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                     details: {
                         position_code: pos.code,
                         position_id: pos.id,
-                        bulk_assign: true
+                        previous_positions: previousPositions,
+                        bulk_assign: true,
+                        reassigned_selected: isSelectedMode
                     }
                 });
             }
@@ -387,6 +513,15 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                     .from('positions')
                     .upsert(positionUpdates);
                 if (batchError) throw batchError;
+            }
+
+            // Clear staging_area_code for lots now placed in physical positions
+            if (lotIdsToAssign.length > 0) {
+                await supabase
+                    .from('lots')
+                    .update({ staging_area_code: null })
+                    .eq('system_code', currentSystem.code)
+                    .in('id', lotIdsToAssign);
             }
 
             // 3. Batch Insert History (Legacy)
@@ -420,7 +555,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
             });
 
             if (actualUpdateCount < validPositions.length || missingCodes.length > 0 || assignedCodes.length > 0) {
-                showToast(`Đã xử lý xong. Có ${missingCodes.length + assignedCodes.length + unmatchedCodes.length} mã lỗi.`, 'warning');
+                showToast(`Đã xử lý xong. Có ${missingCodes.length + assignedCodes.length + unmatchedCodes.length} mã chưa gán.`, 'warning');
             } else {
                 showToast(`Gán thành công toàn bộ ${actualUpdateCount} vị trí!`, 'success');
             }
@@ -441,10 +576,18 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                 <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
                     <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                         <Layers size={20} className="text-orange-500" />
-                        Nhập vị trí hàng loạt
+                        {isSelectedMode
+                            ? `Gán vị trí cho ${orderedSelectedLots.length} LOT đã chọn`
+                            : 'Nhập vị trí hàng loạt'}
                     </h3>
                     <button
-                        onClick={onClose}
+                        onClick={() => {
+                            if (results && results.success.length > 0 && isSelectedMode) {
+                                onSuccess(true)
+                            } else {
+                                onClose()
+                            }
+                        }}
                         className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 w-8 h-8 flex items-center justify-center rounded-full transition-colors"
                     >
                         <X size={18} />
@@ -485,11 +628,24 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                             <form onSubmit={handleAssign} className="p-4 space-y-4 overflow-y-auto">
                                 <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded-xl text-sm leading-relaxed border border-blue-100 dark:border-blue-800/50">
                                     <p className="font-semibold mb-1">Cách thức hoạt động:</p>
-                                    <ul className="list-disc pl-5 space-y-1 opacity-90">
-                                        <li>Nhập danh sách mã vị trí (cách nhau bởi xuống dòng, dấu phẩy, hoặc chấm phẩy).</li>
-                                        <li>Hệ thống sẽ tự động tìm kiếm các LOT <b>chưa gán vị trí</b> (ưu tiên theo bộ lọc hiện tại) để gán lần lượt.</li>
-                                        <li>Bỏ qua các vị trí không tồn tại hoặc đã được gán.</li>
-                                    </ul>
+                                    {isSelectedMode ? (
+                                        <ul className="list-disc pl-5 space-y-1 opacity-90">
+                                            <li>
+                                                Đang chọn <b>{orderedSelectedLots.length} LOT</b>
+                                                {alreadyAssignedSelectedCount > 0 && (
+                                                    <> (<b>{alreadyAssignedSelectedCount} LOT đã có vị trí</b> sẽ tự động giải phóng vị trí cũ và chuyển sang vị trí mới)</>
+                                                )}.
+                                            </li>
+                                            <li>Nhập danh sách mã vị trí mới (cách nhau bởi xuống dòng, dấu phẩy, chấm phẩy hoặc tab).</li>
+                                            <li>Hệ thống tự động gán lần lượt theo thứ tự LOT đã chọn (hỗ trợ đảo chỗ giữa các LOT đang chọn).</li>
+                                        </ul>
+                                    ) : (
+                                        <ul className="list-disc pl-5 space-y-1 opacity-90">
+                                            <li>Nhập danh sách mã vị trí (cách nhau bởi xuống dòng, dấu phẩy, hoặc chấm phẩy).</li>
+                                            <li>Hệ thống sẽ tự động tìm kiếm các LOT <b>chưa gán vị trí</b> (ưu tiên theo bộ lọc hiện tại) để gán lần lượt.</li>
+                                            <li>Bỏ qua các vị trí không tồn tại hoặc đã được gán.</li>
+                                        </ul>
+                                    )}
                                 </div>
 
                                 <div>
@@ -531,8 +687,16 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                                     <div>
                                         <p className="font-semibold mb-1">Gán nhanh theo Sảnh</p>
                                         <p className="opacity-90">
-                                            Hệ thống sẽ tìm các vị trí trống thuộc Sảnh bạn chọn và gán tự động cho các LOT chưa có vị trí
-                                            (đang có {loadingCount ? '...' : (unassignedCount ?? initialUnassignedCount ?? 0)} LOT chờ).
+                                            {isSelectedMode ? (
+                                                <>
+                                                    Hệ thống sẽ tìm các vị trí trống thuộc Sảnh bạn chọn và tự động chuyển <b>{orderedSelectedLots.length} LOT đã chọn</b> vào sảnh này (tự động giải phóng vị trí cũ nếu có).
+                                                </>
+                                            ) : (
+                                                <>
+                                                    Hệ thống sẽ tìm các vị trí trống thuộc Sảnh bạn chọn và gán tự động cho các LOT chưa có vị trí
+                                                    (đang có {loadingCount ? '...' : (unassignedCount ?? initialUnassignedCount ?? 0)} LOT chờ).
+                                                </>
+                                            )}
                                         </p>
                                     </div>
                                 </div>
@@ -585,7 +749,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                                                         {warehouseHalls.map((hall: any) => (
                                                             <button
                                                                 key={hall.id}
-                                                                disabled={loading || hall.emptyCount === 0 || unassignedCount === 0}
+                                                                disabled={loading || hall.emptyCount === 0 || effectiveTargetCount === 0}
                                                                 onClick={() => handleAutoAssignHall(hall)}
                                                                 className="group w-full flex items-center justify-between p-3 rounded-xl border border-transparent hover:border-orange-500/50 bg-slate-50/50 dark:bg-slate-800/20 hover:bg-orange-50/50 dark:hover:bg-orange-900/10 transition-all text-left disabled:opacity-50 disabled:grayscale"
                                                             >
@@ -603,7 +767,7 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-2">
-                                                                    {hall.emptyCount > 0 && unassignedCount > 0 && (
+                                                                    {hall.emptyCount > 0 && effectiveTargetCount > 0 && (
                                                                         <span className="text-[8px] font-black uppercase tracking-wider bg-orange-100 dark:bg-orange-900/50 text-orange-600 px-1.5 py-0.5 rounded">
                                                                             Khả dụng
                                                                         </span>
@@ -653,12 +817,16 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                             {results.unmatched.length > 0 && (
                                 <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-xl p-3">
                                     <h5 className="font-bold text-amber-800 dark:text-amber-400 mb-2 flex items-center justify-between">
-                                        <span>⚠️ Không đủ LOT trống để gán</span>
+                                        <span>{isSelectedMode ? '⚠️ Dư vị trí (vượt quá số LOT đã chọn)' : '⚠️ Không đủ LOT trống để gán'}</span>
                                         <span className="bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100 px-2.5 py-0.5 rounded-full text-xs">
                                             {results.unmatched.length} mã
                                         </span>
                                     </h5>
-                                    <p className="text-xs text-amber-700 dark:text-amber-500 mb-2">Các vị trí hợp lệ nhưng khoanh vùng lọc hiện tại không đủ số lượng LOT trống để gán.</p>
+                                    <p className="text-xs text-amber-700 dark:text-amber-500 mb-2">
+                                        {isSelectedMode
+                                            ? 'Các vị trí này hợp lệ nhưng nhiều hơn số lượng LOT bạn đã tích chọn nên chưa được gán.'
+                                            : 'Các vị trí hợp lệ nhưng khoanh vùng lọc hiện tại không đủ số lượng LOT trống để gán.'}
+                                    </p>
                                     <div className="flex flex-wrap gap-1.5">
                                         {results.unmatched.map(code => (
                                             <span key={code} className="px-2 py-1 bg-white dark:bg-slate-800 border border-amber-100 dark:border-amber-800/50 rounded-lg text-xs font-mono text-slate-600 dark:text-slate-300">
@@ -712,7 +880,13 @@ export function LotBulkAssignModal({ onClose, onSuccess, fetchUnassignedLots, in
                         <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
                             <button
                                 type="button"
-                                onClick={onClose}
+                                onClick={() => {
+                                    if (results && results.success.length > 0 && isSelectedMode) {
+                                        onSuccess(true)
+                                    } else {
+                                        onClose()
+                                    }
+                                }}
                                 className="px-6 py-2.5 bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 rounded-xl font-bold shadow-lg transition-all active:scale-95"
                             >
                                 Đóng

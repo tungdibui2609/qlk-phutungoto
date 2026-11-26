@@ -47,6 +47,7 @@ import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal
 import { LotBulkChangeProductModal } from '@/components/warehouse/lots/LotBulkChangeProductModal'
 import { LotBulkChangeUnitModal } from '@/components/warehouse/lots/LotBulkChangeUnitModal'
 import { LotBulkEditDatesModal } from '@/components/warehouse/lots/LotBulkEditDatesModal'
+import { LotBulkAssignModal } from '@/components/warehouse/lots/LotBulkAssignModal'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 import { exportMarkedPositionsToExcel } from '@/lib/warehouseExcelExport'
 import WarehouseLayoutViewer from '@/components/warehouse/layout-manager/WarehouseLayoutViewer'
@@ -278,6 +279,8 @@ function WarehouseMapContent() {
     const [preselectedProductId, setPreselectedProductId] = useState<string | undefined>(undefined)
     const [isBulkEditDatesOpen, setIsBulkEditDatesOpen] = useState(false)
     const [bulkEditDateLotIds, setBulkEditDateLotIds] = useState<string[] | null>(null)
+    const [isBulkAssignPositionOpen, setIsBulkAssignPositionOpen] = useState(false)
+    const [bulkAssignPositionLotIds, setBulkAssignPositionLotIds] = useState<string[] | null>(null)
     const [products, setProducts] = useState<any[]>([])
     const [taggingLotIds, setTaggingLotIds] = useState<string[] | null>(null)
     const [viewingLot, setViewingLot] = useState<any>(null)
@@ -369,6 +372,15 @@ function WarehouseMapContent() {
         }
         setBulkEditDateLotIds(lotIds)
         setIsBulkEditDatesOpen(true)
+    }
+
+    const handleOpenBulkAssignPosition = (lotIds: string[]) => {
+        if (!lotIds || lotIds.length === 0) {
+            showToast('Các vị trí đã chọn không có LOT nào để gán vị trí', 'warning')
+            return
+        }
+        setBulkAssignPositionLotIds(lotIds)
+        setIsBulkAssignPositionOpen(true)
     }
 
     const toggleMergeZone = (zoneId: string) => {
@@ -1235,6 +1247,7 @@ function WarehouseMapContent() {
                 onOpenSelectHall={() => setIsSelectHallOpen(true)}
                 onOpenMove={() => setIsMoveModalOpen(true)}
                 onOpenAutoAssignWarehouse={() => setIsAutoAssignModalOpen(true)}
+                onBulkAssignPosition={handleOpenBulkAssignPosition}
                 onCloneLot={handleCloneLot}
                 onBulkChangeProduct={handleOpenBulkChangeProduct}
                 onBulkChangeUnit={handleOpenBulkChangeUnit}
@@ -1298,6 +1311,32 @@ function WarehouseMapContent() {
                         setBulkEditDateLotIds(null)
                         fetchData()
                         setSelectedPositionIds(new Set())
+                    }}
+                />
+            )}
+
+            {isBulkAssignPositionOpen && bulkAssignPositionLotIds && bulkAssignPositionLotIds.length > 0 && (
+                <LotBulkAssignModal
+                    selectedLotIds={bulkAssignPositionLotIds}
+                    selectedLots={bulkAssignPositionLotIds.map(id => {
+                        const lotPos = positions.filter(p => p.lot_id === id)
+                        return {
+                            id,
+                            code: lotInfo[id]?.code || id,
+                            positions: lotPos.map(p => ({ id: p.id, code: p.code }))
+                        } as any
+                    })}
+                    onClose={() => {
+                        setIsBulkAssignPositionOpen(false)
+                        setBulkAssignPositionLotIds(null)
+                    }}
+                    onSuccess={(close = true) => {
+                        if (close) {
+                            setIsBulkAssignPositionOpen(false)
+                            setBulkAssignPositionLotIds(null)
+                            setSelectedPositionIds(new Set())
+                        }
+                        fetchData()
                     }}
                 />
             )}

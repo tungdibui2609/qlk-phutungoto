@@ -124,6 +124,7 @@ export function LotPageManager() {
     const [selectedLotIds, setSelectedLotIds] = useState<Set<string>>(new Set())
     const [bulkTagLotIds, setBulkTagLotIds] = useState<string[] | null>(null)
     const [showBulkEditDates, setShowBulkEditDates] = useState(false)
+    const [showBulkAssignSelected, setShowBulkAssignSelected] = useState(false)
 
     // Selection Handlers
     const handleToggleSelect = (id: string) => {
@@ -174,6 +175,11 @@ export function LotPageManager() {
         const ids = Array.from(selectedLotIds)
         if (ids.length === 0) return
         setShowBulkEditDates(true)
+    }
+
+    const handleBulkAssignPositionSelected = () => {
+        if (selectedLotIds.size === 0) return
+        setShowBulkAssignSelected(true)
     }
 
     const handleBulkClearDailySeqSelected = async () => {
@@ -791,93 +797,132 @@ export function LotPageManager() {
                 />
             )}
 
+            {/* Bulk Assign Position Modal for Multi-Selected LOTs (supports already-assigned LOTs) */}
+            {showBulkAssignSelected && selectedLotIds.size > 0 && (
+                <LotBulkAssignModal
+                    selectedLotIds={Array.from(selectedLotIds)}
+                    selectedLots={lots.filter(l => selectedLotIds.has(l.id))}
+                    onClose={() => setShowBulkAssignSelected(false)}
+                    onSuccess={(close = true) => {
+                        if (close) {
+                            setShowBulkAssignSelected(false)
+                            setSelectedLotIds(new Set())
+                        }
+                        fetchLots()
+                    }}
+                />
+            )}
+
             {/* Floating Multi-Select Action Bar */}
             {selectedLotIds.size > 0 && (
-                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 duration-200">
-                    <div className="bg-slate-900/95 dark:bg-slate-800/95 text-white rounded-2xl shadow-2xl border border-slate-700/80 px-4 py-2.5 flex items-center gap-3 backdrop-blur-md">
-                        <div className="flex items-center gap-2 pr-3 border-r border-slate-700">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span className="text-xs sm:text-sm font-bold text-white whitespace-nowrap">
-                                Đã chọn {selectedLotIds.size} LOT
+                <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 max-w-[calc(100vw-1.5rem)] animate-in slide-in-from-bottom-5 duration-200">
+                    <div className="bg-slate-900/95 dark:bg-slate-900/95 text-white rounded-2xl shadow-2xl shadow-slate-950/40 border border-slate-700/80 px-3 py-2 flex items-center gap-2 backdrop-blur-xl">
+                        {/* Selected Count Pill */}
+                        <div className="flex items-center gap-2 px-2.5 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 shrink-0">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                            <span className="text-xs sm:text-[13px] font-bold text-emerald-300 whitespace-nowrap">
+                                {selectedLotIds.size} LOT
                             </span>
                         </div>
 
-                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                        <div className="w-px h-6 bg-slate-700/80 shrink-0" />
+
+                        {/* Action Buttons (Single-line, uniform height) */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
                             {(hasPermission('warehouse_lot.manage') || hasPermission('warehouse_lot.create')) && (
                                 <>
+                                    {/* Nhóm Gán & Cập nhật */}
                                     <button
                                         type="button"
-                                        onClick={handleBulkDeleteSelected}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-xs"
-                                        title="Xóa tất cả LOT đã chọn"
+                                        onClick={handleBulkAssignPositionSelected}
+                                        className="h-9 px-3 flex items-center gap-1.5 text-xs sm:text-[13px] font-semibold bg-indigo-500/20 hover:bg-indigo-500 text-indigo-200 hover:text-white border border-indigo-400/35 hover:border-indigo-400 rounded-xl transition-all active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
+                                        title="Gán vị trí mới cho các LOT đã chọn (bao gồm cả LOT đã có vị trí)"
                                     >
-                                        <Trash2 size={15} />
-                                        <span>Xóa ({selectedLotIds.size})</span>
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={handleBulkClearDailySeqSelected}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-xs"
-                                        title="Xóa STT của các LOT đã chọn"
-                                    >
-                                        <Eraser size={15} />
-                                        <span>Xóa STT</span>
+                                        <MapPin size={14} className="shrink-0" />
+                                        <span>Gán vị trí</span>
                                     </button>
 
                                     <button
                                         type="button"
                                         onClick={handleBulkTagSelected}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-xs"
+                                        className="h-9 px-3 flex items-center gap-1.5 text-xs sm:text-[13px] font-semibold bg-teal-500/15 hover:bg-teal-500 text-teal-200 hover:text-white border border-teal-400/30 hover:border-teal-400 rounded-xl transition-all active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
                                         title="Gán mã phụ cho các LOT đã chọn"
                                     >
-                                        <Tag size={15} />
-                                        <span>Gán mã phụ</span>
+                                        <Tag size={14} className="shrink-0" />
+                                        <span>Mã phụ</span>
                                     </button>
 
                                     <button
                                         type="button"
                                         onClick={handleBulkEditDatesSelected}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-xs"
+                                        className="h-9 px-3 flex items-center gap-1.5 text-xs sm:text-[13px] font-semibold bg-sky-500/15 hover:bg-sky-500 text-sky-200 hover:text-white border border-sky-400/30 hover:border-sky-400 rounded-xl transition-all active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
                                         title="Đổi ngày tháng cho các LOT đã chọn"
                                     >
-                                        <Calendar size={15} />
+                                        <Calendar size={14} className="shrink-0" />
                                         <span>Đổi ngày</span>
                                     </button>
 
+                                    <div className="w-px h-5 bg-slate-700/80 mx-0.5 shrink-0" />
+
+                                    {/* Nhóm Khóa / Mở khóa */}
+                                    <div className="flex items-center bg-slate-800/90 border border-slate-700/80 rounded-xl p-0.5 h-9 shrink-0">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleBulkLockSelected(true)}
+                                            className="h-full px-2.5 flex items-center gap-1.5 text-xs sm:text-[13px] font-medium text-slate-200 hover:text-white hover:bg-slate-700/90 rounded-[10px] transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                                            title="Khóa các LOT đã chọn"
+                                        >
+                                            <Lock size={13} className="shrink-0" />
+                                            <span>Khóa</span>
+                                        </button>
+                                        <div className="w-px h-4 bg-slate-700/80" />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleBulkLockSelected(false)}
+                                            className="h-full px-2.5 flex items-center gap-1.5 text-xs sm:text-[13px] font-medium text-slate-200 hover:text-white hover:bg-slate-700/90 rounded-[10px] transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                                            title="Mở khóa các LOT đã chọn"
+                                        >
+                                            <Unlock size={13} className="shrink-0" />
+                                            <span>Mở khóa</span>
+                                        </button>
+                                    </div>
+
+                                    <div className="w-px h-5 bg-slate-700/80 mx-0.5 shrink-0" />
+
+                                    {/* Nhóm Xóa (tách riêng tránh bấm nhầm) */}
                                     <button
                                         type="button"
-                                        onClick={() => handleBulkLockSelected(true)}
-                                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition-all active:scale-95 cursor-pointer"
-                                        title="Khóa các LOT đã chọn"
+                                        onClick={handleBulkClearDailySeqSelected}
+                                        className="h-9 px-3 flex items-center gap-1.5 text-xs sm:text-[13px] font-semibold bg-amber-500/15 hover:bg-amber-500 text-amber-200 hover:text-white border border-amber-400/30 hover:border-amber-400 rounded-xl transition-all active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
+                                        title="Xóa STT của các LOT đã chọn"
                                     >
-                                        <Lock size={14} />
-                                        <span>Khóa</span>
+                                        <Eraser size={14} className="shrink-0" />
+                                        <span>Xóa STT</span>
                                     </button>
 
                                     <button
                                         type="button"
-                                        onClick={() => handleBulkLockSelected(false)}
-                                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition-all active:scale-95 cursor-pointer"
-                                        title="Mở khóa các LOT đã chọn"
+                                        onClick={handleBulkDeleteSelected}
+                                        className="h-9 px-3 flex items-center gap-1.5 text-xs sm:text-[13px] font-semibold bg-rose-500/20 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-400/35 hover:border-rose-500 rounded-xl transition-all active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
+                                        title="Xóa tất cả LOT đã chọn"
                                     >
-                                        <Unlock size={14} />
-                                        <span>Mở khóa</span>
+                                        <Trash2 size={14} className="shrink-0" />
+                                        <span>Xóa ({selectedLotIds.size})</span>
                                     </button>
                                 </>
                             )}
                         </div>
 
-                        <div className="pl-2 border-l border-slate-700">
-                            <button
-                                type="button"
-                                onClick={handleClearSelection}
-                                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
-                                title="Bỏ chọn tất cả"
-                            >
-                                <X size={16} />
-                            </button>
-                        </div>
+                        <div className="w-px h-6 bg-slate-700/80 shrink-0" />
+
+                        <button
+                            type="button"
+                            onClick={handleClearSelection}
+                            className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer shrink-0"
+                            title="Bỏ chọn tất cả"
+                        >
+                            <X size={16} />
+                        </button>
                     </div>
                 </div>
             )}
