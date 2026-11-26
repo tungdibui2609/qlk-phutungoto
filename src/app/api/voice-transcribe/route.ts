@@ -120,50 +120,76 @@ async function uploadAudioToGoogleDrive(
   }
 ): Promise<string | null> {
   if (!driveCfg) return null
-  try {
-    const ext = getExtFromMime(params.mimeType)
-    const now = new Date()
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    const day = `${ym}-${String(now.getDate()).padStart(2, '0')}`
-    const hhmmss = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
-    const rand = Math.random().toString(36).slice(2, 6)
-    const sessionFolder = sanitizeDriveSegment(
-      params.sessionName,
-      params.sessionId.slice(0, 12),
-      60
-    )
-    const posPrefix = sanitizeDriveSegment(
-      params.positionCode,
-      params.positionId.slice(0, 12),
-      32
-    ).replace(/\s+/g, '_')
-    const folderPath = `${params.systemCode}/${ym}/${day}/${sessionFolder}`
-    const filename = `${posPrefix}_${hhmmss}_${rand}.${ext}`
+  const ext = getExtFromMime(params.mimeType)
+  const now = new Date()
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const day = `${ym}-${String(now.getDate()).padStart(2, '0')}`
+  const hhmmss = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
+  const rand = Math.random().toString(36).slice(2, 6)
+  const sessionFolder = sanitizeDriveSegment(
+    params.sessionName,
+    params.sessionId.slice(0, 12),
+    60
+  )
+  const posPrefix = sanitizeDriveSegment(
+    params.positionCode,
+    params.positionId.slice(0, 12),
+    32
+  ).replace(/\s+/g, '_')
+  const folderPath = `${params.systemCode}/${ym}/${day}/${sessionFolder}`
+  const filename = `${posPrefix}_${hhmmss}_${rand}.${ext}`
 
-    const res = await fetch(driveCfg.webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        rootFolder: driveCfg.rootFolder,
-        folderPath,
-        filename,
-        mimeType: params.mimeType || 'audio/webm',
-        base64: params.audioBase64,
-      }),
-      redirect: 'follow',
-    })
+  // Retry tối đa 3 lần chống Google Apps Script cold-start làm rớt file đầu tiên
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(driveCfg.webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rootFolder: driveCfg.rootFolder,
+          folderPath,
+          filename,
+          mimeType: params.mimeType || 'audio/webm',
+          base64: params.audioBase64,
+        }),
+        redirect: 'follow',
+      })
 
-    const text = await res.text()
-    const parsed = JSON.parse(text)
-    if (parsed?.success && parsed?.fileId) {
-      return `/api/voice-proxy?id=${encodeURIComponent(String(parsed.fileId))}`
+      const text = await res.text()
+      const parsed = JSON.parse(text)
+      if (parsed?.success && parsed?.fileId) {
+        return `/api/voice-proxy?id=${encodeURIComponent(String(parsed.fileId))}`
+      }
+      console.warn(
+        `[VoiceTranscribe] Google Drive upload failed (attempt ${attempt}/3):`,
+        parsed?.error || text.slice(0, 200)
+      )
+    } catch (e: any) {
+      console.warn(
+        `[VoiceTranscribe] Google Drive upload exception (attempt ${attempt}/3):`,
+        e?.message || e
+      )
     }
-    console.warn('[VoiceTranscribe] Google Drive upload failed:', parsed?.error || text.slice(0, 200))
-    return null
-  } catch (e: any) {
-    console.warn('[VoiceTranscribe] Google Drive upload exception:', e?.message || e)
-    return null
+    if (attempt < 3) {
+      await new Promise(resolve => setTimeout(resolve, 700 * attempt))
+    }
   }
+  return null
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  let cursor = 0
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const idx = cursor++
+      await worker(items[idx])
+    }
+  })
+  await Promise.all(runners)
 }
 
 export async function POST(req: NextRequest) {
@@ -219,22 +245,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Danh sách ghi âm rỗng' }, { status: 400 })
       }
 
-      // 1. Upload song song file ghi âm lên Google Drive (nếu đã cấu hình trên /integrations)
+      // 1. Upload file ghi âm lên Google Drive (giới hạn 3 luồng + retry 3 lần chống cold-start)
       const voiceUrlMap: Record<string, string | null> = {}
       if (driveCfg) {
-        await Promise.all(
-          batchItems.map(async (it: any) => {
-            voiceUrlMap[it.itemId] = await uploadAudioToGoogleDrive(driveCfg, {
-              audioBase64: it.audioBase64,
-              mimeType: it.mimeType,
-              systemCode,
-              sessionId,
-              sessionName,
-              positionId: it.positionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60),
-              positionCode: it.positionCode,
-            })
+        await runWithConcurrency(batchItems, 3, async (it: any) => {
+          voiceUrlMap[it.itemId] = await uploadAudioToGoogleDrive(driveCfg, {
+            audioBase64: it.audioBase64,
+            mimeType: it.mimeType,
+            systemCode,
+            sessionId,
+            sessionName,
+            positionId: it.positionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60),
+            positionCode: it.positionCode,
           })
-        )
+        })
       }
 
       const geminiCfg = await resolveGeminiConfig(companyId)
@@ -321,13 +345,73 @@ export async function POST(req: NextRequest) {
             parsedMap = {}
           }
 
+          const resolvedTexts: Record<string, string> = {}
+          batchItems.forEach((it: any, idx: number) => {
+            const shortKey = String(idx + 1)
+            const rawVal =
+              parsedMap?.[shortKey] ??
+              parsedMap?.[`Đoạn ${shortKey}`] ??
+              parsedMap?.[`đoạn ${shortKey}`] ??
+              parsedMap?.[it.itemId] ??
+              ''
+            resolvedTexts[it.itemId] = String(rawVal || '').trim()
+          })
+
+          // Nếu trong lô nhiều file có đoạn bị Gemini bỏ sót (rỗng text) -> tự động retry dịch lẻ 1 lần cho đoạn đó
+          if (batchItems.length > 1) {
+            for (const it of batchItems) {
+              if (!resolvedTexts[it.itemId]) {
+                try {
+                  const singlePrompt = [
+                    'Nghe đoạn ghi âm kiểm kê của nhân viên KHO LẠNH SẦU RIÊNG.',
+                    `Tên hàng & từ hay dùng trong kho: ${mergedVocab.join(', ')}, vụn.`,
+                    'Chép lại đúng ý người nói bằng tiếng Việt, viết số bằng chữ số (0-9), giữ nguyên phân loại A/B/C/D nếu có.',
+                    'CHỈ trả về nội dung đã nghe, không giải thích, không ngoặc kép. Nếu im lặng trả về chuỗi rỗng.',
+                  ].join('\n')
+                  const retryRes = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      contents: [
+                        {
+                          role: 'user',
+                          parts: [
+                            { text: singlePrompt },
+                            {
+                              inlineData: {
+                                mimeType: it.mimeType || 'audio/webm',
+                                data: it.audioBase64,
+                              },
+                            },
+                          ],
+                        },
+                      ],
+                      generationConfig: { temperature: 0.1, maxOutputTokens: 160 },
+                    }),
+                  })
+                  if (retryRes.ok) {
+                    const retryJson = await retryRes.json()
+                    const retryTxt =
+                      retryJson?.candidates?.[0]?.content?.parts
+                        ?.map((p: any) => p?.text || '')
+                        .join(' ')
+                        .trim() || ''
+                    const cleanedRetry = retryTxt.replace(/^["'`]+|["'`]+$/g, '').trim()
+                    if (cleanedRetry) resolvedTexts[it.itemId] = cleanedRetry
+                  }
+                } catch {}
+              }
+            }
+          }
+
           return NextResponse.json({
-            results: batchItems.map((it: any, idx: number) => ({
+            results: batchItems.map((it: any) => ({
               itemId: it.itemId,
               positionId: it.positionId,
-              text: String(parsedMap?.[String(idx + 1)] ?? parsedMap?.[it.itemId] ?? '').trim(),
+              text: resolvedTexts[it.itemId] || '',
               voiceUrl: voiceUrlMap[it.itemId] || null,
             })),
+            driveEnabled: Boolean(driveCfg),
             engine: 'gemini-batch',
             model,
           })
@@ -343,6 +427,7 @@ export async function POST(req: NextRequest) {
           text: '',
           voiceUrl: voiceUrlMap[it.itemId] || null,
         })),
+        driveEnabled: Boolean(driveCfg),
         engine: 'drive-only',
         warning: lastError,
       })
@@ -449,7 +534,13 @@ export async function POST(req: NextRequest) {
             .trim() || ''
 
         const cleaned = rawText.replace(/^["'`]+|["'`]+$/g, '').trim()
-        return NextResponse.json({ text: cleaned, voiceUrl, engine: 'gemini', model })
+        return NextResponse.json({
+          text: cleaned,
+          voiceUrl,
+          driveEnabled: Boolean(driveCfg),
+          engine: 'gemini',
+          model,
+        })
       } catch (e: any) {
         lastError = e?.message || 'Lỗi mạng gọi Gemini'
       }
@@ -459,6 +550,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         text: '',
         voiceUrl,
+        driveEnabled: Boolean(driveCfg),
         engine: 'drive-only',
         warning: lastError,
       })

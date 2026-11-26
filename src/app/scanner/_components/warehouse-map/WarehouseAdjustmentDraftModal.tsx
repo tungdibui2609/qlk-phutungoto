@@ -22,7 +22,7 @@ import {
   PauseCircle,
   Cpu,
 } from 'lucide-react'
-import { VoiceMicButton, OfflineVoicePayload } from '../VoiceMicButton'
+import { VoiceMicButton, OfflineVoicePayload, VoiceMicButtonHandle } from '../VoiceMicButton'
 import { appendWarehouseVoiceText, normalizeWarehouseVoiceText } from '../voiceTextNormalizer'
 import type {
   PositionItem,
@@ -165,6 +165,8 @@ export default function WarehouseAdjustmentDraftModal({
   const [assignLotError, setAssignLotError] = useState<string | null>(null)
 
   // State ghi âm & dịch AI cho ô ghi chú (lưu bền vững IndexedDB + thư mục Drive riêng giống Kiểm kê)
+  const voiceMicRef = useRef<VoiceMicButtonHandle | null>(null)
+  const [isSavingDraft, setIsSavingDraft] = useState(false)
   const [voiceNoteUrl, setVoiceNoteUrl] = useState<string | null>(null)
   const [pendingVoices, setPendingVoices] = useState<OfflineInventoryVoiceItem[]>([])
   const [playingVoiceKey, setPlayingVoiceKey] = useState<string | null>(null)
@@ -335,6 +337,7 @@ export default function WarehouseAdjustmentDraftModal({
         const rawText = String(data?.text || '').trim()
         const normalized = rawText ? normalizeWarehouseVoiceText(rawText) : ''
         const voiceUrl = data?.voiceUrl ? String(data.voiceUrl) : null
+        const driveEnabled = Boolean(data?.driveEnabled)
         if (normalized || voiceUrl) {
           if (normalized) {
             setNote(prev => appendWarehouseVoiceText(prev, normalized))
@@ -342,9 +345,14 @@ export default function WarehouseAdjustmentDraftModal({
           if (voiceUrl) {
             setVoiceNoteUrl(prev => appendVoiceNoteUrl(prev, voiceUrl))
           }
-          if (playingVoiceKey === rv.key) stopPlayingAudio()
-          await deleteOfflineInventoryVoiceByKey(rv.key)
-          setPendingVoices(prev => prev.filter(v => v.key !== rv.key))
+          const canRemoveLocal = driveEnabled ? Boolean(voiceUrl) : Boolean(normalized)
+          if (canRemoveLocal) {
+            if (playingVoiceKey === rv.key) stopPlayingAudio()
+            await deleteOfflineInventoryVoiceByKey(rv.key)
+            setPendingVoices(prev => prev.filter(v => v.key !== rv.key))
+          } else {
+            setVoiceNotice('Đã dịch chữ nhưng chưa đẩy được file ghi âm lên Drive — file vẫn giữ trên máy!')
+          }
         } else {
           setVoiceNotice(data?.warning || 'AI không nghe rõ — file vẫn được giữ lại trên máy.')
         }
@@ -694,129 +702,162 @@ export default function WarehouseAdjustmentDraftModal({
     [assignSttQuery, availablePositions]
   )
 
-  const handleSave = () => {
-    if (!position) return
+  const handleSave = async () => {
+    if (!position || isSavingDraft) return
     setErrorMsg(null)
+    setIsSavingDraft(true)
 
-    const cleanStt = assignSttQuery.replace(/^#/, '').trim().toUpperCase()
-    if (actionType === 'ASSIGN_LOT' && !cleanStt) {
-      setErrorMsg('Vui lòng nhập STT của Lot (VD: G57, G88...) cần gắn vào vị trí này.')
-      return
-    }
+    try {
+      let finalNote = note
+      let finalVoiceNoteUrl = voiceNoteUrl
+      let justSavedPendingVoice = false
 
-    if (
-      actionType === 'NOTE' &&
-      !note.trim() &&
-      !voiceNoteUrl &&
-      pendingVoices.length === 0
-    ) {
-      setErrorMsg('Vui lòng nhập nội dung ghi chú hoặc ghi âm giọng nói muốn gửi lên Web.')
-      return
-    }
-
-    if (!isCurrentlyOccupied && actionType === 'SET_QTY' && subItems.length === 0) {
-      setErrorMsg('Vui lòng tìm và chọn ít nhất 1 sản phẩm để tạo Lot mới cho vị trí trống.')
-      return
-    }
-
-    if (actionType === 'MOVE' && !targetPosCode.trim()) {
-      setErrorMsg('Vui lòng chọn hoặc nhập mã vị trí đích cần chuyển sang.')
-      return
-    }
-
-    let parsedNewQty: number | null = null
-    let finalSubItems: ProposalSubItem[] | undefined = undefined
-
-    if (actionType === 'SET_QTY') {
-      if (hasMultipleProducts) {
-        parsedNewQty = Number(
-          subItems.reduce((sum, item) => sum + (item.new_quantity || 0), 0).toFixed(2)
-        )
-        finalSubItems = subItems
-      } else {
-        const parsed = parseFloat(newQtyStr.replace(',', '.'))
-        if (isNaN(parsed) || parsed < 0) {
-          setErrorMsg('Vui lòng nhập số lượng thực tế hợp lệ!')
-          return
+      // Nếu người dùng quên bấm dừng ghi âm mà bấm thẳng "Lưu vào phiếu nháp" -> tự động dừng & lưu ghi âm trước
+      if (voiceMicRef.current?.isRecording()) {
+        const stopRes = await voiceMicRef.current.stopAndFinalize()
+        if (stopRes.text && stopRes.text.trim()) {
+          finalNote = appendWarehouseVoiceText(finalNote, stopRes.text)
         }
-        parsedNewQty = parsed
+        if (stopRes.voiceUrl) {
+          finalVoiceNoteUrl = appendVoiceNoteUrl(finalVoiceNoteUrl, stopRes.voiceUrl)
+        }
+        if (stopRes.savedOffline) {
+          justSavedPendingVoice = true
+        }
+      }
+
+      const cleanStt = assignSttQuery.replace(/^#/, '').trim().toUpperCase()
+      if (actionType === 'ASSIGN_LOT' && !cleanStt) {
+        setErrorMsg('Vui lòng nhập STT của Lot (VD: G57, G88...) cần gắn vào vị trí này.')
+        return
+      }
+
+      if (
+        actionType === 'NOTE' &&
+        !finalNote.trim() &&
+        !finalVoiceNoteUrl &&
+        pendingVoices.length === 0 &&
+        !justSavedPendingVoice
+      ) {
+        setErrorMsg('Vui lòng nhập nội dung ghi chú hoặc ghi âm giọng nói muốn gửi lên Web.')
+        return
+      }
+
+      if (!isCurrentlyOccupied && actionType === 'SET_QTY' && subItems.length === 0) {
+        setErrorMsg('Vui lòng tìm và chọn ít nhất 1 sản phẩm để tạo Lot mới cho vị trí trống.')
+        return
+      }
+
+      if (actionType === 'MOVE' && !targetPosCode.trim()) {
+        setErrorMsg('Vui lòng chọn hoặc nhập mã vị trí đích cần chuyển sang.')
+        return
+      }
+
+      let parsedNewQty: number | null = null
+      let finalSubItems: ProposalSubItem[] | undefined = undefined
+
+      if (actionType === 'SET_QTY') {
+        if (hasMultipleProducts) {
+          parsedNewQty = Number(
+            subItems.reduce((sum, item) => sum + (item.new_quantity || 0), 0).toFixed(2)
+          )
+          finalSubItems = subItems
+        } else {
+          const parsed = parseFloat(newQtyStr.replace(',', '.'))
+          if (isNaN(parsed) || parsed < 0) {
+            setErrorMsg('Vui lòng nhập số lượng thực tế hợp lệ!')
+            return
+          }
+          parsedNewQty = parsed
+          finalSubItems =
+            subItems.length > 0
+              ? subItems.map(s => ({ ...s, new_quantity: parsed }))
+              : undefined
+        }
+      } else if (actionType === 'CLEAR') {
+        parsedNewQty = 0
         finalSubItems =
           subItems.length > 0
-            ? subItems.map(s => ({ ...s, new_quantity: parsed }))
+            ? subItems.map(s => ({ ...s, new_quantity: 0 }))
             : undefined
       }
-    } else if (actionType === 'CLEAR') {
-      parsedNewQty = 0
-      finalSubItems =
-        subItems.length > 0
-          ? subItems.map(s => ({ ...s, new_quantity: 0 }))
-          : undefined
+
+      let resolvedTargetId = targetPosId
+      if (actionType === 'MOVE' && !resolvedTargetId && targetPosCode.trim()) {
+        const found = availablePositions.find(
+          p => (p.code || '').trim().toUpperCase() === targetPosCode.trim().toUpperCase()
+        )
+        if (found) resolvedTargetId = found.id
+      }
+
+      const item: ProposalItem =
+        actionType === 'ASSIGN_LOT'
+          ? {
+              id: existingDraftItem?.id || `${position.id}-${Date.now()}`,
+              position_id: position.id,
+              position_code: position.code,
+              warehouse_name: zonePath || undefined,
+              action_type: 'ASSIGN_LOT',
+              lot_id: foundAssignLot?.id || null,
+              lot_code: foundAssignLot?.code || null,
+              lot_stt: foundAssignLot?.stt || cleanStt,
+              product_name: foundAssignLot?.product_name || `Gắn STT ${cleanStt}`,
+              sku: foundAssignLot?.sku || null,
+              current_quantity: position.quantity ?? 0,
+              unit: foundAssignLot?.unit || 'Thùng',
+              new_quantity: foundAssignLot?.quantity ?? null,
+              target_position_id: foundAssignLot?.current_position_id || null,
+              target_position_code: foundAssignLot?.current_position_code || null,
+              note: finalNote.trim() || null,
+              voice_note_url: finalVoiceNoteUrl || null,
+              updated_at: new Date().toISOString(),
+            }
+          : {
+              id: existingDraftItem?.id || `${position.id}-${Date.now()}`,
+              position_id: position.id,
+              position_code: position.code,
+              warehouse_name: zonePath || undefined,
+              action_type: actionType,
+              lot_id: position.lot_id || null,
+              lot_code: position.lot_code || null,
+              lot_stt: position.stt || null,
+              product_name:
+                position.product_name ||
+                (finalSubItems && finalSubItems.length > 0
+                  ? finalSubItems.map(s => s.product_name).join(', ')
+                  : null),
+              sku:
+                position.sku ||
+                (finalSubItems && finalSubItems.length > 0
+                  ? finalSubItems.map(s => s.sku).filter(Boolean).join(', ') || null
+                  : null),
+              current_quantity: position.quantity ?? null,
+              unit:
+                position.unit ||
+                (finalSubItems && finalSubItems.length > 0 ? finalSubItems[0].unit : 'Thùng'),
+              ...(finalSubItems && finalSubItems.length > 0 ? { sub_items: finalSubItems } : {}),
+              new_quantity: parsedNewQty,
+              target_position_id: actionType === 'MOVE' ? resolvedTargetId : null,
+              target_position_code:
+                actionType === 'MOVE' ? targetPosCode.trim().toUpperCase() : null,
+              note: finalNote.trim() || null,
+              voice_note_url: finalVoiceNoteUrl || null,
+              updated_at: new Date().toISOString(),
+            }
+
+      onSaveItem(item)
+      onClose()
+    } finally {
+      setIsSavingDraft(false)
     }
+  }
 
-    let resolvedTargetId = targetPosId
-    if (actionType === 'MOVE' && !resolvedTargetId && targetPosCode.trim()) {
-      const found = availablePositions.find(
-        p => (p.code || '').trim().toUpperCase() === targetPosCode.trim().toUpperCase()
-      )
-      if (found) resolvedTargetId = found.id
+  const handleCloseOrAutoSave = async () => {
+    if (isSavingDraft) return
+    if (voiceMicRef.current?.isRecording()) {
+      await handleSave()
+      return
     }
-
-    const item: ProposalItem =
-      actionType === 'ASSIGN_LOT'
-        ? {
-            id: existingDraftItem?.id || `${position.id}-${Date.now()}`,
-            position_id: position.id,
-            position_code: position.code,
-            warehouse_name: zonePath || undefined,
-            action_type: 'ASSIGN_LOT',
-            lot_id: foundAssignLot?.id || null,
-            lot_code: foundAssignLot?.code || null,
-            lot_stt: foundAssignLot?.stt || cleanStt,
-            product_name: foundAssignLot?.product_name || `Gắn STT ${cleanStt}`,
-            sku: foundAssignLot?.sku || null,
-            current_quantity: position.quantity ?? 0,
-            unit: foundAssignLot?.unit || 'Thùng',
-            new_quantity: foundAssignLot?.quantity ?? null,
-            target_position_id: foundAssignLot?.current_position_id || null,
-            target_position_code: foundAssignLot?.current_position_code || null,
-            note: note.trim() || null,
-            voice_note_url: voiceNoteUrl || null,
-            updated_at: new Date().toISOString(),
-          }
-        : {
-            id: existingDraftItem?.id || `${position.id}-${Date.now()}`,
-            position_id: position.id,
-            position_code: position.code,
-            warehouse_name: zonePath || undefined,
-            action_type: actionType,
-            lot_id: position.lot_id || null,
-            lot_code: position.lot_code || null,
-            lot_stt: position.stt || null,
-            product_name:
-              position.product_name ||
-              (finalSubItems && finalSubItems.length > 0
-                ? finalSubItems.map(s => s.product_name).join(', ')
-                : null),
-            sku:
-              position.sku ||
-              (finalSubItems && finalSubItems.length > 0
-                ? finalSubItems.map(s => s.sku).filter(Boolean).join(', ') || null
-                : null),
-            current_quantity: position.quantity ?? null,
-            unit:
-              position.unit ||
-              (finalSubItems && finalSubItems.length > 0 ? finalSubItems[0].unit : 'Thùng'),
-            ...(finalSubItems && finalSubItems.length > 0 ? { sub_items: finalSubItems } : {}),
-            new_quantity: parsedNewQty,
-            target_position_id: actionType === 'MOVE' ? resolvedTargetId : null,
-            target_position_code:
-              actionType === 'MOVE' ? targetPosCode.trim().toUpperCase() : null,
-            note: note.trim() || null,
-            voice_note_url: voiceNoteUrl || null,
-            updated_at: new Date().toISOString(),
-          }
-
-    onSaveItem(item)
     onClose()
   }
 
@@ -830,7 +871,7 @@ export default function WarehouseAdjustmentDraftModal({
           ? { top: viewportStyle.top || 0, height: viewportStyle.height }
           : { top: 0, bottom: 0 }
       }
-      onClick={onClose}
+      onClick={() => void handleCloseOrAutoSave()}
     >
       <div
         className="bg-[#0f172a] text-slate-100 w-full max-w-lg rounded-t-3xl sm:rounded-3xl flex flex-col shadow-2xl border border-slate-700/80 overflow-hidden"
@@ -856,7 +897,7 @@ export default function WarehouseAdjustmentDraftModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => void handleCloseOrAutoSave()}
             className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 shrink-0"
           >
             <X size={18} />
@@ -1681,6 +1722,7 @@ export default function WarehouseAdjustmentDraftModal({
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] font-semibold text-sky-400/90">Nói AI</span>
                 <VoiceMicButton
+                  ref={voiceMicRef}
                   size="sm"
                   saveToServer
                   rootFolderOverride={DRAFT_VOICE_ROOT_FOLDER}
@@ -1691,7 +1733,7 @@ export default function WarehouseAdjustmentDraftModal({
                   positionCode={position.code || null}
                   vocabulary={voiceVocabulary}
                   onResult={handleVoiceResult}
-                  onOfflineAudio={payload => void handleVoiceOfflineSaved(payload)}
+                  onOfflineAudio={handleVoiceOfflineSaved}
                   onError={msg => setVoiceNotice(msg)}
                 />
               </div>

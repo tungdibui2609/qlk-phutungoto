@@ -786,6 +786,7 @@ export default function WarehouseDraftListModal({
         const rawText = String(data?.text || '').trim()
         const normalized = rawText ? normalizeWarehouseVoiceText(rawText) : ''
         const voiceUrl = data?.voiceUrl ? String(data.voiceUrl) : null
+        const driveEnabled = Boolean(data?.driveEnabled)
         if (res.ok && (normalized || voiceUrl)) {
           const updatedItem: ProposalItem = {
             ...item,
@@ -796,9 +797,14 @@ export default function WarehouseDraftListModal({
             updated_at: new Date().toISOString(),
           }
           if (onUpdateDraftItem) onUpdateDraftItem(updatedItem)
-          if (playingVoiceKey === pv.key) stopPlayingAudio()
-          await deleteOfflineInventoryVoiceByKey(pv.key)
-          await loadDraftPendingVoices()
+          const canRemoveLocal = driveEnabled ? Boolean(voiceUrl) : Boolean(normalized)
+          if (canRemoveLocal) {
+            if (playingVoiceKey === pv.key) stopPlayingAudio()
+            await deleteOfflineInventoryVoiceByKey(pv.key)
+            await loadDraftPendingVoices()
+          } else {
+            setVoiceBatchMsg('Đã dịch chữ nhưng chưa đẩy được file lên Drive — file vẫn giữ trên máy!')
+          }
         } else {
           setVoiceBatchMsg(data?.error || data?.warning || 'Chưa dịch được đoạn ghi âm này.')
         }
@@ -867,6 +873,7 @@ export default function WarehouseDraftListModal({
           voiceUrl?: string | null
         }> = Array.isArray(data?.results) ? data.results : []
 
+        const driveEnabled = Boolean(data?.driveEnabled)
         const keysToDelete: string[] = []
         for (const r of results) {
           const target = itemByPosId.get(r.positionId)
@@ -881,7 +888,9 @@ export default function WarehouseDraftListModal({
             target.voice_note_url = appendVoiceNoteUrl(target.voice_note_url, voiceUrl)
             target.updated_at = new Date().toISOString()
             if (onUpdateDraftItem) onUpdateDraftItem({ ...target })
-            if (r.itemId) keysToDelete.push(r.itemId)
+            // Bắt buộc có file ghi âm lên Drive (nếu Drive đang bật) mới được xóa file local
+            const canRemoveLocal = driveEnabled ? Boolean(voiceUrl) : Boolean(normalized)
+            if (r.itemId && canRemoveLocal) keysToDelete.push(r.itemId)
           }
         }
         // Chỉ xóa file offline SAU KHI đã lưu xong text & voiceUrl vào phiếu nháp

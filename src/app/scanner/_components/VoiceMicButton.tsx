@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { Mic, Square, Loader2 } from 'lucide-react'
 import { normalizeWarehouseVoiceText } from './voiceTextNormalizer'
 
@@ -10,11 +10,39 @@ export interface OfflineVoicePayload {
   durationSec: number
 }
 
+export interface VoiceMicStopResult {
+  wasRecording: boolean
+  savedOffline?: boolean
+  text?: string
+  voiceUrl?: string | null
+}
+
+export interface VoiceMicButtonHandle {
+  isRecording: () => boolean
+  stopAndFinalize: () => Promise<VoiceMicStopResult>
+}
+
+/**
+ * Registry toàn cục theo dõi nút Micro đang ghi âm trên Web Scanner:
+ * - Bấm Micro ở ô khác -> tự động dừng & lưu ghi âm của ô trước đó.
+ * - Bấm "HOÀN TẤT" / đóng modal -> gọi `stopAnyActiveVoiceRecording()` để tự dừng & lưu.
+ */
+let activeVoiceRecorder: {
+  id: string
+  stopAndFinalize: () => Promise<VoiceMicStopResult>
+} | null = null
+
+export async function stopAnyActiveVoiceRecording(): Promise<VoiceMicStopResult> {
+  if (!activeVoiceRecorder) return { wasRecording: false }
+  const current = activeVoiceRecorder
+  return await current.stopAndFinalize()
+}
+
 interface VoiceMicButtonProps {
   /** Callback khi dịch AI thành công (trả về text đã chuẩn hóa + voiceUrl đã lưu trên server nếu có) */
   onResult: (normalizedText: string, voiceUrl?: string | null) => void
   /** Callback khi đang tắt mạng (hoặc gọi server lỗi) -> lưu ghi âm offline chờ đồng bộ & AI dịch sau */
-  onOfflineAudio?: (payload: OfflineVoicePayload) => void
+  onOfflineAudio?: (payload: OfflineVoicePayload) => void | Promise<void>
   /** Có lưu file ghi âm lên Supabase Storage trên Server không */
   saveToServer?: boolean
   /** Thư mục gốc riêng trên Google Drive (VD: WMS_GhiAm_GhiNhap) */
@@ -48,7 +76,7 @@ function blobToBase64(blob: Blob): Promise<string> {
   })
 }
 
-export function VoiceMicButton({
+export const VoiceMicButton = forwardRef<VoiceMicButtonHandle, VoiceMicButtonProps>(function VoiceMicButton({
   onResult,
   onOfflineAudio,
   saveToServer = false,
@@ -64,14 +92,31 @@ export function VoiceMicButton({
   size = 'sm',
   title = 'Bấm để nói — bấm lần nữa để dừng (Tự lưu offline nếu mất mạng)',
   className = '',
-}: VoiceMicButtonProps) {
+}, ref) {
   const [status, setStatus] = useState<'idle' | 'recording' | 'transcribing'>('idle')
+  const statusRef = useRef<'idle' | 'recording' | 'transcribing'>('idle')
+  const instanceIdRef = useRef<string>(`web_mic_${Math.random().toString(36).slice(2, 10)}`)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const startedAtRef = useRef<number>(0)
   const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const webSpeechRef = useRef<any>(null)
+  const stopResolverRef = useRef<((res: VoiceMicStopResult) => void) | null>(null)
+  const stoppingPromiseRef = useRef<Promise<VoiceMicStopResult> | null>(null)
+
+  const updateStatus = (next: 'idle' | 'recording' | 'transcribing') => {
+    statusRef.current = next
+    setStatus(next)
+  }
+
+  const resolvePendingStop = (res: VoiceMicStopResult) => {
+    if (stopResolverRef.current) {
+      const fn = stopResolverRef.current
+      stopResolverRef.current = null
+      fn(res)
+    }
+  }
 
   const onResultRef = useRef(onResult)
   const onOfflineAudioRef = useRef(onOfflineAudio)
@@ -97,8 +142,12 @@ export function VoiceMicButton({
   }
 
   useEffect(() => {
+    const myId = instanceIdRef.current
     return () => {
       cleanupStream()
+      if (activeVoiceRecorder?.id === myId) {
+        activeVoiceRecorder = null
+      }
       try {
         webSpeechRef.current?.abort?.()
       } catch {}
@@ -151,11 +200,41 @@ export function VoiceMicButton({
     }
   }
 
+  const stopAndFinalizeInternal = (): Promise<VoiceMicStopResult> => {
+    if (stoppingPromiseRef.current) return stoppingPromiseRef.current
+    if (statusRef.current !== 'recording') {
+      return Promise.resolve({ wasRecording: false })
+    }
+    const p = new Promise<VoiceMicStopResult>(resolve => {
+      const timeoutId = setTimeout(() => {
+        resolvePendingStop({ wasRecording: true })
+      }, 12000)
+      stopResolverRef.current = res => {
+        clearTimeout(timeoutId)
+        stoppingPromiseRef.current = null
+        resolve(res)
+      }
+      stopRecording()
+    })
+    stoppingPromiseRef.current = p
+    return p
+  }
+
+  useImperativeHandle(ref, () => ({
+    isRecording: () => statusRef.current === 'recording',
+    stopAndFinalize: stopAndFinalizeInternal,
+  }))
+
   const handlePress = async () => {
-    if (status === 'transcribing') return
-    if (status === 'recording') {
+    if (statusRef.current === 'transcribing') return
+    if (statusRef.current === 'recording') {
       stopRecording()
       return
+    }
+
+    // Nếu ô khác đang ghi âm mà chưa bấm dừng -> tự động dừng & lưu ô trước đó rồi mới ghi ô mới
+    if (activeVoiceRecorder && activeVoiceRecorder.id !== instanceIdRef.current) {
+      await activeVoiceRecorder.stopAndFinalize()
     }
 
     // Nếu mất mạng nhưng không dùng chế độ lưu offline (VD: ô tìm kiếm) -> fallback Web Speech
@@ -201,9 +280,12 @@ export function VoiceMicButton({
         chunksRef.current = []
 
         if (blob.size < 400) {
-          setStatus('idle')
+          updateStatus('idle')
+          resolvePendingStop({ wasRecording: true })
           return
         }
+
+        let stopResult: VoiceMicStopResult = { wasRecording: true }
 
         try {
           const audioBase64 = await blobToBase64(blob)
@@ -215,22 +297,22 @@ export function VoiceMicButton({
           } catch {}
 
           if (!autoSendOnStop && onOfflineAudioRef.current) {
-            onOfflineAudioRef.current({ audioBase64, mimeType: actualMime, durationSec })
-            setStatus('idle')
+            await onOfflineAudioRef.current({ audioBase64, mimeType: actualMime, durationSec })
+            stopResult = { wasRecording: true, savedOffline: true }
             return
           }
 
           // 1. Nếu đang tắt mạng -> lưu ngay ghi âm vào IndexedDB chờ đồng bộ & AI dịch
           if (typeof navigator !== 'undefined' && !navigator.onLine) {
             if (onOfflineAudioRef.current) {
-              onOfflineAudioRef.current({ audioBase64, mimeType: actualMime, durationSec })
+              await onOfflineAudioRef.current({ audioBase64, mimeType: actualMime, durationSec })
+              stopResult = { wasRecording: true, savedOffline: true }
             }
-            setStatus('idle')
             return
           }
 
           // 2. Có mạng -> gửi lên server lưu Storage (nếu saveToServer) + Gemini AI dịch ngay
-          setStatus('transcribing')
+          updateStatus('transcribing')
           const res = await fetch('/api/voice-transcribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -253,7 +335,8 @@ export function VoiceMicButton({
           if (!res.ok) {
             // Nếu server/mạng lỗi mà có chế độ lưu offline -> cứu file ghi âm vào máy!
             if (onOfflineAudioRef.current) {
-              onOfflineAudioRef.current({ audioBase64, mimeType: actualMime, durationSec })
+              await onOfflineAudioRef.current({ audioBase64, mimeType: actualMime, durationSec })
+              stopResult = { wasRecording: true, savedOffline: true }
             } else {
               const msg = data?.error || 'Không thể dịch giọng nói'
               if (onErrorRef.current) onErrorRef.current(msg)
@@ -267,6 +350,7 @@ export function VoiceMicButton({
 
           if (normalized || voiceUrl) {
             onResultRef.current(normalized, voiceUrl)
+            stopResult = { wasRecording: true, text: normalized, voiceUrl }
           }
           if (data?.warning && onErrorRef.current) {
             onErrorRef.current(data.warning)
@@ -276,29 +360,42 @@ export function VoiceMicButton({
           try {
             const fallbackB64 = await blobToBase64(blob)
             if (onOfflineAudioRef.current) {
-              onOfflineAudioRef.current({
+              await onOfflineAudioRef.current({
                 audioBase64: fallbackB64,
                 mimeType: actualMime,
                 durationSec,
               })
+              stopResult = { wasRecording: true, savedOffline: true }
             }
           } catch {}
         } finally {
-          setStatus('idle')
+          if (activeVoiceRecorder?.id === instanceIdRef.current) {
+            activeVoiceRecorder = null
+          }
+          updateStatus('idle')
+          resolvePendingStop(stopResult)
         }
       }
 
       startedAtRef.current = Date.now()
       recorder.start()
-      setStatus('recording')
+      updateStatus('recording')
+      activeVoiceRecorder = {
+        id: instanceIdRef.current,
+        stopAndFinalize: stopAndFinalizeInternal,
+      }
 
       // Tự dừng sau 15 giây nếu nhân viên quên bấm dừng
       autoStopTimerRef.current = setTimeout(() => {
         stopRecording()
       }, 15000)
     } catch (err: any) {
+      if (activeVoiceRecorder?.id === instanceIdRef.current) {
+        activeVoiceRecorder = null
+      }
       cleanupStream()
-      setStatus('idle')
+      updateStatus('idle')
+      resolvePendingStop({ wasRecording: false })
       const msg =
         err?.name === 'NotAllowedError'
           ? 'Bạn chưa cấp quyền Microphone cho trình duyệt.'
@@ -341,4 +438,4 @@ export function VoiceMicButton({
       )}
     </button>
   )
-}
+})

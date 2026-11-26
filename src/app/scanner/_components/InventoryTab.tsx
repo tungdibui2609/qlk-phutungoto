@@ -47,7 +47,7 @@ import {
   getWarehouseProducts,
   normalizeViText,
 } from './operations/operationsService'
-import { VoiceMicButton, OfflineVoicePayload } from './VoiceMicButton'
+import { VoiceMicButton, OfflineVoicePayload, stopAnyActiveVoiceRecording } from './VoiceMicButton'
 import { appendWarehouseVoiceText, normalizeWarehouseVoiceText } from './voiceTextNormalizer'
 
 export interface InventoryTabProps {
@@ -3451,7 +3451,10 @@ export function InventoryTab({
       <LevelInventoryModal
         level={selectedLevelModalData}
         visible={!!selectedLevelModalData}
-        onClose={() => setSelectedLevelModalData(null)}
+        onClose={async () => {
+          await stopAnyActiveVoiceRecording()
+          setSelectedLevelModalData(null)
+        }}
         inventoryResults={currentResults}
         systemCode={systemCode}
         sessionId={currentSessionId}
