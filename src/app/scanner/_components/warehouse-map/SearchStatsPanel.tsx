@@ -8,6 +8,7 @@ import { formatUnitsSummary } from './mapHelpers'
 
 interface SearchStatsPanelProps {
   isSearchActive: boolean
+  isSearchCollapsed?: boolean
   matchingPositions: PositionItem[]
   searchQuery: string
   hasActiveFilters: boolean
@@ -32,6 +33,7 @@ interface SearchStatsPanelProps {
 
 export function SearchStatsPanel({
   isSearchActive,
+  isSearchCollapsed = false,
   matchingPositions,
   searchQuery,
   hasActiveFilters,
@@ -56,65 +58,44 @@ export function SearchStatsPanel({
   return (
     <>
       {isSearchActive && (
-        <div className="bg-[#0b1324] border-b border-slate-800 px-3 py-2 space-y-2 shrink-0 animate-in fade-in">
-          {/* Dòng 1: Tên từ khóa & Tổng số vị trí khớp & Nút xóa */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <div className="truncate text-xs">
-                {searchQuery.trim() ? (
-                  <>
-                    <span className="text-slate-400">Kết quả cho: </span>
-                    <span className="text-amber-300 font-bold">&quot;{searchQuery}&quot;</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-slate-400">Lọc theo: </span>
-                    <span className="text-amber-300 font-bold">
-                      {(filterStartDate || filterEndDate) ? DATE_FILTER_OPTIONS.find(o => o.id === filterDateType)?.shortLabel : ''}
-                      {filterRegion !== 'all' ? ` · Vùng ${filterRegion}` : ''}
-                    </span>
-                  </>
-                )}
+        <div className="bg-[#0b1324] border-b border-slate-800 px-3 py-1.5 space-y-1.5 shrink-0 animate-in fade-in">
+          {/* Dòng 1: Chỉ hiện khi thanh tìm kiếm đang mở rộng (khi thu gọn đã gộp vào thanh tóm tắt 1 dòng phía trên) */}
+          {!isSearchCollapsed && (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <div className="truncate text-xs">
+                  {searchQuery.trim() ? (
+                    <>
+                      <span className="text-slate-400">Kết quả cho: </span>
+                      <span className="text-amber-300 font-bold">&quot;{searchQuery}&quot;</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-slate-400">Lọc theo: </span>
+                      <span className="text-amber-300 font-bold">
+                        {(filterStartDate || filterEndDate) ? DATE_FILTER_OPTIONS.find(o => o.id === filterDateType)?.shortLabel : ''}
+                        {filterRegion !== 'all' ? ` · Vùng ${filterRegion}` : ''}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-800/50">
+                  {matchingPositions.length} vị trí khớp
+                </span>
+                <button
+                  onClick={handleClearAllSearchAndFilters}
+                  className="text-[11px] font-bold text-slate-400 hover:text-rose-400 flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg hover:bg-slate-800 transition"
+                  title="Xóa tìm kiếm & bộ lọc"
+                >
+                  <X size={13} />
+                  <span>Xóa</span>
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-800/50">
-                {matchingPositions.length} vị trí khớp
-              </span>
-              <button
-                onClick={handleClearAllSearchAndFilters}
-                className="text-[11px] font-bold text-slate-400 hover:text-rose-400 flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg hover:bg-slate-800 transition"
-                title="Xóa tìm kiếm & bộ lọc"
-              >
-                <X size={13} />
-                <span>Xóa</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Dòng 1B: Thanh mở bộ lọc ngày tháng & vùng miền nhanh */}
-          <div className="flex items-center justify-between gap-1.5 text-xs bg-slate-900/80 px-2 py-1.5 rounded-xl border border-slate-800">
-            <button
-              type="button"
-              onClick={() => setIsFilterOpen(prev => !prev)}
-              className="text-[11px] font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1.5 active:scale-95 transition truncate text-left"
-            >
-              <Calendar size={13} className="text-amber-400 shrink-0" />
-              <span className="truncate">
-                {hasActiveFilters
-                  ? `Đang lọc: ${(filterStartDate || filterEndDate) ? DATE_FILTER_OPTIONS.find(o => o.id === filterDateType)?.shortLabel : ''}${filterRegion !== 'all' ? ` · Vùng ${filterRegion}` : ''}`
-                  : 'Lọc Ngày (Đóng gói / SX / Nguyên liệu) & Vùng'}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsFilterOpen(prev => !prev)}
-              className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-slate-950 transition active:scale-95 border border-amber-500/40 shrink-0"
-            >
-              {isFilterOpen ? 'Đóng bộ lọc' : 'Mở bộ lọc'}
-            </button>
-          </div>
+          )}
 
           {/* Dòng 2: Chuyển đổi giữa 2 tab: [Thống kê phân bổ] và [Sơ đồ vị trí] */}
           <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-900/90 rounded-xl border border-slate-800">

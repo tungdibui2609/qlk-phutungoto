@@ -13,6 +13,7 @@ import {
   Hash,
   Tag,
   ChevronDown,
+  ChevronUp,
   Check,
   Scale,
 } from 'lucide-react'
@@ -57,7 +58,11 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   onSetDatePreset,
   onResetFilters,
   isFilterOpen,
-  onToggleFilterOpen
+  onToggleFilterOpen,
+  isCollapsed = false,
+  onSetCollapsed,
+  matchCount = 0,
+  onClearAll,
 }: {
   uniqueProducts: UniqueProductItem[]
   uniqueStts?: UniqueSttItem[]
@@ -87,10 +92,16 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   onResetFilters: () => void
   isFilterOpen: boolean
   onToggleFilterOpen: () => void
+  isCollapsed?: boolean
+  onSetCollapsed?: (collapsed: boolean) => void
+  matchCount?: number
+  onClearAll?: () => void
 }) {
   const [inputValue, setInputValue] = useState(searchQuery)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [showModeMenu, setShowModeMenu] = useState(false)
+  const [activePickerModal, setActivePickerModal] = useState<'unit' | 'tag' | null>(null)
+  const [tagFilterSearch, setTagFilterSearch] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
 
   const activeModeConfig =
@@ -138,9 +149,9 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
     return list.sort((a, b) => b.score - a.score).slice(0, 6)
   }, [inputValue, uniqueStts, searchMode])
 
-  // Fast pre-indexed Tag (Mã phụ) suggestions - Hỗ trợ gõ cả tên sản phẩm / tên viết tắt để hiện các Tag liên quan
+  // Fast pre-indexed Tag (Mã phụ) suggestions - Chỉ hiện khi người dùng chủ động chọn chế độ tìm riêng 'tag' (vì đã có bộ lọc Mã phụ riêng)
   const tagSuggestions = useMemo(() => {
-    if (searchMode !== 'all' && searchMode !== 'tag') return []
+    if (searchMode !== 'tag') return []
     const raw = inputValue.trim()
     if (!raw || raw.startsWith('#')) return []
     const normQ = normalizeSearchString(raw)
@@ -393,6 +404,74 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
     onExecuteSearch(term)
   }
 
+  const hasAnySearchOrFilter = searchQuery.trim().length > 0 || hasActiveFilters
+
+  if (isCollapsed && hasAnySearchOrFilter) {
+    return (
+      <div
+        ref={containerRef}
+        className="px-2.5 py-2 bg-[#0e1626] border-b border-slate-800/80 shrink-0 relative z-30"
+      >
+        <div className="flex items-center gap-1.5 bg-slate-900/95 border border-emerald-500/40 rounded-xl px-2.5 py-1.5">
+          <button
+            type="button"
+            onClick={() => onSetCollapsed?.(false)}
+            className="flex-1 flex items-center gap-1.5 min-w-0 text-left cursor-pointer"
+            title="Chạm để sửa tìm kiếm & bộ lọc"
+          >
+            <Search size={14} className="text-emerald-400 shrink-0" />
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+              {searchQuery.trim() ? (
+                <span className="text-xs font-bold text-amber-300 truncate">
+                  {searchQuery.trim()}
+                </span>
+              ) : (
+                <span className="text-xs font-bold text-slate-300 shrink-0">Đang lọc</span>
+              )}
+              {selectedUnits.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-bold text-emerald-300 shrink-0">
+                  {selectedUnits.length === 1 ? selectedUnits[0] : `${selectedUnits.length} ĐVT`}
+                </span>
+              )}
+              {selectedTags.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-md bg-amber-400/20 border border-amber-400/40 text-[10px] font-bold text-amber-300 shrink-0">
+                  {selectedTags.length === 1 ? `🏷️ ${selectedTags[0]}` : `${selectedTags.length} Tag`}
+                </span>
+              )}
+              {(filterStartDate || filterEndDate || (filterRegion && filterRegion !== 'all')) && (
+                <span className="px-1.5 py-0.5 rounded-md bg-sky-500/20 border border-sky-500/40 text-[10px] font-bold text-sky-300 shrink-0">
+                  +Lọc
+                </span>
+              )}
+            </div>
+          </button>
+
+          <span className="px-2 py-0.5 rounded-md bg-emerald-950/90 border border-emerald-700/60 text-[11px] font-mono font-black text-emerald-400 shrink-0">
+            {matchCount} ô
+          </span>
+
+          <button
+            type="button"
+            onClick={() => onSetCollapsed?.(false)}
+            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 flex items-center gap-0.5 shrink-0 cursor-pointer"
+          >
+            <span>Lọc</span>
+            <ChevronDown size={12} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => (onClearAll ? onClearAll() : onClearSearch())}
+            className="p-1 rounded-lg bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 shrink-0 cursor-pointer"
+            title="Xóa tìm kiếm & bộ lọc"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div ref={containerRef} className="p-2.5 bg-[#0e1626] border-b border-slate-800/80 shrink-0 relative z-30">
       <div className="relative flex items-center gap-1.5">
@@ -526,104 +605,310 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
         </button>
       </div>
 
-      {/* ── THANH CHỌN NHANH ĐƠN VỊ TÍNH (ĐVT) & MÃ PHỤ (TAG) LIÊN QUAN KHI TÌM SẢN PHẨM ── */}
-      {((searchQuery.trim().length > 0 || searchMode === 'tag' || selectedUnits.length > 0 || selectedTags.length > 0) &&
-        ((availableUnits && (availableUnits.length > 1 || selectedUnits.length > 0)) || (availableTags && availableTags.length > 0))) && (
-        <div className="pt-2 space-y-1.5 border-t border-slate-800/70 mt-2 animate-in fade-in">
-          {/* 1. Dãy nút lọc Đơn vị tính (ĐVT) - Đa chọn có ô tích */}
-          {onSelectUnits && availableUnits && (availableUnits.length > 1 || selectedUnits.length > 0) && (
-            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
-              <span className="text-emerald-400 font-bold text-[10px] shrink-0 flex items-center gap-1">
-                <Scale size={11} />
-                <span>ĐVT{selectedUnits.length > 0 ? ` (${selectedUnits.length})` : ''}:</span>
+      {/* ── HÀNG 2 NÚT BỘ LỌC RÕ RÀNG: ĐƠN VỊ TÍNH (ĐVT) & MÃ PHỤ (TAG) ── */}
+      {((onSelectUnits && availableUnits && availableUnits.length > 0) ||
+        (onSelectTags && availableTags && availableTags.length > 0)) && (
+        <div className="pt-2 border-t border-slate-800/70 mt-2 grid grid-cols-2 gap-2">
+          {/* Nút mở bảng chọn ĐVT */}
+          {onSelectUnits && availableUnits && availableUnits.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowSuggestions(false)
+                setShowModeMenu(false)
+                setActivePickerModal('unit')
+              }}
+              className={`flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-xl border text-xs transition active:scale-[0.98] cursor-pointer min-w-0 ${
+                selectedUnits.length > 0
+                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-xs shadow-emerald-500/15'
+                  : 'bg-slate-900/90 border-slate-700/80 text-slate-200 hover:border-emerald-500/60'
+              }`}
+            >
+              <span className="flex items-center gap-1.5 min-w-0">
+                <Scale size={14} className="text-emerald-400 shrink-0" />
+                <span className="truncate font-bold">
+                  <span className="text-slate-400 font-semibold">ĐVT: </span>
+                  {selectedUnits.length === 0
+                    ? `Tất cả (${availableUnits.length})`
+                    : selectedUnits.length === 1
+                    ? selectedUnits[0]
+                    : `Đã chọn ${selectedUnits.length}`}
+                </span>
               </span>
-              <button
-                type="button"
-                onClick={() => onSelectUnits([])}
-                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
-                  selectedUnits.length === 0
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
-                    : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                Tất cả ({availableUnits.length})
-              </button>
-              {availableUnits.map(u => {
-                const isSel = isUnitSelected(u.unit)
-                return (
-                  <button
-                    key={u.unit}
-                    type="button"
-                    onClick={() => toggleUnit(u.unit)}
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
-                      isSel
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black shadow-xs'
-                        : 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60 hover:bg-emerald-900/50'
-                    }`}
-                  >
-                    <span
-                      className={`w-3.5 h-3.5 rounded-[4px] border flex items-center justify-center shrink-0 ${
-                        isSel
-                          ? 'bg-slate-950 border-slate-950 text-emerald-400'
-                          : 'bg-slate-950/60 border-emerald-500/50'
-                      }`}
-                    >
-                      {isSel && <Check size={10} strokeWidth={3} />}
-                    </span>
-                    <span>{u.unit} ({u.count} ô · {u.totalQty.toLocaleString('vi-VN')})</span>
-                  </button>
-                )
-              })}
-            </div>
+              <ChevronDown size={14} className="text-emerald-400 shrink-0" />
+            </button>
           )}
 
-          {/* 2. Dãy nút lọc Mã phụ (Tag) liên quan đến sản phẩm đang tìm - Đa chọn có ô tích */}
+          {/* Nút mở bảng chọn Mã phụ (Tag) */}
           {onSelectTags && availableTags && availableTags.length > 0 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
-              <span className="text-amber-400 font-bold text-[10px] shrink-0 flex items-center gap-1">
-                <Tag size={11} />
-                <span>Tag ({selectedTags.length > 0 ? `${selectedTags.length}/${availableTags.length}` : availableTags.length}):</span>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSuggestions(false)
+                setShowModeMenu(false)
+                setTagFilterSearch('')
+                setActivePickerModal('tag')
+              }}
+              className={`flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-xl border text-xs transition active:scale-[0.98] cursor-pointer min-w-0 ${
+                selectedTags.length > 0
+                  ? 'bg-amber-400/20 border-amber-400 text-amber-200 shadow-xs shadow-amber-400/15'
+                  : 'bg-slate-900/90 border-slate-700/80 text-slate-200 hover:border-amber-400/60'
+              }`}
+            >
+              <span className="flex items-center gap-1.5 min-w-0">
+                <Tag size={14} className="text-amber-400 shrink-0" />
+                <span className="truncate font-bold">
+                  <span className="text-slate-400 font-semibold">Mã phụ: </span>
+                  {selectedTags.length === 0
+                    ? `Tất cả (${availableTags.length})`
+                    : selectedTags.length === 1
+                    ? selectedTags[0]
+                    : `Đã chọn ${selectedTags.length}`}
+                </span>
               </span>
+              <ChevronDown size={14} className="text-amber-400 shrink-0" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── MODAL CHỌN ĐA PHƯƠNG ÁN: ĐƠN VỊ TÍNH (ĐVT) & MÃ PHỤ (TAG) ── */}
+      {activePickerModal && (
+        <div
+          className="fixed inset-0 z-100 bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          onClick={() => setActivePickerModal(null)}
+        >
+          <div
+            className="w-full sm:max-w-md bg-[#0c1426] border-t sm:border border-slate-700/90 rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[82vh] overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header Modal */}
+            <div className="px-4 py-3.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                {activePickerModal === 'unit' ? (
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                    <Scale size={16} className="text-emerald-400" />
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-xl bg-amber-400/15 border border-amber-400/40 flex items-center justify-center shrink-0">
+                    <Tag size={16} className="text-amber-400" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-white leading-tight truncate">
+                    {activePickerModal === 'unit'
+                      ? `Chọn Đơn vị tính (${availableUnits.length})`
+                      : `Chọn Mã phụ / Tag (${availableTags.length})`}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Tích chọn một hoặc nhiều phương án để lọc
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => onSelectTags([])}
-                className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
-                  selectedTags.length === 0
-                    ? 'bg-amber-400 text-slate-950 border-amber-300 font-black'
-                    : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
-                }`}
+                onClick={() => setActivePickerModal(null)}
+                className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 cursor-pointer shrink-0"
               >
-                Tất cả
+                <X size={16} />
               </button>
-              {availableTags.slice(0, 20).map(t => {
-                const isSel = isTagSelected(t.tag)
-                return (
+            </div>
+
+            {/* Ô tìm nhanh Mã phụ (chỉ hiện khi mở picker Tag và có nhiều tag) */}
+            {activePickerModal === 'tag' && availableTags.length > 6 && (
+              <div className="px-4 pt-3 pb-1 shrink-0">
+                <div className="flex items-center gap-2 bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 focus-within:border-amber-400">
+                  <Search size={14} className="text-slate-400 shrink-0" />
+                  <input
+                    type="text"
+                    value={tagFilterSearch}
+                    onChange={e => setTagFilterSearch(e.target.value)}
+                    placeholder="Tìm nhanh mã phụ..."
+                    className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none min-w-0"
+                  />
+                  {tagFilterSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTagFilterSearch('')}
+                      className="text-slate-400 hover:text-white cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Danh sách lựa chọn dọc to rõ */}
+            <div className="p-3 overflow-y-auto space-y-1.5 flex-1">
+              {activePickerModal === 'unit' && onSelectUnits && (
+                <>
+                  {/* Dòng Tất cả ĐVT */}
                   <button
-                    key={t.tag}
                     type="button"
-                    onClick={() => toggleTag(t.tag)}
-                    title={t.productNames.length > 0 ? `Sản phẩm: ${t.productNames.join(', ')}` : `Mã phụ: ${t.tag}`}
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
-                      isSel
-                        ? 'bg-amber-400 text-slate-950 border-amber-300 font-black shadow-xs'
-                        : 'bg-amber-950/40 text-amber-300 border-amber-800/60 hover:bg-amber-900/50'
+                    onClick={() => onSelectUnits([])}
+                    className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      selectedUnits.length === 0
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
+                        : 'bg-slate-900/80 text-slate-200 border-slate-800 hover:border-slate-700 font-bold'
                     }`}
                   >
-                    <span
-                      className={`w-3.5 h-3.5 rounded-[4px] border flex items-center justify-center shrink-0 ${
-                        isSel
-                          ? 'bg-slate-950 border-slate-950 text-amber-400'
-                          : 'bg-slate-950/60 border-amber-500/50'
+                    <span className="text-xs">Tất cả ĐVT ({availableUnits.length})</span>
+                    {selectedUnits.length === 0 && <Check size={16} strokeWidth={3} />}
+                  </button>
+
+                  {availableUnits.map(u => {
+                    const isSel = isUnitSelected(u.unit)
+                    return (
+                      <button
+                        key={u.unit}
+                        type="button"
+                        onClick={() => toggleUnit(u.unit)}
+                        className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl border text-left transition active:scale-[0.99] cursor-pointer ${
+                          isSel
+                            ? 'bg-emerald-500/15 border-emerald-400 text-white'
+                            : 'bg-slate-900/60 border-slate-800/90 text-slate-200 hover:bg-slate-900'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span
+                            className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition ${
+                              isSel
+                                ? 'bg-emerald-500 border-emerald-400 text-slate-950'
+                                : 'bg-slate-950 border-slate-600'
+                            }`}
+                          >
+                            {isSel && <Check size={13} strokeWidth={3.5} />}
+                          </span>
+                          <span className={`text-sm truncate ${isSel ? 'font-black text-emerald-200' : 'font-bold text-slate-100'}`}>
+                            {u.unit}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 shrink-0 tabular-nums">
+                          {u.count} ô · {u.totalQty.toLocaleString('vi-VN')}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </>
+              )}
+
+              {activePickerModal === 'tag' && onSelectTags && (
+                <>
+                  {/* Dòng Tất cả Mã phụ */}
+                  {!tagFilterSearch.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectTags([])}
+                      className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border text-left transition cursor-pointer ${
+                        selectedTags.length === 0
+                          ? 'bg-amber-400 text-slate-950 border-amber-300 font-black'
+                          : 'bg-slate-900/80 text-slate-200 border-slate-800 hover:border-slate-700 font-bold'
                       }`}
                     >
-                      {isSel && <Check size={10} strokeWidth={3} />}
-                    </span>
-                    <span>🏷️ {t.tag} ({t.count} ô · {formatUnitsSummary(t.unitsMap, { short: true })})</span>
-                  </button>
-                )
-              })}
+                      <span className="text-xs">Tất cả Mã phụ ({availableTags.length})</span>
+                      {selectedTags.length === 0 && <Check size={16} strokeWidth={3} />}
+                    </button>
+                  )}
+
+                  {availableTags
+                    .filter(t => {
+                      const q = tagFilterSearch.trim()
+                      if (!q) return true
+                      const nq = normalizeSearchString(q, true)
+                      return (
+                        normalizeSearchString(t.tag, true).includes(nq) ||
+                        t.productNames.some(pn => normalizeSearchString(pn, true).includes(nq))
+                      )
+                    })
+                    .map(t => {
+                      const isSel = isTagSelected(t.tag)
+                      return (
+                        <button
+                          key={t.tag}
+                          type="button"
+                          onClick={() => toggleTag(t.tag)}
+                          className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl border text-left transition active:scale-[0.99] cursor-pointer ${
+                            isSel
+                              ? 'bg-amber-400/15 border-amber-400 text-white'
+                              : 'bg-slate-900/60 border-slate-800/90 text-slate-200 hover:bg-slate-900'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <span
+                              className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition ${
+                                isSel
+                                  ? 'bg-amber-400 border-amber-300 text-slate-950'
+                                  : 'bg-slate-950 border-slate-600'
+                              }`}
+                            >
+                              {isSel && <Check size={13} strokeWidth={3.5} />}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className={`text-sm truncate ${isSel ? 'font-black text-amber-200' : 'font-bold text-slate-100'}`}>
+                                🏷️ {t.tag}
+                              </div>
+                              {t.productNames.length > 0 && (
+                                <div className="text-[10.5px] text-slate-400 truncate mt-0.5">
+                                  {t.productNames.slice(0, 2).join(', ')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-950/80 border border-amber-700/60 text-amber-300 shrink-0 tabular-nums">
+                            {t.count} ô · {formatUnitsSummary(t.unitsMap, { short: true })}
+                          </span>
+                        </button>
+                      )
+                    })}
+                </>
+              )}
             </div>
-          )}
+
+            {/* Footer Modal */}
+            <div className="px-4 py-3 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between gap-2 shrink-0">
+              <div className="text-xs text-slate-300 font-semibold">
+                {activePickerModal === 'unit'
+                  ? selectedUnits.length > 0
+                    ? `Đang chọn ${selectedUnits.length} ĐVT`
+                    : 'Đang chọn: Tất cả'
+                  : selectedTags.length > 0
+                  ? `Đang chọn ${selectedTags.length} mã phụ`
+                  : 'Đang chọn: Tất cả'}
+              </div>
+              <div className="flex items-center gap-2">
+                {((activePickerModal === 'unit' && selectedUnits.length > 0) ||
+                  (activePickerModal === 'tag' && selectedTags.length > 0)) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activePickerModal === 'unit') onSelectUnits?.([])
+                      else onSelectTags?.([])
+                    }}
+                    className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs font-bold cursor-pointer"
+                  >
+                    Bỏ chọn
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePickerModal(null)
+                    if (searchQuery.trim().length > 0 || selectedUnits.length > 0 || selectedTags.length > 0 || hasActiveFilters) {
+                      onSetCollapsed?.(true)
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-xl text-xs font-black text-slate-950 cursor-pointer ${
+                    activePickerModal === 'unit'
+                      ? 'bg-emerald-500 hover:bg-emerald-400'
+                      : 'bg-amber-400 hover:bg-amber-300'
+                  }`}
+                >
+                  Áp dụng
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -705,6 +990,28 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
             className="text-[10px] text-slate-400 hover:text-rose-400 underline shrink-0 ml-auto"
           >
             Đặt lại
+          </button>
+          {onSetCollapsed && (
+            <button
+              type="button"
+              onClick={() => onSetCollapsed(true)}
+              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 font-bold shrink-0 cursor-pointer"
+            >
+              <span>Thu gọn</span>
+              <ChevronUp size={11} />
+            </button>
+          )}
+        </div>
+      )}
+      {!hasActiveFilters && searchQuery.trim().length > 0 && onSetCollapsed && (
+        <div className="flex justify-end pt-1.5">
+          <button
+            type="button"
+            onClick={() => onSetCollapsed(true)}
+            className="inline-flex items-center gap-0.5 px-2.5 py-0.5 rounded-lg bg-slate-800/90 border border-slate-700 text-[11px] text-slate-200 hover:bg-slate-700 font-bold cursor-pointer"
+          >
+            <span>Thu gọn bộ lọc</span>
+            <ChevronUp size={12} />
           </button>
         </div>
       )}

@@ -142,6 +142,7 @@ export const getPositionProductItems = (pos: PositionItem): PositionProductSubIt
         aliases: pos.aliases || null,
         quantity: typeof it.quantity === 'number' && !isNaN(it.quantity) ? it.quantity : 0,
         unit: getCleanUnitCategory(it.unit || pos.unit),
+        rawUnit: (it.unit || pos.unit || '').trim() || getCleanUnitCategory(it.unit || pos.unit),
       }))
     if (valid.length > 0) return valid
   }
@@ -154,6 +155,7 @@ export const getPositionProductItems = (pos: PositionItem): PositionProductSubIt
       aliases: pos.aliases || null,
       quantity: typeof pos.quantity === 'number' && !isNaN(pos.quantity) ? pos.quantity : 0,
       unit: getCleanUnitCategory(pos.unit),
+      rawUnit: (pos.unit || '').trim() || getCleanUnitCategory(pos.unit),
     },
   ]
 }

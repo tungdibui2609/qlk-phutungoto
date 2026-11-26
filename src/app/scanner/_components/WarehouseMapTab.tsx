@@ -171,6 +171,7 @@ export default function WarehouseMapTab() {
   const [selectedUnits, setSelectedUnits] = useState<string[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [isFilterOpen, setIsFilterOpen] = useState<boolean>(false)
+  const [isSearchCollapsed, setIsSearchCollapsed] = useState<boolean>(false)
 
   // Position detail modal
   const [selectedPosDetail, setSelectedPosDetail] = useState<PositionItem | null>(null)
@@ -1071,6 +1072,8 @@ export default function WarehouseMapTab() {
     setFilterRegion('all')
     setSelectedUnits([])
     setSelectedTags([])
+    setIsFilterOpen(false)
+    setIsSearchCollapsed(false)
     setSearchTab('breakdown')
   }, [])
 
@@ -1079,6 +1082,10 @@ export default function WarehouseMapTab() {
     setSearchQuery(q)
     if (q) {
       setSearchTab('breakdown')
+      setIsFilterOpen(false)
+      setIsSearchCollapsed(true)
+    } else {
+      setIsSearchCollapsed(false)
     }
   }, [])
 
@@ -1276,20 +1283,20 @@ export default function WarehouseMapTab() {
         if (!hasMatchedTag) continue
       }
 
-      // Lọc theo Đơn vị tính (ĐVT) đã chọn (OR giữa các ĐVT đã chọn)
+      // Lọc theo Đơn vị tính (ĐVT) đã chọn (OR giữa các ĐVT đã chọn, giữ nguyên ĐVT chi tiết như Thùng (13kg), Thùng (12kg), Kg...)
       if (hasUnitFilter && normUnitFilterSet) {
         const subItems = getPositionProductItems(p)
         const hasMatchedUnit =
           subItems.some(sub => {
-            if (!normUnitFilterSet.has(normalizeSearchString(sub.unit, true))) return false
+            if (!normUnitFilterSet.has(normalizeSearchString(sub.rawUnit || sub.unit, true))) return false
             if (hasQuery && isExactProductQuery) return sub.name === q
             if (hasQuery && (searchMode === 'name' || searchMode === 'all')) {
               return matchSearch({ name: sub.name, aliases: sub.aliases || p.aliases, sku: sub.sku }, q)
             }
             return true
           }) ||
-          (subItems.length === 0 && normUnitFilterSet.has(normalizeSearchString(getCleanUnitCategory(p.unit), true))) ||
-          (p.items && p.items.some(it => normUnitFilterSet.has(normalizeSearchString(it.unit || p.unit || '', true))))
+          (subItems.length === 0 && normUnitFilterSet.has(normalizeSearchString((p.unit || '').trim() || getCleanUnitCategory(p.unit), true))) ||
+          (p.items && p.items.some(it => normUnitFilterSet.has(normalizeSearchString((it.unit || p.unit || '').trim(), true))))
         if (!hasMatchedUnit) continue
       }
 
@@ -1302,7 +1309,7 @@ export default function WarehouseMapTab() {
               subItems.some(
                 sub =>
                   sub.name === q &&
-                  (!normUnitFilterSet || normUnitFilterSet.has(normalizeSearchString(sub.unit, true)))
+                  (!normUnitFilterSet || normUnitFilterSet.has(normalizeSearchString(sub.rawUnit || sub.unit, true)))
               )
             ) {
               matched.push({ pos: p, score: 2000 })
@@ -1316,7 +1323,7 @@ export default function WarehouseMapTab() {
 
           for (let sIdx = 0; sIdx < subItems.length; sIdx++) {
             const sub = subItems[sIdx]
-            if (normUnitFilterSet && !normUnitFilterSet.has(normalizeSearchString(sub.unit, true))) continue
+            if (normUnitFilterSet && !normUnitFilterSet.has(normalizeSearchString(sub.rawUnit || sub.unit, true))) continue
             const nameObj = {
               name: sub.name,
               aliases: sub.aliases || p.aliases,
@@ -1441,7 +1448,7 @@ export default function WarehouseMapTab() {
               subItems.some(
                 sub =>
                   sub.name === q &&
-                  (!normUnitFilterSet || normUnitFilterSet.has(normalizeSearchString(sub.unit, true)))
+                  (!normUnitFilterSet || normUnitFilterSet.has(normalizeSearchString(sub.rawUnit || sub.unit, true)))
               )
             ) {
               matched.push({ pos: p, score: 2000 })
@@ -1577,7 +1584,7 @@ export default function WarehouseMapTab() {
         const effectiveSubs = matchedSubsForQuery.length > 0 ? matchedSubsForQuery : subItems
 
         effectiveSubs.forEach(sub => {
-          const rawU = (sub.unit || getCleanUnitCategory(p.unit)).trim()
+          const rawU = (sub.rawUnit || (p.unit || '').trim() || getCleanUnitCategory(p.unit)).trim()
           if (!rawU) return
           const uKey = normalizeSearchString(rawU, true)
           const existing = unitMap.get(uKey)
@@ -1610,13 +1617,13 @@ export default function WarehouseMapTab() {
           ) {
             return false
           }
-          if (normSelectedUnitSet && !normSelectedUnitSet.has(normalizeSearchString(sub.unit, true))) {
+          if (normSelectedUnitSet && !normSelectedUnitSet.has(normalizeSearchString(sub.rawUnit || sub.unit, true))) {
             return false
           }
           return true
         })
 
-        if (subsForUnit.length > 0 || (subItems.length === 0 && (!normSelectedUnitSet || normSelectedUnitSet.has(normalizeSearchString(getCleanUnitCategory(p.unit), true))))) {
+        if (subsForUnit.length > 0 || (subItems.length === 0 && (!normSelectedUnitSet || normSelectedUnitSet.has(normalizeSearchString((p.unit || '').trim() || getCleanUnitCategory(p.unit), true))))) {
           const posQty =
             subsForUnit.length > 0
               ? subsForUnit.reduce((s, it) => s + (it.quantity || 0), 0)
@@ -1753,7 +1760,7 @@ export default function WarehouseMapTab() {
 
       if (subItems.length > 1 && (qClean || normUnitFilterSet)) {
         const matchedSubs = subItems.filter(s => {
-          if (normUnitFilterSet && !normUnitFilterSet.has(normalizeSearchString(s.unit, true))) return false
+          if (normUnitFilterSet && !normUnitFilterSet.has(normalizeSearchString(s.rawUnit || s.unit, true))) return false
           if (!qClean) return true
           if (isExactProd) return s.name === qClean
           return (
@@ -1765,7 +1772,7 @@ export default function WarehouseMapTab() {
           itemsToSum = matchedSubs.map(s => ({ quantity: s.quantity, unit: s.unit }))
         }
       } else if (normUnitFilterSet && subItems.length === 1) {
-        if (normUnitFilterSet.has(normalizeSearchString(subItems[0].unit, true))) {
+        if (normUnitFilterSet.has(normalizeSearchString(subItems[0].rawUnit || subItems[0].unit, true))) {
           itemsToSum = [{ quantity: subItems[0].quantity, unit: subItems[0].unit }]
         }
       }
@@ -2604,10 +2611,15 @@ export default function WarehouseMapTab() {
         onResetFilters={handleResetFilters}
         isFilterOpen={isFilterOpen}
         onToggleFilterOpen={() => setIsFilterOpen(prev => !prev)}
+        isCollapsed={isSearchCollapsed && isSearchActive}
+        onSetCollapsed={setIsSearchCollapsed}
+        matchCount={matchingPositions.length}
+        onClearAll={handleClearAllSearchAndFilters}
       />
 
       <SearchStatsPanel
         isSearchActive={isSearchActive}
+        isSearchCollapsed={isSearchCollapsed && isSearchActive}
         matchingPositions={matchingPositions}
         searchQuery={searchQuery}
         hasActiveFilters={hasActiveFilters}

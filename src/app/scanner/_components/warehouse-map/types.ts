@@ -116,6 +116,7 @@ export interface PositionProductSubItem {
   aliases: string | null
   quantity: number
   unit: string
+  rawUnit: string
 }
 
 export interface ZoneItem {
