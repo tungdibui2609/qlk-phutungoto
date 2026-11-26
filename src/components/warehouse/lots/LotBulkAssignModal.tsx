@@ -71,18 +71,34 @@ export function LotBulkAssignModal({
         }
     }, [currentSystem?.code]);
 
+    const fetchAllZonesPaged = async (systemCode: string) => {
+        const allZones: any[] = []
+        let from = 0
+        const pageSize = 1000
+        while (true) {
+            const { data, error } = await supabase
+                .from('zones')
+                .select('id, name, parent_id, display_order')
+                .eq('system_type', systemCode)
+                .order('id', { ascending: true })
+                .range(from, from + pageSize - 1)
+            if (error || !data || data.length === 0) break
+            allZones.push(...data)
+            if (data.length < pageSize) break
+            from += pageSize
+        }
+        return allZones
+    }
+
     const fetchInitialData = async () => {
         if (!currentSystem?.code) return;
         setLoadingHalls(true);
         try {
-            // 1. Fetch all zones to resolve names/hierarchy
-            const { data: allZonesData } = await supabase
-                .from('zones')
-                .select('id, name, parent_id')
-                .eq('system_type', currentSystem.code);
+            // 1. Fetch all zones (paged to handle >1,000 zones)
+            const allZonesData = await fetchAllZonesPaged(currentSystem.code);
 
             const zoneMap = new Map();
-            (allZonesData as any[] || []).forEach(z => zoneMap.set(z.id, z));
+            allZonesData.forEach(z => zoneMap.set(z.id, z));
 
             // 2. Fetch Halls
             const { data: hallData } = await supabase
@@ -95,7 +111,7 @@ export function LotBulkAssignModal({
 
             // 3. For each hall, count empty positions and resolve parent
             const hallResults = await Promise.all(((hallData as any[]) || []).map(async (hall: any) => {
-                const descIds = getDescendantIds(hall.id, (allZonesData as any[]) || []);
+                const descIds = getDescendantIds(hall.id, allZonesData);
 
                 // Count empty positions
                 const { count } = await supabase
@@ -105,13 +121,12 @@ export function LotBulkAssignModal({
                     .is('lot_id', null)
                     .in('zone_positions.zone_id', descIds);
 
-                // Build parent name path (at least one level up)
+                // Build parent name path (if hall is a root zone like KHO TẠM, use its own name instead of system name)
                 let parentName = '';
                 if (hall.parent_id) {
                     const parentZone = zoneMap.get(hall.parent_id);
                     if (parentZone) {
                         parentName = parentZone.name;
-                        // Optional: go one more level up if needed
                         if (parentZone.parent_id) {
                             const grandParent = zoneMap.get(parentZone.parent_id);
                             if (grandParent) {
@@ -124,7 +139,7 @@ export function LotBulkAssignModal({
                 return {
                     ...(hall as any),
                     emptyCount: count || 0,
-                    parentName: parentName || currentSystem.name // Fallback to system name
+                    parentName: parentName || hall.name || currentSystem.name
                 };
             }));
 
@@ -189,9 +204,9 @@ export function LotBulkAssignModal({
 
         setLoading(true);
         try {
-            // 1. Get all descendant zones
-            const { data: allZones } = await supabase.from('zones').select('id, parent_id').eq('system_type', currentSystem.code);
-            const descIds = getDescendantIds(hall.id, allZones || []);
+            // 1. Get all descendant zones (paged)
+            const allZones = await fetchAllZonesPaged(currentSystem.code);
+            const descIds = getDescendantIds(hall.id, allZones);
 
             // 2. Fetch available positions
             const { data: posData } = await supabase
@@ -571,7 +586,7 @@ export function LotBulkAssignModal({
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-md border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 h-[85vh] max-h-[700px]">
                 <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
                     <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
@@ -713,7 +728,9 @@ export function LotBulkAssignModal({
                                                 acc[group].push(hall);
                                                 return acc;
                                             }, {})
-                                        ).map(([warehouse, warehouseHalls]: [string, any]) => (
+                                        )
+                                            .sort(([a], [b]) => a.localeCompare(b, 'vi', { numeric: true }))
+                                            .map(([warehouse, warehouseHalls]: [string, any]) => (
                                             <div key={warehouse} className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900/50 shadow-sm">
                                                 <button
                                                     onClick={() => setExpandedWarehouse(expandedWarehouse === warehouse ? null : warehouse)}

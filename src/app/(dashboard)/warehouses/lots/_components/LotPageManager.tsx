@@ -815,8 +815,8 @@ export function LotPageManager() {
             )}
 
             {/* Floating Multi-Select Action Bar */}
-            {selectedLotIds.size > 0 && (
-                <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 max-w-[calc(100vw-1.5rem)] animate-in slide-in-from-bottom-5 duration-200">
+            {selectedLotIds.size > 0 && !bulkAssignLotIds && !bulkTagLotIds && !showBulkEditDates && (
+                <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 max-w-[calc(100vw-1.5rem)] animate-in slide-in-from-bottom-5 duration-200">
                     <div className="bg-slate-900/95 dark:bg-slate-900/95 text-white rounded-2xl shadow-2xl shadow-slate-950/40 border border-slate-700/80 px-3 py-2 flex items-center gap-2 backdrop-blur-xl">
                         {/* Selected Count Pill */}
                         <div className="flex items-center gap-2 px-2.5 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 shrink-0">
