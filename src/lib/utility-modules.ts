@@ -197,6 +197,15 @@ export const UTILITY_MODULES: UtilityModule[] = [
         icon: Truck,
         category: 'specialized',
         default_enabled: true
+    },
+    {
+        id: 'production_plan',
+        name: 'Kế hoạch Sản xuất & Quyết toán',
+        description: 'Quản lý kế hoạch lấy hàng tồn kho đi sản xuất/gia công lại theo khối lượng đầu vào hoặc mục tiêu thành phẩm đầu ra, soạn giữ LOT, theo dõi tiến độ từng đợt, thời gian & quyết toán hao hụt kế toán.',
+        icon: Factory,
+        category: 'specialized',
+        is_basic: true,
+        default_enabled: false
     }
 ]
 
@@ -213,7 +222,7 @@ export const SOLUTION_PRESETS: SolutionPreset[] = [
         name: 'Kho Sản Xuất',
         description: 'Dành cho các đơn vị có hoạt động chế biến, san chiết, đóng gói lại.',
         icon: Factory,
-        recommended_modules: ['lot_accounting_sync', 'auto_unbundle_lot']
+        recommended_modules: ['lot_accounting_sync', 'auto_unbundle_lot', 'production_plan']
     },
     {
         id: 'retail',

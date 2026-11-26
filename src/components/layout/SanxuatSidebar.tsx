@@ -39,6 +39,7 @@ const menuItems: MenuItem[] = [
         name: 'Hoạt động Sản xuất',
         icon: KanbanSquare,
         children: [
+            { id: 'production_plans_sx', name: 'Kế hoạch lấy hàng & SX', href: '/sanxuat/production-plans', icon: Factory },
             { id: 'boms', name: 'Định mức (BOM)', href: '/sanxuat/boms', icon: FileText },
             { id: 'manufacturing_orders', name: 'Lệnh sản xuất (MO)', href: '/sanxuat/mo', icon: Settings },
             { id: 'production_codes', name: 'Quản lý mã sản xuất', href: '/sanxuat/production-codes', icon: Tag },

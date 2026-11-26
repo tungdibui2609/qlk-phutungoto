@@ -137,6 +137,7 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
         description: 'Quản lý các nghiệp vụ công việc, lệnh điều phối.',
         icon: ClipboardCheck,
         children: [
+            { id: 'production_plan', name: 'Kế hoạch sản xuất', icon: Factory },
             { id: 'export_order', name: 'Lệnh xuất kho', icon: ArrowUpFromLine },
             { id: 'internal_inventory', name: 'Kiểm kê nội bộ', icon: ClipboardCheck },
         ]
