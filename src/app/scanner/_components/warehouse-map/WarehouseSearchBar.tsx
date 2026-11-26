@@ -34,11 +34,11 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   uniqueStts = [],
   uniqueTags = [],
   availableUnits = [],
-  selectedUnit = 'all',
-  onSelectUnit,
+  selectedUnits = [],
+  onSelectUnits,
   availableTags = [],
-  selectedTag = 'all',
-  onSelectTag,
+  selectedTags = [],
+  onSelectTags,
   searchQuery,
   searchMode = 'all',
   onSearchModeChange,
@@ -63,11 +63,11 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   uniqueStts?: UniqueSttItem[]
   uniqueTags?: UniqueTagItem[]
   availableUnits?: AvailableUnitOption[]
-  selectedUnit?: string
-  onSelectUnit?: (unit: string) => void
+  selectedUnits?: string[]
+  onSelectUnits?: (units: string[]) => void
   availableTags?: AvailableTagOption[]
-  selectedTag?: string
-  onSelectTag?: (tag: string) => void
+  selectedTags?: string[]
+  onSelectTags?: (tags: string[]) => void
   searchQuery: string
   searchMode?: WarehouseSearchMode
   onSearchModeChange?: (mode: WarehouseSearchMode) => void
@@ -322,9 +322,44 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
     onExecuteSearch(query)
   }
 
+  const isUnitSelected = (unit: string) => {
+    const norm = normalizeSearchString(unit, true)
+    return selectedUnits.some(u => normalizeSearchString(u, true) === norm)
+  }
+
+  const toggleUnit = (unit: string) => {
+    if (!onSelectUnits) return
+    const norm = normalizeSearchString(unit, true)
+    const exists = selectedUnits.some(u => normalizeSearchString(u, true) === norm)
+    if (exists) {
+      onSelectUnits(selectedUnits.filter(u => normalizeSearchString(u, true) !== norm))
+    } else {
+      onSelectUnits([...selectedUnits, unit])
+    }
+  }
+
+  const isTagSelected = (tag: string) => {
+    const norm = normalizeSearchString(tag, true)
+    return selectedTags.some(t => normalizeSearchString(t, true) === norm)
+  }
+
+  const toggleTag = (tag: string) => {
+    if (!onSelectTags) return
+    const norm = normalizeSearchString(tag, true)
+    const exists = selectedTags.some(t => normalizeSearchString(t, true) === norm)
+    if (exists) {
+      onSelectTags(selectedTags.filter(t => normalizeSearchString(t, true) !== norm))
+    } else {
+      onSelectTags([...selectedTags, tag])
+    }
+  }
+
   const handleSelectTag = (tag: string) => {
-    if (onSelectTag) {
-      onSelectTag(tag)
+    if (onSelectTags) {
+      const norm = normalizeSearchString(tag, true)
+      if (!selectedTags.some(t => normalizeSearchString(t, true) === norm)) {
+        onSelectTags([...selectedTags, tag])
+      }
     }
     if (searchMode === 'tag') {
       setInputValue(tag)
@@ -492,21 +527,21 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
       </div>
 
       {/* ── THANH CHỌN NHANH ĐƠN VỊ TÍNH (ĐVT) & MÃ PHỤ (TAG) LIÊN QUAN KHI TÌM SẢN PHẨM ── */}
-      {((searchQuery.trim().length > 0 || searchMode === 'tag' || (selectedUnit && selectedUnit !== 'all') || (selectedTag && selectedTag !== 'all')) &&
-        ((availableUnits && (availableUnits.length > 1 || (selectedUnit && selectedUnit !== 'all'))) || (availableTags && availableTags.length > 0))) && (
+      {((searchQuery.trim().length > 0 || searchMode === 'tag' || selectedUnits.length > 0 || selectedTags.length > 0) &&
+        ((availableUnits && (availableUnits.length > 1 || selectedUnits.length > 0)) || (availableTags && availableTags.length > 0))) && (
         <div className="pt-2 space-y-1.5 border-t border-slate-800/70 mt-2 animate-in fade-in">
-          {/* 1. Dãy nút lọc Đơn vị tính (ĐVT) */}
-          {onSelectUnit && availableUnits && (availableUnits.length > 1 || (selectedUnit && selectedUnit !== 'all')) && (
+          {/* 1. Dãy nút lọc Đơn vị tính (ĐVT) - Đa chọn có ô tích */}
+          {onSelectUnits && availableUnits && (availableUnits.length > 1 || selectedUnits.length > 0) && (
             <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
               <span className="text-emerald-400 font-bold text-[10px] shrink-0 flex items-center gap-1">
                 <Scale size={11} />
-                <span>ĐVT:</span>
+                <span>ĐVT{selectedUnits.length > 0 ? ` (${selectedUnits.length})` : ''}:</span>
               </span>
               <button
                 type="button"
-                onClick={() => onSelectUnit('all')}
+                onClick={() => onSelectUnits([])}
                 className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
-                  !selectedUnit || selectedUnit === 'all'
+                  selectedUnits.length === 0
                     ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
                     : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
                 }`}
@@ -514,37 +549,46 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                 Tất cả ({availableUnits.length})
               </button>
               {availableUnits.map(u => {
-                const isSel = selectedUnit !== 'all' && normalizeSearchString(selectedUnit, true) === normalizeSearchString(u.unit, true)
+                const isSel = isUnitSelected(u.unit)
                 return (
                   <button
                     key={u.unit}
                     type="button"
-                    onClick={() => onSelectUnit(isSel ? 'all' : u.unit)}
-                    className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
+                    onClick={() => toggleUnit(u.unit)}
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
                       isSel
                         ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black shadow-xs'
                         : 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60 hover:bg-emerald-900/50'
                     }`}
                   >
-                    {u.unit} ({u.count} ô · {u.totalQty.toLocaleString('vi-VN')})
+                    <span
+                      className={`w-3.5 h-3.5 rounded-[4px] border flex items-center justify-center shrink-0 ${
+                        isSel
+                          ? 'bg-slate-950 border-slate-950 text-emerald-400'
+                          : 'bg-slate-950/60 border-emerald-500/50'
+                      }`}
+                    >
+                      {isSel && <Check size={10} strokeWidth={3} />}
+                    </span>
+                    <span>{u.unit} ({u.count} ô · {u.totalQty.toLocaleString('vi-VN')})</span>
                   </button>
                 )
               })}
             </div>
           )}
 
-          {/* 2. Dãy nút lọc Mã phụ (Tag) liên quan đến sản phẩm đang tìm */}
-          {onSelectTag && availableTags && availableTags.length > 0 && (
+          {/* 2. Dãy nút lọc Mã phụ (Tag) liên quan đến sản phẩm đang tìm - Đa chọn có ô tích */}
+          {onSelectTags && availableTags && availableTags.length > 0 && (
             <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
               <span className="text-amber-400 font-bold text-[10px] shrink-0 flex items-center gap-1">
                 <Tag size={11} />
-                <span>Tag ({availableTags.length}):</span>
+                <span>Tag ({selectedTags.length > 0 ? `${selectedTags.length}/${availableTags.length}` : availableTags.length}):</span>
               </span>
               <button
                 type="button"
-                onClick={() => onSelectTag('all')}
+                onClick={() => onSelectTags([])}
                 className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
-                  !selectedTag || selectedTag === 'all'
+                  selectedTags.length === 0
                     ? 'bg-amber-400 text-slate-950 border-amber-300 font-black'
                     : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
                 }`}
@@ -552,20 +596,29 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                 Tất cả
               </button>
               {availableTags.slice(0, 20).map(t => {
-                const isSel = selectedTag !== 'all' && normalizeSearchString(selectedTag, true) === normalizeSearchString(t.tag, true)
+                const isSel = isTagSelected(t.tag)
                 return (
                   <button
                     key={t.tag}
                     type="button"
-                    onClick={() => onSelectTag(isSel ? 'all' : t.tag)}
+                    onClick={() => toggleTag(t.tag)}
                     title={t.productNames.length > 0 ? `Sản phẩm: ${t.productNames.join(', ')}` : `Mã phụ: ${t.tag}`}
-                    className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10.5px] font-bold whitespace-nowrap border transition shrink-0 cursor-pointer ${
                       isSel
                         ? 'bg-amber-400 text-slate-950 border-amber-300 font-black shadow-xs'
                         : 'bg-amber-950/40 text-amber-300 border-amber-800/60 hover:bg-amber-900/50'
                     }`}
                   >
-                    🏷️ {t.tag} ({t.count} ô · {formatUnitsSummary(t.unitsMap, { short: true })})
+                    <span
+                      className={`w-3.5 h-3.5 rounded-[4px] border flex items-center justify-center shrink-0 ${
+                        isSel
+                          ? 'bg-slate-950 border-slate-950 text-amber-400'
+                          : 'bg-slate-950/60 border-amber-500/50'
+                      }`}
+                    >
+                      {isSel && <Check size={10} strokeWidth={3} />}
+                    </span>
+                    <span>🏷️ {t.tag} ({t.count} ô · {formatUnitsSummary(t.unitsMap, { short: true })})</span>
                   </button>
                 )
               })}
@@ -578,34 +631,40 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
       {hasActiveFilters && (
         <div className="flex items-center gap-1.5 overflow-x-auto pt-2 scrollbar-none text-[11px]">
           <span className="text-slate-400 font-semibold text-[10px] shrink-0">Đang lọc:</span>
-          {selectedUnit && selectedUnit !== 'all' && onSelectUnit && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-medium shrink-0">
+          {onSelectUnits && selectedUnits.map(unit => (
+            <span
+              key={`unit-${unit}`}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-medium shrink-0"
+            >
               <Scale size={11} />
-              <span>ĐVT: {selectedUnit}</span>
+              <span>ĐVT: {unit}</span>
               <button
                 type="button"
-                onClick={() => onSelectUnit('all')}
+                onClick={() => toggleUnit(unit)}
                 className="hover:text-white ml-0.5"
-                title="Xóa lọc ĐVT"
+                title={`Bỏ lọc ĐVT ${unit}`}
               >
                 <X size={11} />
               </button>
             </span>
-          )}
-          {selectedTag && selectedTag !== 'all' && onSelectTag && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-medium shrink-0">
+          ))}
+          {onSelectTags && selectedTags.map(tag => (
+            <span
+              key={`tag-${tag}`}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-medium shrink-0"
+            >
               <Tag size={11} />
-              <span>Tag: {selectedTag}</span>
+              <span>Tag: {tag}</span>
               <button
                 type="button"
-                onClick={() => onSelectTag('all')}
+                onClick={() => toggleTag(tag)}
                 className="hover:text-white ml-0.5"
-                title="Xóa lọc Tag"
+                title={`Bỏ lọc Tag ${tag}`}
               >
                 <X size={11} />
               </button>
             </span>
-          )}
+          ))}
           {(filterStartDate || filterEndDate) && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-medium shrink-0">
               <Calendar size={11} />
@@ -838,19 +897,30 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
             )}
           </div>
 
-          {/* 3. Đơn vị tính (ĐVT) */}
-          {onSelectUnit && availableUnits && availableUnits.length > 0 && (
+          {/* 3. Đơn vị tính (ĐVT) - Đa chọn có ô tích */}
+          {onSelectUnits && availableUnits && availableUnits.length > 0 && (
             <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-              <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
-                <Scale size={12} className="text-emerald-400" />
-                <span>Đơn vị tính ({availableUnits.length}):</span>
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                  <Scale size={12} className="text-emerald-400" />
+                  <span>Đơn vị tính ({availableUnits.length}){selectedUnits.length > 0 ? ` · Đã chọn ${selectedUnits.length}` : ''}:</span>
+                </span>
+                {selectedUnits.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectUnits([])}
+                    className="text-[10.5px] font-bold text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                  >
+                    Bỏ chọn
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
                 <button
                   type="button"
-                  onClick={() => onSelectUnit('all')}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
-                    !selectedUnit || selectedUnit === 'all'
+                  onClick={() => onSelectUnits([])}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition cursor-pointer ${
+                    selectedUnits.length === 0
                       ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
                       : 'bg-slate-950 text-slate-300 border-slate-800'
                   }`}
@@ -858,19 +928,28 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                   Tất cả ĐVT
                 </button>
                 {availableUnits.map(u => {
-                  const isSel = selectedUnit !== 'all' && normalizeSearchString(selectedUnit, true) === normalizeSearchString(u.unit, true)
+                  const isSel = isUnitSelected(u.unit)
                   return (
                     <button
                       key={u.unit}
                       type="button"
-                      onClick={() => onSelectUnit(isSel ? 'all' : u.unit)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
+                      onClick={() => toggleUnit(u.unit)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition cursor-pointer ${
                         isSel
                           ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black'
                           : 'bg-slate-950 text-slate-300 border-slate-800'
                       }`}
                     >
-                      {u.unit} ({u.count} ô · {u.totalQty.toLocaleString('vi-VN')})
+                      <span
+                        className={`w-3.5 h-3.5 rounded-[4px] border flex items-center justify-center shrink-0 ${
+                          isSel
+                            ? 'bg-slate-950 border-slate-950 text-emerald-400'
+                            : 'bg-slate-900 border-slate-600'
+                        }`}
+                      >
+                        {isSel && <Check size={10} strokeWidth={3} />}
+                      </span>
+                      <span>{u.unit} ({u.count} ô · {u.totalQty.toLocaleString('vi-VN')})</span>
                     </button>
                   )
                 })}
@@ -878,19 +957,30 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
             </div>
           )}
 
-          {/* 4. Mã phụ (Tag) */}
-          {onSelectTag && availableTags && availableTags.length > 0 && (
+          {/* 4. Mã phụ (Tag) - Đa chọn có ô tích */}
+          {onSelectTags && availableTags && availableTags.length > 0 && (
             <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-              <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
-                <Tag size={12} className="text-amber-400" />
-                <span>Mã phụ / Tag liên quan ({availableTags.length}):</span>
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                  <Tag size={12} className="text-amber-400" />
+                  <span>Mã phụ / Tag liên quan ({availableTags.length}){selectedTags.length > 0 ? ` · Đã chọn ${selectedTags.length}` : ''}:</span>
+                </span>
+                {selectedTags.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectTags([])}
+                    className="text-[10.5px] font-bold text-amber-400 hover:text-amber-300 cursor-pointer"
+                  >
+                    Bỏ chọn
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
                 <button
                   type="button"
-                  onClick={() => onSelectTag('all')}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
-                    !selectedTag || selectedTag === 'all'
+                  onClick={() => onSelectTags([])}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition cursor-pointer ${
+                    selectedTags.length === 0
                       ? 'bg-amber-400 text-slate-950 border-amber-300 font-black'
                       : 'bg-slate-950 text-slate-300 border-slate-800'
                   }`}
@@ -898,19 +988,28 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                   Tất cả Tag
                 </button>
                 {availableTags.slice(0, 30).map(t => {
-                  const isSel = selectedTag !== 'all' && normalizeSearchString(selectedTag, true) === normalizeSearchString(t.tag, true)
+                  const isSel = isTagSelected(t.tag)
                   return (
                     <button
                       key={t.tag}
                       type="button"
-                      onClick={() => onSelectTag(isSel ? 'all' : t.tag)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
+                      onClick={() => toggleTag(t.tag)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition cursor-pointer ${
                         isSel
                           ? 'bg-amber-400 text-slate-950 border-amber-300 font-black'
                           : 'bg-slate-950 text-slate-300 border-slate-800'
                       }`}
                     >
-                      🏷️ {t.tag} ({t.count} ô)
+                      <span
+                        className={`w-3.5 h-3.5 rounded-[4px] border flex items-center justify-center shrink-0 ${
+                          isSel
+                            ? 'bg-slate-950 border-slate-950 text-amber-400'
+                            : 'bg-slate-900 border-slate-600'
+                        }`}
+                      >
+                        {isSel && <Check size={10} strokeWidth={3} />}
+                      </span>
+                      <span>🏷️ {t.tag} ({t.count} ô)</span>
                     </button>
                   )
                 })}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, X, ClipboardList, Sparkles, CornerDownLeft, Bookmark, RotateCcw, Scale } from 'lucide-react'
+import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, X, ClipboardList, Sparkles, CornerDownLeft, Bookmark, RotateCcw, Scale, ChevronDown } from 'lucide-react'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { DateRangeFilter, DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
@@ -47,11 +47,11 @@ interface MapFilterBarProps {
     selectedCategoryId?: string | null
     onCategorySelect?: (catId: string | null) => void
     availableUnits?: AvailableUnitOption[]
-    selectedUnit?: string | null
-    onUnitSelect?: (unit: string | null) => void
+    selectedUnits?: string[]
+    onUnitsChange?: (units: string[]) => void
     availableTags?: AvailableTagOption[]
-    selectedTag?: string | null
-    onTagSelect?: (tag: string | null) => void
+    selectedTags?: string[]
+    onTagsChange?: (tags: string[]) => void
     products?: any[]
     onlyShowMarked?: boolean
     onToggleOnlyShowMarked?: () => void
@@ -108,11 +108,11 @@ export function MapFilterBar({
     selectedCategoryId,
     onCategorySelect,
     availableUnits = [],
-    selectedUnit,
-    onUnitSelect,
+    selectedUnits = [],
+    onUnitsChange,
     availableTags = [],
-    selectedTag,
-    onTagSelect,
+    selectedTags = [],
+    onTagsChange,
     products,
     onlyShowMarked,
     onToggleOnlyShowMarked,
@@ -151,6 +151,22 @@ export function MapFilterBar({
     const [showSuggestions, setShowSuggestions] = useState(false)
     const [highlightedIndex, setHighlightedIndex] = useState(-1)
     const searchContainerRef = useRef<HTMLDivElement>(null)
+    const [isUnitDropdownOpen, setIsUnitDropdownOpen] = useState(false)
+    const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false)
+    const [tagDropdownQuery, setTagDropdownQuery] = useState('')
+    const unitDropdownRef = useRef<HTMLDivElement>(null)
+    const tagDropdownRef = useRef<HTMLDivElement>(null)
+
+    const filteredDropdownTags = useMemo(() => {
+        if (!availableTags || availableTags.length === 0) return []
+        const q = tagDropdownQuery.trim()
+        if (!q) return availableTags
+        return availableTags.filter((t) =>
+            matchSearch(t.tag, q) ||
+            t.productNames.some((name) => matchSearch(name, q)) ||
+            t.skus.some((sku) => matchSearch(sku, q))
+        )
+    }, [availableTags, tagDropdownQuery])
 
     const setDatePreset = (days: number | 'today' | 'this_month') => {
         const now = new Date()
@@ -181,11 +197,17 @@ export function MapFilterBar({
         setLocalSearchTerm(searchTerm)
     }, [searchTerm])
 
-    // Đóng gợi ý khi click ra ngoài
+    // Đóng gợi ý và dropdown khi click ra ngoài
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
                 setShowSuggestions(false)
+            }
+            if (unitDropdownRef.current && !unitDropdownRef.current.contains(e.target as Node)) {
+                setIsUnitDropdownOpen(false)
+            }
+            if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
+                setIsTagDropdownOpen(false)
             }
         }
         document.addEventListener('mousedown', handleClickOutside)
@@ -406,8 +428,12 @@ export function MapFilterBar({
 
     const handleSelectSuggestion = (item: typeof suggestions[0]) => {
         if (item.suggestionType === 'tag' && item.selectTag) {
-            if (onTagSelect) {
-                onTagSelect(item.selectTag)
+            if (onTagsChange) {
+                const targetNorm = normalizeSearchString(item.selectTag, true)
+                const exists = selectedTags.some(t => normalizeSearchString(t, true) === targetNorm)
+                if (!exists) {
+                    onTagsChange([...selectedTags, item.selectTag])
+                }
             }
             if (searchMode === 'tag') {
                 setLocalSearchTerm(item.selectTag)
@@ -420,6 +446,28 @@ export function MapFilterBar({
         const targetValue = item.fillValue
         setLocalSearchTerm(targetValue)
         handleSearch(targetValue)
+    }
+
+    const toggleUnit = (unit: string) => {
+        if (!onUnitsChange) return
+        const norm = normalizeSearchString(unit, true)
+        const exists = selectedUnits.some(u => normalizeSearchString(u, true) === norm)
+        if (exists) {
+            onUnitsChange(selectedUnits.filter(u => normalizeSearchString(u, true) !== norm))
+        } else {
+            onUnitsChange([...selectedUnits, unit])
+        }
+    }
+
+    const toggleTag = (tag: string) => {
+        if (!onTagsChange) return
+        const norm = normalizeSearchString(tag, true)
+        const exists = selectedTags.some(t => normalizeSearchString(t, true) === norm)
+        if (exists) {
+            onTagsChange(selectedTags.filter(t => normalizeSearchString(t, true) !== norm))
+        } else {
+            onTagsChange([...selectedTags, tag])
+        }
     }
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -456,8 +504,8 @@ export function MapFilterBar({
     const hasActiveFilters = Boolean(
         localSearchTerm ||
         (selectedCategoryId && selectedCategoryId !== 'all') ||
-        (selectedUnit && selectedUnit !== 'all') ||
-        (selectedTag && selectedTag !== 'all') ||
+        selectedUnits.length > 0 ||
+        selectedTags.length > 0 ||
         startDate ||
         endDate ||
         onlyShowMarked ||
@@ -470,8 +518,8 @@ export function MapFilterBar({
         onSearchChange('')
         if (onDeepScanTermChange) onDeepScanTermChange('')
         if (onCategorySelect) onCategorySelect(null)
-        if (onUnitSelect) onUnitSelect(null)
-        if (onTagSelect) onTagSelect(null)
+        if (onUnitsChange) onUnitsChange([])
+        if (onTagsChange) onTagsChange([])
         onStartDateChange('')
         onEndDateChange('')
         if (onlyShowMarked && onToggleOnlyShowMarked) onToggleOnlyShowMarked()
@@ -961,70 +1009,271 @@ export function MapFilterBar({
                                 </div>
                             )}
 
-                            {/* Bộ lọc Đơn vị tính (ĐVT) */}
-                            {onUnitSelect && availableUnits && availableUnits.length > 0 && (
-                                <div className={`flex items-center gap-1.5 border rounded-xl px-3 py-1.5 shrink-0 shadow-2xs transition-colors ${
-                                    selectedUnit && selectedUnit !== 'all'
-                                        ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 ring-1 ring-emerald-200 dark:ring-emerald-800'
-                                        : 'bg-slate-50/90 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
-                                }`}>
-                                    <Scale size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">Đơn vị tính:</span>
-                                    <select
-                                        value={selectedUnit || 'all'}
-                                        onChange={(e) => onUnitSelect(e.target.value === 'all' ? null : e.target.value)}
-                                        className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none max-w-[220px] truncate"
+                            {/* Bộ lọc Đơn vị tính (ĐVT) - Dropdown đa chọn có checkbox */}
+                            {onUnitsChange && availableUnits && availableUnits.length > 0 && (
+                                <div ref={unitDropdownRef} className="relative shrink-0">
+                                    <div
+                                        className={`flex items-center gap-1.5 border rounded-xl px-3 py-1.5 shadow-2xs transition-colors ${
+                                            selectedUnits.length > 0
+                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 ring-1 ring-emerald-200 dark:ring-emerald-800'
+                                                : 'bg-slate-50/90 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
+                                        }`}
                                     >
-                                        <option value="all">Tất cả ĐVT ({availableUnits.length})</option>
-                                        {availableUnits.map((u) => (
-                                            <option key={u.unit} value={u.unit}>
-                                                {u.unit} ({u.count} vt - {u.totalQty.toLocaleString('vi-VN')})
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {selectedUnit && selectedUnit !== 'all' && (
                                         <button
                                             type="button"
-                                            onClick={() => onUnitSelect(null)}
-                                            className="text-emerald-600 hover:text-red-500 transition-colors cursor-pointer"
-                                            title="Bỏ lọc đơn vị tính"
+                                            onClick={() => {
+                                                setIsUnitDropdownOpen((prev) => !prev)
+                                                setIsTagDropdownOpen(false)
+                                            }}
+                                            className="flex items-center gap-1.5 cursor-pointer outline-none"
                                         >
-                                            <X size={13} />
+                                            <Scale size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">ĐVT:</span>
+                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[180px] truncate">
+                                                {selectedUnits.length === 0
+                                                    ? `Tất cả (${availableUnits.length})`
+                                                    : selectedUnits.length === 1
+                                                        ? selectedUnits[0]
+                                                        : `Đã chọn ${selectedUnits.length} ĐVT`}
+                                            </span>
+                                            <ChevronDown
+                                                size={13}
+                                                className={`text-slate-400 transition-transform duration-150 ${isUnitDropdownOpen ? 'rotate-180' : ''}`}
+                                            />
                                         </button>
+                                        {selectedUnits.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    onUnitsChange([])
+                                                }}
+                                                className="text-emerald-600 hover:text-red-500 transition-colors cursor-pointer pl-0.5"
+                                                title="Bỏ chọn tất cả ĐVT"
+                                            >
+                                                <X size={13} />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {isUnitDropdownOpen && (
+                                        <div className="absolute left-0 top-full mt-1.5 z-50 w-76 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                                            <div className="max-h-72 overflow-y-auto p-1.5 space-y-0.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onUnitsChange([])}
+                                                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                                                        selectedUnits.length === 0
+                                                            ? 'bg-emerald-600 text-white'
+                                                            : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                    }`}
+                                                >
+                                                    <span>Tất cả ĐVT ({availableUnits.length})</span>
+                                                    {selectedUnits.length === 0 && <Check size={14} />}
+                                                </button>
+                                                {availableUnits.map((u) => {
+                                                    const isActive = selectedUnits.some(
+                                                        (su) => normalizeSearchString(su, true) === normalizeSearchString(u.unit, true)
+                                                    )
+                                                    return (
+                                                        <button
+                                                            key={u.unit}
+                                                            type="button"
+                                                            onClick={() => toggleUnit(u.unit)}
+                                                            className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer ${
+                                                                isActive
+                                                                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-bold'
+                                                                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold'
+                                                            }`}
+                                                        >
+                                                            <span className="truncate flex items-center gap-2 min-w-0">
+                                                                <span
+                                                                    className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                                                        isActive
+                                                                            ? 'bg-emerald-600 border-emerald-600 text-white'
+                                                                            : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                                                                    }`}
+                                                                >
+                                                                    {isActive && <Check size={11} strokeWidth={3} />}
+                                                                </span>
+                                                                <span className="truncate">{u.unit}</span>
+                                                            </span>
+                                                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-100/80 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 shrink-0">
+                                                                {u.count} vt • {u.totalQty.toLocaleString('vi-VN')}
+                                                            </span>
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+                                            {selectedUnits.length > 0 && (
+                                                <div className="px-2.5 py-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 flex items-center justify-between text-[11px]">
+                                                    <span className="text-slate-500 font-semibold">Đã chọn {selectedUnits.length} ĐVT</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsUnitDropdownOpen(false)}
+                                                        className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline cursor-pointer"
+                                                    >
+                                                        Xong
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             )}
 
-                            {/* Bộ lọc Mã phụ (Tag) */}
-                            {onTagSelect && availableTags && availableTags.length > 0 && !excludeTags && (
-                                <div className={`flex items-center gap-1.5 border rounded-xl px-3 py-1.5 shrink-0 shadow-2xs transition-colors ${
-                                    selectedTag && selectedTag !== 'all'
-                                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 ring-1 ring-amber-200 dark:ring-amber-800'
-                                        : 'bg-slate-50/90 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
-                                }`}>
-                                    <Tag size={13} className="text-amber-500 shrink-0" />
-                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">Mã phụ (Tag):</span>
-                                    <select
-                                        value={selectedTag || 'all'}
-                                        onChange={(e) => onTagSelect(e.target.value === 'all' ? null : e.target.value)}
-                                        className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none max-w-[240px] truncate"
+                            {/* Bộ lọc Mã phụ (Tag) - Dropdown đa chọn có checkbox & tìm nhanh */}
+                            {onTagsChange && availableTags && availableTags.length > 0 && !excludeTags && (
+                                <div ref={tagDropdownRef} className="relative shrink-0">
+                                    <div
+                                        className={`flex items-center gap-1.5 border rounded-xl px-3 py-1.5 shadow-2xs transition-colors ${
+                                            selectedTags.length > 0
+                                                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 ring-1 ring-amber-200 dark:ring-amber-800'
+                                                : 'bg-slate-50/90 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
+                                        }`}
                                     >
-                                        <option value="all">Tất cả mã phụ ({availableTags.length})</option>
-                                        {availableTags.map((t) => (
-                                            <option key={t.tag} value={t.tag}>
-                                                {t.tag} ({t.count} vt - {t.totalQty.toLocaleString('vi-VN')})
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {selectedTag && selectedTag !== 'all' && (
                                         <button
                                             type="button"
-                                            onClick={() => onTagSelect(null)}
-                                            className="text-amber-600 hover:text-red-500 transition-colors cursor-pointer"
-                                            title="Bỏ lọc mã phụ"
+                                            onClick={() => {
+                                                setIsTagDropdownOpen((prev) => !prev)
+                                                setIsUnitDropdownOpen(false)
+                                            }}
+                                            className="flex items-center gap-1.5 cursor-pointer outline-none"
                                         >
-                                            <X size={13} />
+                                            <Tag size={13} className="text-amber-500 shrink-0" />
+                                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">Mã phụ:</span>
+                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 max-w-[180px] truncate">
+                                                {selectedTags.length === 0
+                                                    ? `Tất cả (${availableTags.length})`
+                                                    : selectedTags.length === 1
+                                                        ? selectedTags[0]
+                                                        : `Đã chọn ${selectedTags.length} mã phụ`}
+                                            </span>
+                                            <ChevronDown
+                                                size={13}
+                                                className={`text-slate-400 transition-transform duration-150 ${isTagDropdownOpen ? 'rotate-180' : ''}`}
+                                            />
                                         </button>
+                                        {selectedTags.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    onTagsChange([])
+                                                }}
+                                                className="text-amber-600 hover:text-red-500 transition-colors cursor-pointer pl-0.5"
+                                                title="Bỏ chọn tất cả mã phụ"
+                                            >
+                                                <X size={13} />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {isTagDropdownOpen && (
+                                        <div className="absolute left-0 top-full mt-1.5 z-50 w-84 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                                            {/* Ô tìm nhanh trong dropdown */}
+                                            <div className="p-2 border-b border-slate-100 dark:border-slate-800">
+                                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                                                    <Search size={13} className="text-slate-400 shrink-0" />
+                                                    <input
+                                                        type="text"
+                                                        value={tagDropdownQuery}
+                                                        onChange={(e) => setTagDropdownQuery(e.target.value)}
+                                                        placeholder="Tìm nhanh mã phụ..."
+                                                        autoFocus
+                                                        className="w-full bg-transparent text-xs outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                                                    />
+                                                    {tagDropdownQuery && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setTagDropdownQuery('')}
+                                                            className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="max-h-72 overflow-y-auto p-1.5 space-y-0.5">
+                                                {!tagDropdownQuery.trim() && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onTagsChange([])}
+                                                        className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                                                            selectedTags.length === 0
+                                                                ? 'bg-amber-500 text-white'
+                                                                : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                        }`}
+                                                    >
+                                                        <span>Tất cả mã phụ ({availableTags.length})</span>
+                                                        {selectedTags.length === 0 && <Check size={14} />}
+                                                    </button>
+                                                )}
+
+                                                {filteredDropdownTags.length === 0 ? (
+                                                    <div className="py-4 text-center text-xs text-slate-400">
+                                                        Không tìm thấy mã phụ phù hợp
+                                                    </div>
+                                                ) : (
+                                                    filteredDropdownTags.map((t) => {
+                                                        const isActive = selectedTags.some(
+                                                            (st) => normalizeSearchString(st, true) === normalizeSearchString(t.tag, true)
+                                                        )
+                                                        return (
+                                                            <button
+                                                                key={t.tag}
+                                                                type="button"
+                                                                title={t.productNames.length > 0 ? `Sản phẩm: ${t.productNames.join(', ')}` : `Mã phụ: ${t.tag}`}
+                                                                onClick={() => toggleTag(t.tag)}
+                                                                className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer ${
+                                                                    isActive
+                                                                        ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 font-bold'
+                                                                        : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold'
+                                                                }`}
+                                                            >
+                                                                <span className="truncate flex items-center gap-2 min-w-0">
+                                                                    <span
+                                                                        className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                                                            isActive
+                                                                                ? 'bg-amber-500 border-amber-500 text-white'
+                                                                                : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                                                                        }`}
+                                                                    >
+                                                                        {isActive && <Check size={11} strokeWidth={3} />}
+                                                                    </span>
+                                                                    <span className="truncate">{t.tag}</span>
+                                                                </span>
+                                                                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-amber-100/90 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 shrink-0">
+                                                                    {t.count} vt • {t.totalQty.toLocaleString('vi-VN')}
+                                                                </span>
+                                                            </button>
+                                                        )
+                                                    })
+                                                )}
+                                            </div>
+                                            {selectedTags.length > 0 && (
+                                                <div className="px-2.5 py-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 flex items-center justify-between text-[11px]">
+                                                    <span className="text-slate-500 font-semibold">Đã chọn {selectedTags.length} mã phụ</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => onTagsChange([])}
+                                                            className="text-red-500 font-bold hover:underline cursor-pointer"
+                                                        >
+                                                            Bỏ chọn
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setIsTagDropdownOpen(false)}
+                                                            className="text-amber-600 dark:text-amber-400 font-bold hover:underline cursor-pointer"
+                                                        >
+                                                            Xong
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             )}
@@ -1052,102 +1301,6 @@ export function MapFilterBar({
                             </button>
                         )}
                     </div>
-
-                    {/* Thanh chọn nhanh Đơn vị tính & Mã phụ (Tag) liên quan khi người dùng tìm kiếm sản phẩm hoặc chọn chế độ Mã phụ */}
-                    {((searchTerm.trim() !== '' || searchMode === 'tag' || selectedUnit || selectedTag) && ((availableUnits && availableUnits.length > 1) || (availableTags && availableTags.length > 0 && !excludeTags))) && (
-                        <div className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/50 animate-in fade-in duration-150">
-                            {/* Chips Đơn vị tính của sản phẩm đang tìm */}
-                            {onUnitSelect && availableUnits && (availableUnits.length > 1 || selectedUnit) && (
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mr-1 shrink-0">
-                                        <Scale size={12} />
-                                        <span>Lọc nhanh ĐVT:</span>
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => onUnitSelect(null)}
-                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
-                                            !selectedUnit || selectedUnit === 'all'
-                                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
-                                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'
-                                        }`}
-                                    >
-                                        Tất cả ĐVT ({availableUnits.length})
-                                    </button>
-                                    {availableUnits.map((u) => {
-                                        const isActive = selectedUnit && normalizeSearchString(selectedUnit, true) === normalizeSearchString(u.unit, true)
-                                        return (
-                                            <button
-                                                key={u.unit}
-                                                type="button"
-                                                onClick={() => onUnitSelect(isActive ? null : u.unit)}
-                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
-                                                    isActive
-                                                        ? 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-200 dark:ring-emerald-900 shadow-2xs'
-                                                        : 'bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/70 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
-                                                }`}
-                                            >
-                                                <span>{u.unit}</span>
-                                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                                                    isActive
-                                                        ? 'bg-white/20 text-white'
-                                                        : 'bg-emerald-200/70 dark:bg-emerald-900/70 text-emerald-900 dark:text-emerald-200'
-                                                }`}>
-                                                    {u.count} vt • {u.totalQty.toLocaleString('vi-VN')}
-                                                </span>
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
-
-                            {/* Chips Mã phụ (Tag) liên quan đến sản phẩm đang tìm */}
-                            {onTagSelect && availableTags && availableTags.length > 0 && !excludeTags && (
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 dark:text-amber-400 mr-1 shrink-0">
-                                        <Tag size={12} />
-                                        <span>Mã phụ liên quan ({availableTags.length}):</span>
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => onTagSelect(null)}
-                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
-                                            !selectedTag || selectedTag === 'all'
-                                                ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
-                                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950/30'
-                                        }`}
-                                    >
-                                        Tất cả
-                                    </button>
-                                    {availableTags.slice(0, 20).map((t) => {
-                                        const isActive = selectedTag && normalizeSearchString(selectedTag, true) === normalizeSearchString(t.tag, true)
-                                        return (
-                                            <button
-                                                key={t.tag}
-                                                type="button"
-                                                onClick={() => onTagSelect(isActive ? null : t.tag)}
-                                                title={t.productNames.length > 0 ? `Sản phẩm: ${t.productNames.join(', ')}` : `Mã phụ: ${t.tag}`}
-                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
-                                                    isActive
-                                                        ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-200 dark:ring-amber-900 shadow-2xs'
-                                                        : 'bg-amber-50/80 dark:bg-amber-950/30 text-amber-900 dark:text-amber-300 border-amber-200 dark:border-amber-800/70 hover:bg-amber-100 dark:hover:bg-amber-900/50'
-                                                }`}
-                                            >
-                                                <span>🏷️ {t.tag}</span>
-                                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                                                    isActive
-                                                        ? 'bg-white/25 text-white'
-                                                        : 'bg-amber-200/80 dark:bg-amber-900/70 text-amber-950 dark:text-amber-200'
-                                                }`}>
-                                                    {t.count} vt • {t.totalQty.toLocaleString('vi-VN')}
-                                                </span>
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    )}
                 </div>
             )}
 
@@ -1199,40 +1352,74 @@ export function MapFilterBar({
                             </select>
                         </div>
                     )}
-                    {onUnitSelect && availableUnits && availableUnits.length > 0 && (
-                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 w-full">
-                            <Scale size={14} className="text-emerald-600 shrink-0" />
-                            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Đơn vị tính:</span>
-                            <select
-                                value={selectedUnit || 'all'}
-                                onChange={(e) => onUnitSelect(e.target.value === 'all' ? null : e.target.value)}
-                                className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none w-full"
-                            >
-                                <option value="all">Tất cả ĐVT ({availableUnits.length})</option>
-                                {availableUnits.map((u) => (
-                                    <option key={u.unit} value={u.unit}>
-                                        {u.unit} ({u.count} vt - {u.totalQty.toLocaleString('vi-VN')})
-                                    </option>
-                                ))}
-                            </select>
+                    {onUnitsChange && availableUnits && availableUnits.length > 0 && (
+                        <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 w-full space-y-1.5">
+                            <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 font-bold">
+                                    <Scale size={13} className="text-emerald-600" />
+                                    Đơn vị tính {selectedUnits.length > 0 ? `(${selectedUnits.length})` : ''}
+                                </span>
+                                {selectedUnits.length > 0 && (
+                                    <button type="button" onClick={() => onUnitsChange([])} className="text-[11px] font-bold text-red-500">
+                                        Bỏ chọn
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {availableUnits.map((u) => {
+                                    const isActive = selectedUnits.some(su => normalizeSearchString(su, true) === normalizeSearchString(u.unit, true))
+                                    return (
+                                        <button
+                                            key={u.unit}
+                                            type="button"
+                                            onClick={() => toggleUnit(u.unit)}
+                                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${
+                                                isActive
+                                                    ? 'bg-emerald-600 text-white border-emerald-600'
+                                                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                                            }`}
+                                        >
+                                            {isActive && <Check size={11} strokeWidth={3} />}
+                                            <span>{u.unit}</span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
                         </div>
                     )}
-                    {onTagSelect && availableTags && availableTags.length > 0 && !excludeTags && (
-                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 w-full">
-                            <Tag size={14} className="text-amber-500 shrink-0" />
-                            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Mã phụ (Tag):</span>
-                            <select
-                                value={selectedTag || 'all'}
-                                onChange={(e) => onTagSelect(e.target.value === 'all' ? null : e.target.value)}
-                                className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none w-full"
-                            >
-                                <option value="all">Tất cả mã phụ ({availableTags.length})</option>
-                                {availableTags.map((t) => (
-                                    <option key={t.tag} value={t.tag}>
-                                        {t.tag} ({t.count} vt - {t.totalQty.toLocaleString('vi-VN')})
-                                    </option>
-                                ))}
-                            </select>
+                    {onTagsChange && availableTags && availableTags.length > 0 && !excludeTags && (
+                        <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 w-full space-y-1.5">
+                            <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 font-bold">
+                                    <Tag size={13} className="text-amber-500" />
+                                    Mã phụ {selectedTags.length > 0 ? `(${selectedTags.length})` : ''}
+                                </span>
+                                {selectedTags.length > 0 && (
+                                    <button type="button" onClick={() => onTagsChange([])} className="text-[11px] font-bold text-red-500">
+                                        Bỏ chọn
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                                {availableTags.map((t) => {
+                                    const isActive = selectedTags.some(st => normalizeSearchString(st, true) === normalizeSearchString(t.tag, true))
+                                    return (
+                                        <button
+                                            key={t.tag}
+                                            type="button"
+                                            onClick={() => toggleTag(t.tag)}
+                                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${
+                                                isActive
+                                                    ? 'bg-amber-500 text-white border-amber-500'
+                                                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                                            }`}
+                                        >
+                                            {isActive && <Check size={11} strokeWidth={3} />}
+                                            <span>{t.tag}</span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
                         </div>
                     )}
                     {onHidePendingExportChange && (

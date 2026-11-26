@@ -168,8 +168,8 @@ export default function WarehouseMapTab() {
   const [filterStartDate, setFilterStartDate] = useState<string>('')
   const [filterEndDate, setFilterEndDate] = useState<string>('')
   const [filterRegion, setFilterRegion] = useState<string>('all')
-  const [selectedUnit, setSelectedUnit] = useState<string>('all')
-  const [selectedTag, setSelectedTag] = useState<string>('all')
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([])
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [isFilterOpen, setIsFilterOpen] = useState<boolean>(false)
 
   // Position detail modal
@@ -1021,10 +1021,10 @@ export default function WarehouseMapTab() {
       filterStartDate ||
       filterEndDate ||
       (filterRegion && filterRegion !== 'all') ||
-      (selectedUnit && selectedUnit !== 'all') ||
-      (selectedTag && selectedTag !== 'all')
+      selectedUnits.length > 0 ||
+      selectedTags.length > 0
     )
-  }, [filterStartDate, filterEndDate, filterRegion, selectedUnit, selectedTag])
+  }, [filterStartDate, filterEndDate, filterRegion, selectedUnits, selectedTags])
 
   const handleSetDatePreset = useCallback(
     (preset: 'today' | 3 | 7 | 'this_month' | 'clear') => {
@@ -1059,8 +1059,8 @@ export default function WarehouseMapTab() {
     setFilterStartDate('')
     setFilterEndDate('')
     setFilterRegion('all')
-    setSelectedUnit('all')
-    setSelectedTag('all')
+    setSelectedUnits([])
+    setSelectedTags([])
   }, [])
 
   const handleClearAllSearchAndFilters = useCallback(() => {
@@ -1069,8 +1069,8 @@ export default function WarehouseMapTab() {
     setFilterStartDate('')
     setFilterEndDate('')
     setFilterRegion('all')
-    setSelectedUnit('all')
-    setSelectedTag('all')
+    setSelectedUnits([])
+    setSelectedTags([])
     setSearchTab('breakdown')
   }, [])
 
@@ -1209,8 +1209,8 @@ export default function WarehouseMapTab() {
     const hasQuery = q.length > 0
     const hasDateFilter = !!(filterStartDate || filterEndDate)
     const hasRegionFilter = !!(filterRegion && filterRegion !== 'all')
-    const hasUnitFilter = !!(selectedUnit && selectedUnit !== 'all')
-    const hasTagFilter = !!(selectedTag && selectedTag !== 'all')
+    const hasUnitFilter = selectedUnits.length > 0
+    const hasTagFilter = selectedTags.length > 0
 
     if (!hasQuery && !hasDateFilter && !hasRegionFilter && !hasUnitFilter && !hasTagFilter) return []
 
@@ -1221,8 +1221,12 @@ export default function WarehouseMapTab() {
       : ''
     const isLikelyPositionCodeQuery = hasQuery && /^k\d/i.test(q)
     const normRegionFilter = hasRegionFilter ? normalizeSearchString(filterRegion, true) : ''
-    const normUnitFilter = hasUnitFilter ? normalizeSearchString(selectedUnit, true) : ''
-    const normTagFilter = hasTagFilter ? normalizeSearchString(selectedTag, true) : ''
+    const normUnitFilterSet = hasUnitFilter
+      ? new Set(selectedUnits.map(u => normalizeSearchString(u, true)))
+      : null
+    const normTagFilterSet = hasTagFilter
+      ? new Set(selectedTags.map(t => normalizeSearchString(t, true)))
+      : null
 
     const matched: { pos: PositionItem; score: number }[] = []
 
@@ -1263,29 +1267,29 @@ export default function WarehouseMapTab() {
         if (!matchedRegion) continue
       }
 
-      // Lọc theo Mã phụ (Tag) đã chọn
-      if (hasTagFilter) {
+      // Lọc theo Mã phụ (Tag) đã chọn (OR giữa các tag đã chọn)
+      if (hasTagFilter && normTagFilterSet) {
         const pTags = p.tags && Array.isArray(p.tags) ? p.tags : []
         const hasMatchedTag = pTags.some(
-          t => t && !String(t).startsWith('MERGED_') && normalizeSearchString(String(t), true) === normTagFilter
+          t => t && !String(t).startsWith('MERGED_') && normTagFilterSet.has(normalizeSearchString(String(t), true))
         )
         if (!hasMatchedTag) continue
       }
 
-      // Lọc theo Đơn vị tính (ĐVT) đã chọn
-      if (hasUnitFilter) {
+      // Lọc theo Đơn vị tính (ĐVT) đã chọn (OR giữa các ĐVT đã chọn)
+      if (hasUnitFilter && normUnitFilterSet) {
         const subItems = getPositionProductItems(p)
         const hasMatchedUnit =
           subItems.some(sub => {
-            if (normalizeSearchString(sub.unit, true) !== normUnitFilter) return false
+            if (!normUnitFilterSet.has(normalizeSearchString(sub.unit, true))) return false
             if (hasQuery && isExactProductQuery) return sub.name === q
             if (hasQuery && (searchMode === 'name' || searchMode === 'all')) {
               return matchSearch({ name: sub.name, aliases: sub.aliases || p.aliases, sku: sub.sku }, q)
             }
             return true
           }) ||
-          (subItems.length === 0 && normalizeSearchString(getCleanUnitCategory(p.unit), true) === normUnitFilter) ||
-          (p.items && p.items.some(it => normalizeSearchString(it.unit || p.unit || '', true) === normUnitFilter))
+          (subItems.length === 0 && normUnitFilterSet.has(normalizeSearchString(getCleanUnitCategory(p.unit), true))) ||
+          (p.items && p.items.some(it => normUnitFilterSet.has(normalizeSearchString(it.unit || p.unit || '', true))))
         if (!hasMatchedUnit) continue
       }
 
@@ -1298,7 +1302,7 @@ export default function WarehouseMapTab() {
               subItems.some(
                 sub =>
                   sub.name === q &&
-                  (!hasUnitFilter || normalizeSearchString(sub.unit, true) === normUnitFilter)
+                  (!normUnitFilterSet || normUnitFilterSet.has(normalizeSearchString(sub.unit, true)))
               )
             ) {
               matched.push({ pos: p, score: 2000 })
@@ -1312,7 +1316,7 @@ export default function WarehouseMapTab() {
 
           for (let sIdx = 0; sIdx < subItems.length; sIdx++) {
             const sub = subItems[sIdx]
-            if (hasUnitFilter && normalizeSearchString(sub.unit, true) !== normUnitFilter) continue
+            if (normUnitFilterSet && !normUnitFilterSet.has(normalizeSearchString(sub.unit, true))) continue
             const nameObj = {
               name: sub.name,
               aliases: sub.aliases || p.aliases,
@@ -1437,7 +1441,7 @@ export default function WarehouseMapTab() {
               subItems.some(
                 sub =>
                   sub.name === q &&
-                  (!hasUnitFilter || normalizeSearchString(sub.unit, true) === normUnitFilter)
+                  (!normUnitFilterSet || normUnitFilterSet.has(normalizeSearchString(sub.unit, true)))
               )
             ) {
               matched.push({ pos: p, score: 2000 })
@@ -1488,8 +1492,8 @@ export default function WarehouseMapTab() {
     filterStartDate,
     filterEndDate,
     filterRegion,
-    selectedUnit,
-    selectedTag,
+    selectedUnits,
+    selectedTags,
     exactProductNamesSet,
   ])
 
@@ -1504,8 +1508,14 @@ export default function WarehouseMapTab() {
     const hasRegionFilter = !!(filterRegion && filterRegion !== 'all')
     const isExactProductQuery = hasQuery && exactProductNamesSet.has(q)
     const normRegionFilter = hasRegionFilter ? normalizeSearchString(filterRegion, true) : ''
-    const normSelectedUnit = selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : ''
-    const normSelectedTag = selectedTag && selectedTag !== 'all' ? normalizeSearchString(selectedTag, true) : ''
+    const normSelectedUnitSet =
+      selectedUnits.length > 0
+        ? new Set(selectedUnits.map(u => normalizeSearchString(u, true)))
+        : null
+    const normSelectedTagSet =
+      selectedTags.length > 0
+        ? new Set(selectedTags.map(t => normalizeSearchString(t, true)))
+        : null
 
     for (let i = 0; i < positions.length; i++) {
       const p = positions[i]
@@ -1551,8 +1561,8 @@ export default function WarehouseMapTab() {
         t => t && !String(t).startsWith('MERGED_')
       )
       const posMatchesSelectedTag =
-        !normSelectedTag ||
-        pTags.some(t => normalizeSearchString(String(t), true) === normSelectedTag)
+        !normSelectedTagSet ||
+        pTags.some(t => normSelectedTagSet.has(normalizeSearchString(String(t), true)))
 
       // 1. Gom Đơn vị tính (ĐVT)
       if (posMatchesSelectedTag) {
@@ -1600,13 +1610,13 @@ export default function WarehouseMapTab() {
           ) {
             return false
           }
-          if (normSelectedUnit && normalizeSearchString(sub.unit, true) !== normSelectedUnit) {
+          if (normSelectedUnitSet && !normSelectedUnitSet.has(normalizeSearchString(sub.unit, true))) {
             return false
           }
           return true
         })
 
-        if (subsForUnit.length > 0 || (subItems.length === 0 && (!normSelectedUnit || normalizeSearchString(getCleanUnitCategory(p.unit), true) === normSelectedUnit))) {
+        if (subsForUnit.length > 0 || (subItems.length === 0 && (!normSelectedUnitSet || normSelectedUnitSet.has(normalizeSearchString(getCleanUnitCategory(p.unit), true))))) {
           const posQty =
             subsForUnit.length > 0
               ? subsForUnit.reduce((s, it) => s + (it.quantity || 0), 0)
@@ -1663,8 +1673,8 @@ export default function WarehouseMapTab() {
     filterStartDate,
     filterEndDate,
     filterRegion,
-    selectedUnit,
-    selectedTag,
+    selectedUnits,
+    selectedTags,
     exactProductNamesSet,
   ])
 
@@ -1732,16 +1742,18 @@ export default function WarehouseMapTab() {
     const grandUnitsMap = new Map<string, number>()
     const qClean = searchQuery.trim()
     const isExactProd = qClean.length > 0 && exactProductNamesSet.has(qClean)
-    const normUnitFilter =
-      selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : ''
+    const normUnitFilterSet =
+      selectedUnits.length > 0
+        ? new Set(selectedUnits.map(u => normalizeSearchString(u, true)))
+        : null
 
     matchingPositions.forEach(p => {
       const subItems = getPositionProductItems(p)
       let itemsToSum: Array<{ quantity: number; unit: string }> = []
 
-      if (subItems.length > 1 && (qClean || normUnitFilter)) {
+      if (subItems.length > 1 && (qClean || normUnitFilterSet)) {
         const matchedSubs = subItems.filter(s => {
-          if (normUnitFilter && normalizeSearchString(s.unit, true) !== normUnitFilter) return false
+          if (normUnitFilterSet && !normUnitFilterSet.has(normalizeSearchString(s.unit, true))) return false
           if (!qClean) return true
           if (isExactProd) return s.name === qClean
           return (
@@ -1752,8 +1764,8 @@ export default function WarehouseMapTab() {
         if (matchedSubs.length > 0) {
           itemsToSum = matchedSubs.map(s => ({ quantity: s.quantity, unit: s.unit }))
         }
-      } else if (normUnitFilter && subItems.length === 1) {
-        if (normalizeSearchString(subItems[0].unit, true) === normUnitFilter) {
+      } else if (normUnitFilterSet && subItems.length === 1) {
+        if (normUnitFilterSet.has(normalizeSearchString(subItems[0].unit, true))) {
           itemsToSum = [{ quantity: subItems[0].quantity, unit: subItems[0].unit }]
         }
       }
@@ -1914,7 +1926,7 @@ export default function WarehouseMapTab() {
     matchingPositions,
     zoneHierarchyMap,
     searchQuery,
-    selectedUnit,
+    selectedUnits,
     exactProductNamesSet,
   ])
 
@@ -2568,11 +2580,11 @@ export default function WarehouseMapTab() {
         uniqueStts={uniqueStts}
         uniqueTags={uniqueTags}
         availableUnits={availableUnits}
-        selectedUnit={selectedUnit}
-        onSelectUnit={setSelectedUnit}
+        selectedUnits={selectedUnits}
+        onSelectUnits={setSelectedUnits}
         availableTags={availableTags}
-        selectedTag={selectedTag}
-        onSelectTag={setSelectedTag}
+        selectedTags={selectedTags}
+        onSelectTags={setSelectedTags}
         searchQuery={searchQuery}
         searchMode={searchMode}
         onSearchModeChange={setSearchMode}

@@ -165,8 +165,8 @@ function WarehouseMapContent() {
     const {
         selectedZoneId, setSelectedZoneId,
         selectedCategoryId, setSelectedCategoryId,
-        selectedUnit, setSelectedUnit,
-        selectedTag, setSelectedTag,
+        selectedUnits, setSelectedUnits,
+        selectedTags, setSelectedTags,
         availableUnits,
         availableTags,
         searchTerm, setSearchTerm,
@@ -251,10 +251,10 @@ function WarehouseMapContent() {
 
     // Auto expand root zones when a filter (category, unit, tag or search) is selected
     useEffect(() => {
-        if (selectedCategoryId || selectedUnit || selectedTag || searchTerm) {
+        if (selectedCategoryId || selectedUnits.length > 0 || selectedTags.length > 0 || searchTerm) {
             setCollapsedZones(new Set())
         }
-    }, [selectedCategoryId, selectedUnit, selectedTag, searchTerm, setCollapsedZones])
+    }, [selectedCategoryId, selectedUnits, selectedTags, searchTerm, setCollapsedZones])
 
     // 3. UI State
     const [isMobile, setIsMobile] = useState(false)
@@ -1011,11 +1011,11 @@ function WarehouseMapContent() {
                         selectedCategoryId={selectedCategoryId}
                         onCategorySelect={setSelectedCategoryId}
                         availableUnits={availableUnits}
-                        selectedUnit={selectedUnit}
-                        onUnitSelect={setSelectedUnit}
+                        selectedUnits={selectedUnits}
+                        onUnitsChange={setSelectedUnits}
                         availableTags={availableTags}
-                        selectedTag={selectedTag}
-                        onTagSelect={setSelectedTag}
+                        selectedTags={selectedTags}
+                        onTagsChange={setSelectedTags}
                         products={products}
                         onlyShowMarked={onlyShowMarked}
                         onToggleOnlyShowMarked={toggleOnlyShowMarked}
@@ -1085,8 +1085,8 @@ function WarehouseMapContent() {
                         lotInfo={lotInfo}
                         searchTerm={effectiveSearchTerm}
                         categoryName={selectedCatName}
-                        selectedUnit={selectedUnit}
-                        selectedTag={selectedTag}
+                        selectedUnits={selectedUnits}
+                        selectedTags={selectedTags}
                         onPositionSelect={handlePositionSelect}
                         onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
                         onViewDetails={fetchFullLotDetails}

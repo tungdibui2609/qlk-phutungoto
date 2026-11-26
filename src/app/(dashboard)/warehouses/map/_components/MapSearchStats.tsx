@@ -16,8 +16,8 @@ interface MapSearchStatsProps {
     lotInfo: Record<string, any>
     searchTerm: string
     categoryName?: string
-    selectedUnit?: string | null
-    selectedTag?: string | null
+    selectedUnits?: string[]
+    selectedTags?: string[]
     onPositionSelect?: (positionId: string) => void
     onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
     onViewDetails?: (lotId: string) => void
@@ -345,8 +345,8 @@ export function MapSearchStats({
     lotInfo,
     searchTerm,
     categoryName,
-    selectedUnit,
-    selectedTag,
+    selectedUnits = [],
+    selectedTags = [],
     onPositionSelect,
     onPositionMenu,
     onViewDetails,
@@ -377,14 +377,16 @@ export function MapSearchStats({
     }
 
     const stats = useMemo(() => {
-        if (!searchTerm && !categoryName && !selectedUnit && !selectedTag) return null
+        if (!searchTerm && !categoryName && selectedUnits.length === 0 && selectedTags.length === 0) return null
 
         const groupingMap: Record<string, { id: string; count: number; quantity: number; unitsMap: Record<string, number>; name: string; oldestDate: string | null; newestDate: string | null; positionIds: string[] }> = {}
         let totalQty = 0
         const globalUnitsMap: Record<string, number> = {}
         let globalOldest: string | null = null
         let globalNewest: string | null = null
-        const normSelectedUnit = selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : null
+        const normSelectedUnitsSet = selectedUnits.length > 0
+            ? new Set(selectedUnits.map(u => normalizeSearchString(u, true)))
+            : null
 
         filteredPositions.forEach(pos => {
             // Calculate Quantity
@@ -406,11 +408,11 @@ export function MapSearchStats({
                 )
 
                 let itemsToCount = items
-                if (!isPosOrLotSearch && (searchTerm || categoryName || normSelectedUnit)) {
+                if (!isPosOrLotSearch && (searchTerm || categoryName || normSelectedUnitsSet)) {
                     const matchedItems = items.filter((item: any) => {
-                        if (normSelectedUnit) {
+                        if (normSelectedUnitsSet) {
                             const itUnit = normalizeSearchString(item.unit || lot.products?.unit || '', true)
-                            if (itUnit !== normSelectedUnit) return false
+                            if (!normSelectedUnitsSet.has(itUnit)) return false
                         }
 
                         let matchesSearch = true
@@ -448,11 +450,11 @@ export function MapSearchStats({
 
                     if (matchedItems.length > 0) {
                         itemsToCount = matchedItems
-                    } else if (normSelectedUnit) {
-                        itemsToCount = items.filter((item: any) => normalizeSearchString(item.unit || lot.products?.unit || '', true) === normSelectedUnit)
+                    } else if (normSelectedUnitsSet) {
+                        itemsToCount = items.filter((item: any) => normSelectedUnitsSet.has(normalizeSearchString(item.unit || lot.products?.unit || '', true)))
                     }
-                } else if (normSelectedUnit) {
-                    itemsToCount = items.filter((item: any) => normalizeSearchString(item.unit || lot.products?.unit || '', true) === normSelectedUnit)
+                } else if (normSelectedUnitsSet) {
+                    itemsToCount = items.filter((item: any) => normSelectedUnitsSet.has(normalizeSearchString(item.unit || lot.products?.unit || '', true)))
                 }
 
                 itemsToCount.forEach((item: any) => {
@@ -534,7 +536,7 @@ export function MapSearchStats({
             oldestDate: globalOldest,
             newestDate: globalNewest
         }
-    }, [filteredPositions, zones, lotInfo, searchTerm, categoryName, selectedUnit, selectedTag, isFifoEnabled, isGrouped])
+    }, [filteredPositions, zones, lotInfo, searchTerm, categoryName, selectedUnits, selectedTags, isFifoEnabled, isGrouped])
 
     // State for expanded zones
     const [expandedZoneId, setExpandedZoneId] = useState<string | null>(null)
@@ -570,14 +572,14 @@ export function MapSearchStats({
         )
     }
 
-    if (!stats || (!searchTerm && !categoryName && !selectedUnit && !selectedTag)) return null
+    if (!stats || (!searchTerm && !categoryName && selectedUnits.length === 0 && selectedTags.length === 0)) return null
 
     const displayTitle = searchTerm ? "Kết quả tìm kiếm:" : "Kết quả bộ lọc:"
     const labelParts = [
         searchTerm,
         categoryName ? `Danh mục: ${categoryName}` : '',
-        selectedUnit ? `ĐVT: ${selectedUnit}` : '',
-        selectedTag ? `Mã phụ: ${selectedTag}` : ''
+        selectedUnits.length > 0 ? `ĐVT: ${selectedUnits.join(', ')}` : '',
+        selectedTags.length > 0 ? `Mã phụ: ${selectedTags.join(', ')}` : ''
     ].filter(Boolean)
     const displayLabel = labelParts.join(' • ')
     const unitsEntries = Object.entries(stats.globalUnitsMap || {})
@@ -639,9 +641,9 @@ export function MapSearchStats({
                     <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Tổng số lượng</div>
                     <div className="text-xl font-bold text-slate-900 dark:text-white">
                         {stats.totalQuantity.toLocaleString()}
-                        {selectedUnit && <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 ml-1.5">{selectedUnit}</span>}
+                        {selectedUnits.length === 1 && <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 ml-1.5">{selectedUnits[0]}</span>}
                     </div>
-                    {unitsEntries.length > 1 && !selectedUnit && (
+                    {unitsEntries.length > 1 && selectedUnits.length !== 1 && (
                         <div className="flex flex-wrap gap-1 mt-1">
                             {unitsEntries.map(([u, q]) => (
                                 <span key={u} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100/80 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60">

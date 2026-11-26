@@ -24,8 +24,8 @@ export type DeepDateField = 'packaging_date' | 'peeling_date' | 'raw_material_da
 export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds, onlyShowMarked, markedPositionIds, markedNotes }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
-    const [selectedUnit, setSelectedUnit] = useState<string | null>(null)
-    const [selectedTag, setSelectedTag] = useState<string | null>(null)
+    const [selectedUnits, setSelectedUnits] = useState<string[]>([])
+    const [selectedTags, setSelectedTags] = useState<string[]>([])
     const [searchTerm, setSearchTerm] = useState('')
     const [searchMode, setSearchMode] = useState<SearchMode>('all')
 
@@ -86,9 +86,9 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
             })
         }
 
-        // Filter by Unit (Đơn vị tính)
-        if (selectedUnit && selectedUnit !== 'all') {
-            const normTargetUnit = normalizeSearchString(selectedUnit, true)
+        // Filter by Units (Đơn vị tính - hỗ trợ chọn nhiều)
+        if (selectedUnits.length > 0) {
+            const normTargetUnits = new Set(selectedUnits.map(u => normalizeSearchString(u, true)))
             result = result.filter(p => {
                 if (!p.lot_id) return false
                 const lot = lotInfo[p.lot_id]
@@ -98,19 +98,19 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                     return items.some((it: any) => {
                         const u = (it.unit || lot.products?.unit || '').trim()
                         if (!u) return false
-                        return normalizeSearchString(u, true) === normTargetUnit
+                        return normTargetUnits.has(normalizeSearchString(u, true))
                     })
                 }
                 if (lot.products?.unit) {
-                    return normalizeSearchString(lot.products.unit, true) === normTargetUnit
+                    return normTargetUnits.has(normalizeSearchString(lot.products.unit, true))
                 }
                 return false
             })
         }
 
-        // Filter by Secondary Tag (Mã phụ liên quan)
-        if (selectedTag && selectedTag !== 'all') {
-            const normTargetTag = normalizeSearchString(selectedTag, true)
+        // Filter by Secondary Tags (Mã phụ liên quan - hỗ trợ chọn nhiều)
+        if (selectedTags.length > 0) {
+            const normTargetTags = new Set(selectedTags.map(t => normalizeSearchString(t, true)))
             result = result.filter(p => {
                 if (!p.lot_id) return false
                 const lot = lotInfo[p.lot_id]
@@ -120,7 +120,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                     ...((lot.items || []).flatMap((it: any) => it.tags || [])),
                     ...((lot.lot_tags || []).map((t: any) => typeof t === 'string' ? t : t.tag))
                 ].filter((t: string) => t && !t.startsWith('MERGED_') && !t.startsWith('SPLIT_'))
-                return allLotTags.some(t => normalizeSearchString(t, true) === normTargetTag)
+                return allLotTags.some(t => normTargetTags.has(normalizeSearchString(t, true)))
             })
         }
 
@@ -188,13 +188,15 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             if (lot.code) res.push(lot.code)
                         }
 
-                        // Nếu đang lọc theo một đơn vị tính hoặc một tag cụ thể, chỉ khớp từ khóa trên item đúng ĐVT/tag đó (tránh khớp nhầm item khác trong pallet hỗn hợp)
-                        const normSelectedUnit = selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : null
+                        // Nếu đang lọc theo một hoặc nhiều đơn vị tính, chỉ khớp từ khóa trên item đúng ĐVT đó
+                        const normSelectedUnitsSet = selectedUnits.length > 0
+                            ? new Set(selectedUnits.map(u => normalizeSearchString(u, true)))
+                            : null
 
                         lot.items?.forEach((it: any) => {
-                            if (normSelectedUnit) {
+                            if (normSelectedUnitsSet) {
                                 const itUnit = normalizeSearchString(it.unit || lot.products?.unit || '', true)
-                                if (itUnit !== normSelectedUnit) return
+                                if (!normSelectedUnitsSet.has(itUnit)) return
                             }
 
                             if (mode === 'all' || mode === 'name') {
@@ -474,7 +476,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
 
         return result
     }, [
-        positions, selectedZoneId, selectedCategoryId, selectedUnit, selectedTag, searchTerm, searchMode, zones, lotInfo, 
+        positions, selectedZoneId, selectedCategoryId, selectedUnits, selectedTags, searchTerm, searchMode, zones, lotInfo, 
         startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds, 
         onlyShowMarked, markedPositionIds, markedNotes, excludeTags,
         isDeepScanMode, deepScanTerm, deepDateField, deepStartDate, deepEndDate, 
@@ -704,14 +706,16 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                 tags: lot.tags || []
             }] : [])
 
-            // 1. Gom Đơn vị tính (chỉ gom từ các items khớp với từ khóa tìm kiếm và khớp với selectedTag nếu đang chọn Tag)
-            const normTargetTag = selectedTag && selectedTag !== 'all' ? normalizeSearchString(selectedTag, true) : null
+            // 1. Gom Đơn vị tính (chỉ gom từ các items khớp với từ khóa tìm kiếm và khớp với selectedTags nếu đang chọn Tag)
+            const normTargetTagSet = selectedTags.length > 0
+                ? new Set(selectedTags.map(t => normalizeSearchString(t, true)))
+                : null
             const lotAllTags: string[] = Array.from(new Set([
                 ...(lot.tags || []),
                 ...((lot.lot_tags || []).map((t: any) => typeof t === 'string' ? t : t.tag))
             ])).filter((t: string) => t && !t.startsWith('MERGED_') && !t.startsWith('SPLIT_'))
 
-            const lotMatchesSelectedTag = !normTargetTag || lotAllTags.some(t => normalizeSearchString(t, true) === normTargetTag)
+            const lotMatchesSelectedTag = !normTargetTagSet || lotAllTags.some(t => normTargetTagSet.has(normalizeSearchString(t, true)))
 
             if (lotMatchesSelectedTag) {
                 items.forEach((it: any) => {
@@ -738,13 +742,15 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                 })
             }
 
-            // 2. Gom Mã phụ (Tags) (chỉ gom từ các vị trí khớp với selectedUnit nếu đang chọn ĐVT)
-            const normTargetUnit = selectedUnit && selectedUnit !== 'all' ? normalizeSearchString(selectedUnit, true) : null
+            // 2. Gom Mã phụ (Tags) (chỉ gom từ các vị trí khớp với selectedUnits nếu đang chọn ĐVT)
+            const normTargetUnitSet = selectedUnits.length > 0
+                ? new Set(selectedUnits.map(u => normalizeSearchString(u, true)))
+                : null
             const matchingItemsForUnit = items.filter((it: any) => {
                 if (!itemMatchesSearch(it, lot)) return false
-                if (!normTargetUnit) return true
+                if (!normTargetUnitSet) return true
                 const rawU = (it.unit || lot.products?.unit || '').trim()
-                return normalizeSearchString(rawU, true) === normTargetUnit
+                return normTargetUnitSet.has(normalizeSearchString(rawU, true))
             })
 
             if (matchingItemsForUnit.length > 0 && lotAllTags.length > 0) {
@@ -799,13 +805,13 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                 }))
                 .sort((a, b) => b.count - a.count)
         }
-    }, [positions, lotInfo, searchTerm, searchMode, selectedCategoryId, selectedUnit, selectedTag, onlyShowMarked, markedPositionIds, hidePendingExport, pendingExportPosIds])
+    }, [positions, lotInfo, searchTerm, searchMode, selectedCategoryId, selectedUnits, selectedTags, onlyShowMarked, markedPositionIds, hidePendingExport, pendingExportPosIds])
 
     return {
         selectedZoneId, setSelectedZoneId,
         selectedCategoryId, setSelectedCategoryId,
-        selectedUnit, setSelectedUnit,
-        selectedTag, setSelectedTag,
+        selectedUnits, setSelectedUnits,
+        selectedTags, setSelectedTags,
         availableUnits,
         availableTags,
         searchTerm, setSearchTerm,
