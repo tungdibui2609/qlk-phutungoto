@@ -1155,7 +1155,7 @@ export function WarehouseAdjustmentReviewModal({
                     </div>
                 ) : null}
 
-                {/* Hàng 3: Ghi chú thực tế */}
+                {/* Hàng 3: Ghi chú thực tế & file ghi âm đính kèm */}
                 {it.note && (
                     <div className={`rounded-lg px-3 py-2 border text-xs leading-relaxed ${
                         it.action_type === 'NOTE'
@@ -1166,6 +1166,31 @@ export function WarehouseAdjustmentReviewModal({
                         <span className="whitespace-pre-wrap break-words">{it.note}</span>
                     </div>
                 )}
+                {(it as any).voice_note_url && (() => {
+                    const raw = String((it as any).voice_note_url || '').trim()
+                    let urls: string[] = []
+                    if (raw.startsWith('[')) {
+                        try {
+                            const parsed = JSON.parse(raw)
+                            if (Array.isArray(parsed)) urls = parsed.map(x => String(x || '').trim()).filter(Boolean)
+                        } catch {}
+                    } else if (raw) {
+                        urls = [raw]
+                    }
+                    if (urls.length === 0) return null
+                    return (
+                        <div className="space-y-1.5">
+                            {urls.map((url, vIdx) => (
+                                <div key={`${url}_${vIdx}`} className="flex items-center gap-2 rounded-lg bg-sky-950/40 border border-sky-700/40 px-2.5 py-1.5">
+                                    <span className="text-[11px] font-bold text-sky-300 shrink-0">
+                                        🎙️ {urls.length > 1 ? `Ghi âm #${vIdx + 1}` : 'Ghi âm'}
+                                    </span>
+                                    <audio controls preload="none" src={url} className="h-7 flex-1 min-w-0" />
+                                </div>
+                            ))}
+                        </div>
+                    )
+                })()}
             </div>
         )
     }

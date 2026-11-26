@@ -18,7 +18,12 @@ import {
   ChevronUp,
   Info,
   CheckCircle2,
+  Volume2,
+  PauseCircle,
+  Cpu,
 } from 'lucide-react'
+import { VoiceMicButton, OfflineVoicePayload } from '../VoiceMicButton'
+import { appendWarehouseVoiceText, normalizeWarehouseVoiceText } from '../voiceTextNormalizer'
 import type {
   PositionItem,
   ProposalActionType,
@@ -27,9 +32,18 @@ import type {
   LookedUpLot,
   ProductSuggestion,
 } from './types'
+import { DRAFT_VOICE_SESSION_ID, DRAFT_VOICE_ROOT_FOLDER } from './types'
 import { extractSubItemsFromPosition } from './mapHelpers'
 import { lookupLotBySttOrCode, fetchProductsForSuggestions } from './warehouseAdjustmentService'
 import { matchSearch, calculateSearchScore } from '@/lib/searchUtils'
+import {
+  saveOfflineInventoryVoice,
+  getOfflineInventoryVoicesBySession,
+  deleteOfflineInventoryVoiceByKey,
+  appendVoiceNoteUrl,
+  parseVoiceNoteUrls,
+  type OfflineInventoryVoiceItem,
+} from '@/lib/scanner-db'
 
 interface Props {
   visible: boolean
@@ -150,6 +164,199 @@ export default function WarehouseAdjustmentDraftModal({
   const [foundAssignLot, setFoundAssignLot] = useState<LookedUpLot | null>(null)
   const [assignLotError, setAssignLotError] = useState<string | null>(null)
 
+  // State ghi âm & dịch AI cho ô ghi chú (lưu bền vững IndexedDB + thư mục Drive riêng giống Kiểm kê)
+  const [voiceNoteUrl, setVoiceNoteUrl] = useState<string | null>(null)
+  const [pendingVoices, setPendingVoices] = useState<OfflineInventoryVoiceItem[]>([])
+  const [playingVoiceKey, setPlayingVoiceKey] = useState<string | null>(null)
+  const [transcribingVoiceKey, setTranscribingVoiceKey] = useState<string | null>(null)
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  const savedVoiceUrls = useMemo(() => parseVoiceNoteUrls(voiceNoteUrl), [voiceNoteUrl])
+
+  const reloadPendingVoices = useCallback(async (posId?: string | null) => {
+    if (!posId) {
+      setPendingVoices([])
+      return
+    }
+    try {
+      const all = await getOfflineInventoryVoicesBySession(DRAFT_VOICE_SESSION_ID)
+      setPendingVoices(all.filter(v => v.positionId === posId))
+    } catch {
+      setPendingVoices([])
+    }
+  }, [])
+
+  const stopPlayingAudio = useCallback(() => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause()
+        audioRef.current.src = ''
+      } catch {}
+      audioRef.current = null
+    }
+    setPlayingVoiceKey(null)
+  }, [])
+
+  useEffect(() => {
+    if (!visible) {
+      stopPlayingAudio()
+      setPendingVoices([])
+      setTranscribingVoiceKey(null)
+      setVoiceNotice(null)
+    } else if (position?.id) {
+      void reloadPendingVoices(position.id)
+    }
+    return () => {
+      stopPlayingAudio()
+    }
+  }, [visible, position?.id, stopPlayingAudio, reloadPendingVoices])
+
+  const voiceVocabulary = useMemo(() => {
+    const words = new Set<string>()
+    if (position?.product_name) words.add(String(position.product_name).trim())
+    subItems.forEach(s => {
+      if (s.product_name) words.add(String(s.product_name).trim())
+    })
+    productCatalog.slice(0, 30).forEach(p => {
+      if (p.aliases) {
+        String(p.aliases)
+          .split(/[,;/|\n]+/)
+          .forEach(a => {
+            const t = a.trim()
+            if (t.length >= 2 && t.length <= 32) words.add(t)
+          })
+      }
+    })
+    return Array.from(words).slice(0, 50)
+  }, [position?.product_name, subItems, productCatalog])
+
+  const handleVoiceResult = useCallback((spoken: string, voiceUrl?: string | null) => {
+    setVoiceNotice(null)
+    if (spoken && spoken.trim()) {
+      setNote(prev => appendWarehouseVoiceText(prev, spoken))
+    }
+    if (voiceUrl) {
+      setVoiceNoteUrl(prev => appendVoiceNoteUrl(prev, voiceUrl))
+    }
+  }, [])
+
+  const handleVoiceOfflineSaved = useCallback(
+    async (payload: OfflineVoicePayload) => {
+      if (!position?.id) return
+      setVoiceNotice(null)
+      try {
+        const saved = await saveOfflineInventoryVoice({
+          sessionId: DRAFT_VOICE_SESSION_ID,
+          positionId: position.id,
+          audioBase64: payload.audioBase64,
+          mimeType: payload.mimeType,
+          durationSec: payload.durationSec,
+          createdAt: new Date().toISOString(),
+        })
+        setPendingVoices(prev => [...prev, saved])
+      } catch {
+        setVoiceNotice('Không thể lưu ghi âm vào bộ nhớ trình duyệt.')
+      }
+    },
+    [position?.id]
+  )
+
+  const handleTogglePlayAudioSource = useCallback(
+    (key: string, src: string) => {
+      if (playingVoiceKey === key) {
+        stopPlayingAudio()
+        return
+      }
+      stopPlayingAudio()
+      try {
+        const audio = new Audio(src)
+        audioRef.current = audio
+        setPlayingVoiceKey(key)
+        audio.onended = () => {
+          setPlayingVoiceKey(null)
+          audioRef.current = null
+        }
+        audio.onerror = () => {
+          setPlayingVoiceKey(null)
+          audioRef.current = null
+        }
+        void audio.play().catch(() => {
+          setPlayingVoiceKey(null)
+          audioRef.current = null
+        })
+      } catch {
+        setPlayingVoiceKey(null)
+      }
+    },
+    [playingVoiceKey, stopPlayingAudio]
+  )
+
+  const handleDeletePendingVoice = useCallback(
+    async (voiceKey: string) => {
+      if (playingVoiceKey === voiceKey) stopPlayingAudio()
+      await deleteOfflineInventoryVoiceByKey(voiceKey)
+      setPendingVoices(prev => prev.filter(v => v.key !== voiceKey))
+    },
+    [playingVoiceKey, stopPlayingAudio]
+  )
+
+  const handleTranscribeRecordedVoice = useCallback(
+    async (rv: OfflineInventoryVoiceItem) => {
+      if (!position || transcribingVoiceKey) return
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setVoiceNotice('Đang mất mạng — file ghi âm vẫn giữ an toàn để dịch hàng loạt khi có mạng!')
+        return
+      }
+      setVoiceNotice(null)
+      setTranscribingVoiceKey(rv.key)
+      try {
+        const res = await fetch('/api/voice-transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audioBase64: rv.audioBase64,
+            mimeType: rv.mimeType || 'audio/webm',
+            saveToServer: true,
+            rootFolderOverride: DRAFT_VOICE_ROOT_FOLDER,
+            systemCode: 'KHO_DONG_LANH',
+            sessionId: DRAFT_VOICE_SESSION_ID,
+            sessionName: 'Ghi_Nhap_So_Do_Kho',
+            positionId: position.id,
+            positionCode: position.code || null,
+            vocabulary: voiceVocabulary,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setVoiceNotice(data?.error || 'Không thể dịch giọng nói — file vẫn được giữ trên máy.')
+          return
+        }
+        const rawText = String(data?.text || '').trim()
+        const normalized = rawText ? normalizeWarehouseVoiceText(rawText) : ''
+        const voiceUrl = data?.voiceUrl ? String(data.voiceUrl) : null
+        if (normalized || voiceUrl) {
+          if (normalized) {
+            setNote(prev => appendWarehouseVoiceText(prev, normalized))
+          }
+          if (voiceUrl) {
+            setVoiceNoteUrl(prev => appendVoiceNoteUrl(prev, voiceUrl))
+          }
+          if (playingVoiceKey === rv.key) stopPlayingAudio()
+          await deleteOfflineInventoryVoiceByKey(rv.key)
+          setPendingVoices(prev => prev.filter(v => v.key !== rv.key))
+        } else {
+          setVoiceNotice(data?.warning || 'AI không nghe rõ — file vẫn được giữ lại trên máy.')
+        }
+      } catch {
+        setVoiceNotice('Lỗi kết nối khi gọi AI — file vẫn được giữ an toàn trên máy.')
+      } finally {
+        setTranscribingVoiceKey(null)
+      }
+    },
+    [position, transcribingVoiceKey, voiceVocabulary, playingVoiceKey, stopPlayingAudio]
+  )
+
   const loadProductCatalogIfNeeded = useCallback(async () => {
     if (productCatalog.length > 0 || loadingCatalog) return
     setLoadingCatalog(true)
@@ -176,6 +383,7 @@ export default function WarehouseAdjustmentDraftModal({
       setTargetPosCode(existingDraftItem.target_position_code || '')
       setTargetPosId(existingDraftItem.target_position_id || null)
       setNote(existingDraftItem.note || '')
+      setVoiceNoteUrl(existingDraftItem.voice_note_url || null)
 
       if (existingDraftItem.sub_items && existingDraftItem.sub_items.length > 0) {
         setSubItems(existingDraftItem.sub_items.map(s => ({ ...s })))
@@ -212,6 +420,7 @@ export default function WarehouseAdjustmentDraftModal({
       setTargetPosCode('')
       setTargetPosId(null)
       setNote('')
+      setVoiceNoteUrl(null)
       setAssignSttQuery('')
       setFoundAssignLot(null)
       setAssignLotError(null)
@@ -495,8 +704,13 @@ export default function WarehouseAdjustmentDraftModal({
       return
     }
 
-    if (actionType === 'NOTE' && !note.trim()) {
-      setErrorMsg('Vui lòng nhập nội dung ghi chú muốn gửi lên Web.')
+    if (
+      actionType === 'NOTE' &&
+      !note.trim() &&
+      !voiceNoteUrl &&
+      pendingVoices.length === 0
+    ) {
+      setErrorMsg('Vui lòng nhập nội dung ghi chú hoặc ghi âm giọng nói muốn gửi lên Web.')
       return
     }
 
@@ -566,6 +780,7 @@ export default function WarehouseAdjustmentDraftModal({
             target_position_id: foundAssignLot?.current_position_id || null,
             target_position_code: foundAssignLot?.current_position_code || null,
             note: note.trim() || null,
+            voice_note_url: voiceNoteUrl || null,
             updated_at: new Date().toISOString(),
           }
         : {
@@ -597,6 +812,7 @@ export default function WarehouseAdjustmentDraftModal({
             target_position_code:
               actionType === 'MOVE' ? targetPosCode.trim().toUpperCase() : null,
             note: note.trim() || null,
+            voice_note_url: voiceNoteUrl || null,
             updated_at: new Date().toISOString(),
           }
 
@@ -1458,9 +1674,28 @@ export default function WarehouseAdjustmentDraftModal({
 
           {/* Ghi chú */}
           <div>
-            <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1.5">
-              GHI CHÚ {actionType === 'NOTE' ? '(BẮT BUỘC)' : '(TÙY CHỌN)'}:
-            </label>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <label className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                GHI CHÚ {actionType === 'NOTE' ? '(BẮT BUỘC)' : '(TÙY CHỌN)'}:
+              </label>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold text-sky-400/90">Nói AI</span>
+                <VoiceMicButton
+                  size="sm"
+                  saveToServer
+                  rootFolderOverride={DRAFT_VOICE_ROOT_FOLDER}
+                  systemCode="KHO_DONG_LANH"
+                  sessionId={DRAFT_VOICE_SESSION_ID}
+                  sessionName="Ghi_Nhap_So_Do_Kho"
+                  positionId={position.id}
+                  positionCode={position.code || null}
+                  vocabulary={voiceVocabulary}
+                  onResult={handleVoiceResult}
+                  onOfflineAudio={payload => void handleVoiceOfflineSaved(payload)}
+                  onError={msg => setVoiceNotice(msg)}
+                />
+              </div>
+            </div>
             <textarea
               ref={noteInputRef}
               rows={2}
@@ -1468,11 +1703,107 @@ export default function WarehouseAdjustmentDraftModal({
               onChange={e => setNote(e.target.value)}
               placeholder={
                 actionType === 'NOTE'
-                  ? 'Nhập lời nhắn cần gửi lên Web cho vị trí này...'
-                  : 'Nhập ghi chú giải thích thêm (nếu có)...'
+                  ? 'Nhập lời nhắn hoặc bấm Micro nói để AI dịch ghi chú...'
+                  : 'Nhập ghi chú hoặc bấm Micro nói để AI dịch (nếu có)...'
               }
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-700 bg-slate-900 text-xs font-semibold text-white outline-none focus:border-amber-500 resize-none placeholder:text-slate-500"
             />
+
+            {voiceNotice && (
+              <p className="mt-1.5 text-[11px] font-semibold text-amber-300">
+                ⚠️ {voiceNotice}
+              </p>
+            )}
+
+            {(savedVoiceUrls.length > 0 || pendingVoices.length > 0) && (
+              <div className="mt-2 space-y-1.5">
+                {savedVoiceUrls.map((url, idx) => {
+                  const key = `saved_${idx}_${url}`
+                  const isPlaying = playingVoiceKey === key
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-sky-500/12 border border-sky-500/35"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePlayAudioSource(key, url)}
+                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                      >
+                        {isPlaying ? (
+                          <PauseCircle size={15} className="text-sky-400 shrink-0" />
+                        ) : (
+                          <Volume2 size={15} className="text-sky-400 shrink-0" />
+                        )}
+                        <span className="text-[11px] font-extrabold text-sky-200 truncate">
+                          {isPlaying
+                            ? 'Đang phát... (bấm dừng)'
+                            : savedVoiceUrls.length > 1
+                              ? `Nghe lại ghi âm #${idx + 1} (Drive)`
+                              : 'Nghe lại ghi âm đã lưu (Drive)'}
+                        </span>
+                      </button>
+                    </div>
+                  )
+                })}
+
+                {pendingVoices.map(rv => {
+                  const isPlaying = playingVoiceKey === rv.key
+                  const isTranscribing = transcribingVoiceKey === rv.key
+                  return (
+                    <div
+                      key={rv.key}
+                      className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-amber-500/12 border border-amber-500/35"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleTogglePlayAudioSource(
+                            rv.key,
+                            `data:${rv.mimeType || 'audio/webm'};base64,${rv.audioBase64}`
+                          )
+                        }
+                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                      >
+                        {isPlaying ? (
+                          <PauseCircle size={15} className="text-amber-400 shrink-0" />
+                        ) : (
+                          <Volume2 size={15} className="text-amber-400 shrink-0" />
+                        )}
+                        <span className="text-[11px] font-extrabold text-amber-200 truncate">
+                          {isPlaying ? 'Đang phát... (bấm dừng)' : `Nghe lại (${rv.durationSec}s)`}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={Boolean(transcribingVoiceKey)}
+                        onClick={() => void handleTranscribeRecordedVoice(rv)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/25 hover:bg-violet-500/35 border border-violet-400/50 text-violet-100 text-[11px] font-extrabold shrink-0 disabled:opacity-60 active:scale-95 transition"
+                      >
+                        {isTranscribing ? (
+                          <Loader2 size={12} className="animate-spin text-violet-200" />
+                        ) : (
+                          <Cpu size={12} className="text-violet-200" />
+                        )}
+                        <span>{isTranscribing ? 'Đang dịch...' : 'Dịch'}</span>
+                      </button>
+
+                      {!isTranscribing && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeletePendingVoice(rv.key)}
+                          className="p-1 text-rose-400 hover:text-rose-300 shrink-0"
+                          title="Xóa đoạn ghi âm"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
 

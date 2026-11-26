@@ -229,8 +229,11 @@ export default function WarehouseMapTab() {
   }, [])
 
   const handleSubmitDraftProposal = useCallback(
-    async (note: string) => {
-      const res = await submitAdjustmentProposalToServer(draftProposal, note)
+    async (note: string, overrideItems?: ProposalItem[]) => {
+      const payloadDraft = overrideItems
+        ? { ...draftProposal, items: overrideItems }
+        : draftProposal
+      const res = await submitAdjustmentProposalToServer(payloadDraft, note)
       if (res.success) {
         const fresh = await getDraftProposal()
         setDraftProposal(fresh)
@@ -3980,6 +3983,7 @@ export default function WarehouseMapTab() {
             })
           }
         }}
+        onUpdateDraftItem={handleSaveDraftItem}
         onRemoveItem={handleRemoveDraftItem}
         onClearAll={handleClearAllDraft}
         onSubmitProposal={handleSubmitDraftProposal}

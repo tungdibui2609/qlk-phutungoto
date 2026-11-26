@@ -178,6 +178,9 @@ export async function POST(req: NextRequest) {
       .replace(/[^a-zA-Z0-9_-]/g, '')
       .slice(0, 60)
     const sessionName = body?.sessionName ? String(body.sessionName).trim() : null
+    const rootFolderOverride = body?.rootFolderOverride
+      ? sanitizeDriveSegment(String(body.rootFolderOverride), '', 60).replace(/\s+/g, '_')
+      : null
 
     const extraVocab: string[] = Array.isArray(body?.vocabulary)
       ? body.vocabulary
@@ -187,7 +190,13 @@ export async function POST(req: NextRequest) {
       : []
     const mergedVocab = Array.from(new Set([...BASE_WAREHOUSE_VOCAB, ...extraVocab]))
 
-    const driveCfg = saveToServer ? await resolveVoiceDriveConfig(systemCode) : null
+    const rawDriveCfg = saveToServer ? await resolveVoiceDriveConfig(systemCode) : null
+    const driveCfg: VoiceDriveConfig | null = rawDriveCfg
+      ? {
+          ...rawDriveCfg,
+          rootFolder: rootFolderOverride || rawDriveCfg.rootFolder,
+        }
+      : null
 
     // ── CHẾ ĐỘ BATCH (GỘP TỐI ĐA 10 FILE GHI ÂM TRONG 1 REQUEST GEMINI) ──
     if (Array.isArray(body?.items)) {
@@ -329,9 +338,10 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         results: batchItems.map((it: any) => ({
+          itemId: it.itemId,
           positionId: it.positionId,
           text: '',
-          voiceUrl: voiceUrlMap[it.positionId] || null,
+          voiceUrl: voiceUrlMap[it.itemId] || null,
         })),
         engine: 'drive-only',
         warning: lastError,

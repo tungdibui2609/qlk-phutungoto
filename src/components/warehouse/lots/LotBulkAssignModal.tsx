@@ -634,7 +634,7 @@ export function LotBulkAssignModal({
                         </div>
 
                         {activeTab === 'manual' ? (
-                            <form onSubmit={handleAssign} className="p-4 space-y-4 overflow-y-auto">
+                            <form onSubmit={handleAssign} className="flex-1 min-h-0 p-4 pb-6 space-y-4 overflow-y-auto">
                                 <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded-xl text-sm leading-relaxed border border-blue-100 dark:border-blue-800/50">
                                     <p className="font-semibold mb-1">Cách thức hoạt động:</p>
                                     {isSelectedMode ? (
@@ -690,7 +690,7 @@ export function LotBulkAssignModal({
                                 </div>
                             </form>
                         ) : (
-                            <div className="p-4 space-y-4 overflow-y-auto min-h-[400px]">
+                            <div className="flex-1 min-h-0 p-4 pb-8 space-y-4 overflow-y-auto">
                                 <div className="bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 p-3 rounded-xl text-sm leading-relaxed border border-orange-100 dark:border-orange-800/50 flex items-start gap-3">
                                     <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
                                     <div>

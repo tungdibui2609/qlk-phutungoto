@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   X,
   Trash2,
@@ -21,14 +21,28 @@ import {
   TrendingDown,
   TrendingUp,
   Calendar,
+  Mic,
+  Volume2,
+  PauseCircle,
+  Cpu,
 } from 'lucide-react'
 import type { DraftProposal, ProposalItem, SubmittedProposal, ProductSuggestion } from './types'
+import { DRAFT_VOICE_SESSION_ID, DRAFT_VOICE_ROOT_FOLDER } from './types'
 import {
   fetchSubmittedProposals,
   getCachedSubmittedProposals,
   fetchProductsForSuggestions,
 } from './warehouseAdjustmentService'
 import { matchSearch, calculateSearchScore, normalizeSearchString } from '@/lib/searchUtils'
+import {
+  getOfflineInventoryVoicesBySession,
+  deleteOfflineInventoryVoiceByKey,
+  deleteOfflineInventoryVoice,
+  appendVoiceNoteUrl,
+  parseVoiceNoteUrls,
+  type OfflineInventoryVoiceItem,
+} from '@/lib/scanner-db'
+import { appendWarehouseVoiceText, normalizeWarehouseVoiceText } from '../voiceTextNormalizer'
 
 interface Props {
   visible: boolean
@@ -36,9 +50,10 @@ interface Props {
   initialTab?: 'DRAFT' | 'SUBMITTED'
   onClose: () => void
   onEditItem: (item: ProposalItem) => void
+  onUpdateDraftItem?: (item: ProposalItem) => void
   onRemoveItem: (positionId: string) => void
   onClearAll: () => void
-  onSubmitProposal: (note: string) => Promise<void>
+  onSubmitProposal: (note: string, overrideItems?: ProposalItem[]) => Promise<void>
 }
 
 type MovementKind =
@@ -119,6 +134,7 @@ export default function WarehouseDraftListModal({
   initialTab = 'DRAFT',
   onClose,
   onEditItem,
+  onUpdateDraftItem,
   onRemoveItem,
   onClearAll,
   onSubmitProposal,
@@ -127,6 +143,80 @@ export default function WarehouseDraftListModal({
   const [notes, setNotes] = useState(draft.notes || '')
   const [submitting, setSubmitting] = useState(false)
   const [confirmClearAll, setConfirmClearAll] = useState(false)
+
+  // Ghi âm chờ dịch của phiếu nháp (IndexedDB)
+  const [pendingVoicesByPos, setPendingVoicesByPos] = useState<
+    Record<string, OfflineInventoryVoiceItem[]>
+  >({})
+  const [playingVoiceKey, setPlayingVoiceKey] = useState<string | null>(null)
+  const [transcribingVoiceKey, setTranscribingVoiceKey] = useState<string | null>(null)
+  const [isBatchTranscribing, setIsBatchTranscribing] = useState(false)
+  const [voiceBatchMsg, setVoiceBatchMsg] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  const stopPlayingAudio = useCallback(() => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause()
+        audioRef.current.src = ''
+      } catch {}
+      audioRef.current = null
+    }
+    setPlayingVoiceKey(null)
+  }, [])
+
+  const loadDraftPendingVoices = useCallback(async () => {
+    try {
+      const list = await getOfflineInventoryVoicesBySession(DRAFT_VOICE_SESSION_ID)
+      const map: Record<string, OfflineInventoryVoiceItem[]> = {}
+      list.forEach(v => {
+        if (!map[v.positionId]) map[v.positionId] = []
+        map[v.positionId].push(v)
+      })
+      setPendingVoicesByPos(map)
+    } catch {
+      setPendingVoicesByPos({})
+    }
+  }, [])
+
+  const totalPendingVoices = useMemo(() => {
+    const draftPosIds = new Set((draft.items || []).map(it => it.position_id))
+    let count = 0
+    Object.entries(pendingVoicesByPos).forEach(([pid, arr]) => {
+      if (draftPosIds.has(pid)) count += arr.length
+    })
+    return count
+  }, [draft.items, pendingVoicesByPos])
+
+  const handleTogglePlayAudio = useCallback(
+    (key: string, src: string) => {
+      if (playingVoiceKey === key) {
+        stopPlayingAudio()
+        return
+      }
+      stopPlayingAudio()
+      try {
+        const audio = new Audio(src)
+        audioRef.current = audio
+        setPlayingVoiceKey(key)
+        audio.onended = () => {
+          setPlayingVoiceKey(null)
+          audioRef.current = null
+        }
+        audio.onerror = () => {
+          setPlayingVoiceKey(null)
+          audioRef.current = null
+        }
+        void audio.play().catch(() => {
+          setPlayingVoiceKey(null)
+          audioRef.current = null
+        })
+      } catch {
+        setPlayingVoiceKey(null)
+      }
+    },
+    [playingVoiceKey, stopPlayingAudio]
+  )
 
   // Submitted proposals state
   const [submittedList, setSubmittedList] = useState<SubmittedProposal[]>([])
@@ -157,15 +247,23 @@ export default function WarehouseDraftListModal({
   }, [])
 
   useEffect(() => {
-    if (!visible) return
+    if (!visible) {
+      stopPlayingAudio()
+      return
+    }
     setActiveTab(initialTab)
     setNotes(draft.notes || '')
     setConfirmClearAll(false)
+    setVoiceBatchMsg(null)
+    void loadDraftPendingVoices()
     getCachedSubmittedProposals().then(cached => {
       if (cached.length > 0) setSubmittedList(cached)
     })
     void loadSubmitted()
-  }, [visible, initialTab, draft.notes, loadSubmitted])
+    return () => {
+      stopPlayingAudio()
+    }
+  }, [visible, initialTab, draft.notes, loadSubmitted, loadDraftPendingVoices, stopPlayingAudio])
 
   // Tải danh mục sản phẩm khi mở chế độ Biến động SP (để hỗ trợ tìm theo tên viết tắt aliases)
   useEffect(() => {
@@ -659,11 +757,157 @@ export default function WarehouseDraftListModal({
     }
   }
 
+  const handleTranscribeSingleDraftVoice = useCallback(
+    async (item: ProposalItem, pv: OfflineInventoryVoiceItem) => {
+      if (transcribingVoiceKey || isBatchTranscribing) return
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setVoiceBatchMsg('Đang mất mạng — file ghi âm vẫn được giữ an toàn trên máy.')
+        return
+      }
+      setVoiceBatchMsg(null)
+      setTranscribingVoiceKey(pv.key)
+      try {
+        const res = await fetch('/api/voice-transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            audioBase64: pv.audioBase64,
+            mimeType: pv.mimeType || 'audio/webm',
+            saveToServer: true,
+            rootFolderOverride: DRAFT_VOICE_ROOT_FOLDER,
+            systemCode: 'KHO_DONG_LANH',
+            sessionId: DRAFT_VOICE_SESSION_ID,
+            sessionName: 'Ghi_Nhap_So_Do_Kho',
+            positionId: item.position_id,
+            positionCode: item.position_code || null,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        const rawText = String(data?.text || '').trim()
+        const normalized = rawText ? normalizeWarehouseVoiceText(rawText) : ''
+        const voiceUrl = data?.voiceUrl ? String(data.voiceUrl) : null
+        if (res.ok && (normalized || voiceUrl)) {
+          const updatedItem: ProposalItem = {
+            ...item,
+            note: normalized
+              ? appendWarehouseVoiceText(item.note || '', normalized)
+              : item.note || null,
+            voice_note_url: appendVoiceNoteUrl(item.voice_note_url, voiceUrl),
+            updated_at: new Date().toISOString(),
+          }
+          if (onUpdateDraftItem) onUpdateDraftItem(updatedItem)
+          if (playingVoiceKey === pv.key) stopPlayingAudio()
+          await deleteOfflineInventoryVoiceByKey(pv.key)
+          await loadDraftPendingVoices()
+        } else {
+          setVoiceBatchMsg(data?.error || data?.warning || 'Chưa dịch được đoạn ghi âm này.')
+        }
+      } catch {
+        setVoiceBatchMsg('Lỗi kết nối khi dịch AI — file vẫn giữ an toàn trên máy.')
+      } finally {
+        setTranscribingVoiceKey(null)
+      }
+    },
+    [
+      transcribingVoiceKey,
+      isBatchTranscribing,
+      onUpdateDraftItem,
+      playingVoiceKey,
+      stopPlayingAudio,
+      loadDraftPendingVoices,
+    ]
+  )
+
+  const handleBatchTranscribeDraftVoices = useCallback(async (): Promise<ProposalItem[]> => {
+    const latestItems = draft.items.map(it => ({ ...it }))
+    if (isBatchTranscribing || totalPendingVoices === 0) return latestItems
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setVoiceBatchMsg('Đang mất mạng — không thể dịch AI lúc này.')
+      return latestItems
+    }
+
+    const draftPosIds = new Set(latestItems.map(it => it.position_id))
+    const allPending = (await getOfflineInventoryVoicesBySession(DRAFT_VOICE_SESSION_ID)).filter(
+      v => draftPosIds.has(v.positionId)
+    )
+    if (allPending.length === 0) return latestItems
+
+    const itemByPosId = new Map<string, ProposalItem>()
+    latestItems.forEach(it => itemByPosId.set(it.position_id, it))
+
+    setIsBatchTranscribing(true)
+    setVoiceBatchMsg(`Đang dịch & lưu Drive ${allPending.length} ghi âm...`)
+    try {
+      const BATCH_SIZE = 10
+      for (let i = 0; i < allPending.length; i += BATCH_SIZE) {
+        const batch = allPending.slice(i, i + BATCH_SIZE)
+        const res = await fetch('/api/voice-transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            saveToServer: true,
+            rootFolderOverride: DRAFT_VOICE_ROOT_FOLDER,
+            systemCode: 'KHO_DONG_LANH',
+            sessionId: DRAFT_VOICE_SESSION_ID,
+            sessionName: 'Ghi_Nhap_So_Do_Kho',
+            items: batch.map(pv => ({
+              itemId: pv.key,
+              positionId: pv.positionId,
+              positionCode: itemByPosId.get(pv.positionId)?.position_code || null,
+              audioBase64: pv.audioBase64,
+              mimeType: pv.mimeType || 'audio/webm',
+            })),
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        const results: Array<{
+          itemId?: string
+          positionId: string
+          text?: string
+          voiceUrl?: string | null
+        }> = Array.isArray(data?.results) ? data.results : []
+
+        const keysToDelete: string[] = []
+        for (const r of results) {
+          const target = itemByPosId.get(r.positionId)
+          if (!target) continue
+          const rawText = String(r.text || '').trim()
+          const normalized = rawText ? normalizeWarehouseVoiceText(rawText) : ''
+          const voiceUrl = r.voiceUrl ? String(r.voiceUrl) : null
+          if (normalized || voiceUrl) {
+            target.note = normalized
+              ? appendWarehouseVoiceText(target.note || '', normalized)
+              : target.note || null
+            target.voice_note_url = appendVoiceNoteUrl(target.voice_note_url, voiceUrl)
+            target.updated_at = new Date().toISOString()
+            if (onUpdateDraftItem) onUpdateDraftItem({ ...target })
+            if (r.itemId) keysToDelete.push(r.itemId)
+          }
+        }
+        // Chỉ xóa file offline SAU KHI đã lưu xong text & voiceUrl vào phiếu nháp
+        for (const k of keysToDelete) {
+          await deleteOfflineInventoryVoiceByKey(k)
+        }
+      }
+      await loadDraftPendingVoices()
+      setVoiceBatchMsg(null)
+    } catch {
+      setVoiceBatchMsg('Có lỗi khi dịch hàng loạt — file chưa dịch vẫn giữ trên máy.')
+    } finally {
+      setIsBatchTranscribing(false)
+    }
+    return latestItems
+  }, [draft.items, isBatchTranscribing, totalPendingVoices, onUpdateDraftItem, loadDraftPendingVoices])
+
   const handleSubmit = async () => {
-    if (draft.items.length === 0) return
+    if (draft.items.length === 0 || submitting) return
     setSubmitting(true)
     try {
-      await onSubmitProposal(notes)
+      let itemsToSubmit: ProposalItem[] | undefined = undefined
+      if (totalPendingVoices > 0 && (typeof navigator === 'undefined' || navigator.onLine)) {
+        itemsToSubmit = await handleBatchTranscribeDraftVoices()
+      }
+      await onSubmitProposal(notes, itemsToSubmit)
       await loadSubmitted()
       setActiveTab('SUBMITTED')
     } finally {
@@ -836,13 +1080,115 @@ export default function WarehouseDraftListModal({
                         </button>
                         <button
                           type="button"
-                          onClick={() => onRemoveItem(item.position_id)}
+                          onClick={async () => {
+                            await deleteOfflineInventoryVoice(
+                              DRAFT_VOICE_SESSION_ID,
+                              item.position_id
+                            )
+                            await loadDraftPendingVoices()
+                            onRemoveItem(item.position_id)
+                          }}
                           className="px-2.5 py-1 rounded-lg bg-rose-950/60 border border-rose-500/30 text-rose-300 text-[11px] font-bold flex items-center gap-1"
                         >
                           <Trash2 size={12} />
                           <span>Xóa</span>
                         </button>
                       </div>
+
+                      {/* Ghi âm đã lưu trên Drive & ghi âm chờ dịch của mục này */}
+                      {(() => {
+                        const savedUrls = parseVoiceNoteUrls(item.voice_note_url)
+                        const pVoices = pendingVoicesByPos[item.position_id] || []
+                        if (savedUrls.length === 0 && pVoices.length === 0) return null
+                        return (
+                          <div className="mt-2 pt-2 border-t border-slate-800/80 space-y-1.5">
+                            {savedUrls.map((url, vIdx) => {
+                              const key = `draft_saved_${item.position_id}_${vIdx}`
+                              const isPlaying = playingVoiceKey === key
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() => handleTogglePlayAudio(key, url)}
+                                  className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-sky-500/12 border border-sky-500/30 text-sky-200 text-[11px] font-bold text-left"
+                                >
+                                  {isPlaying ? (
+                                    <PauseCircle size={14} className="text-sky-400 shrink-0" />
+                                  ) : (
+                                    <Volume2 size={14} className="text-sky-400 shrink-0" />
+                                  )}
+                                  <span className="truncate">
+                                    {isPlaying
+                                      ? 'Đang phát... (bấm dừng)'
+                                      : savedUrls.length > 1
+                                        ? `Nghe ghi âm #${vIdx + 1} (Drive)`
+                                        : 'Nghe ghi âm đã lưu (Drive)'}
+                                  </span>
+                                </button>
+                              )
+                            })}
+
+                            {pVoices.map(pv => {
+                              const isPlaying = playingVoiceKey === pv.key
+                              const isTrans = transcribingVoiceKey === pv.key || isBatchTranscribing
+                              return (
+                                <div
+                                  key={pv.key}
+                                  className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-amber-500/12 border border-amber-500/35"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleTogglePlayAudio(
+                                        pv.key,
+                                        `data:${pv.mimeType || 'audio/webm'};base64,${pv.audioBase64}`
+                                      )
+                                    }
+                                    className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                                  >
+                                    {isPlaying ? (
+                                      <PauseCircle size={14} className="text-amber-400 shrink-0" />
+                                    ) : (
+                                      <Volume2 size={14} className="text-amber-400 shrink-0" />
+                                    )}
+                                    <span className="text-[11px] font-bold text-amber-200 truncate">
+                                      {isPlaying
+                                        ? 'Đang phát...'
+                                        : `Nghe lại (${pv.durationSec}s)`}
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isTrans}
+                                    onClick={() => void handleTranscribeSingleDraftVoice(item, pv)}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/30 border border-violet-400/50 text-violet-100 text-[10px] font-extrabold shrink-0 disabled:opacity-60"
+                                  >
+                                    {isTrans ? (
+                                      <Loader2 size={11} className="animate-spin" />
+                                    ) : (
+                                      <Cpu size={11} />
+                                    )}
+                                    <span>{isTrans ? 'Đang dịch...' : 'Dịch'}</span>
+                                  </button>
+                                  {!isTrans && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (playingVoiceKey === pv.key) stopPlayingAudio()
+                                        await deleteOfflineInventoryVoiceByKey(pv.key)
+                                        await loadDraftPendingVoices()
+                                      }}
+                                      className="p-0.5 text-rose-400 hover:text-rose-300 shrink-0"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })
@@ -865,45 +1211,76 @@ export default function WarehouseDraftListModal({
             </div>
 
             {draft.items.length > 0 && (
-              <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-t border-slate-800 bg-[#111827]">
-                {!confirmClearAll ? (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmClearAll(true)}
-                    className="px-3 py-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-1 shrink-0"
-                  >
-                    <Trash2 size={14} />
-                    <span>Xóa hết</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClearAll()
-                      setConfirmClearAll(false)
-                    }}
-                    className="px-3 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-black flex items-center gap-1 shrink-0"
-                  >
-                    <Trash2 size={14} />
-                    <span>Xác nhận xóa?</span>
-                  </button>
+              <div className="shrink-0 border-t border-slate-800 bg-[#111827]">
+                {voiceBatchMsg && (
+                  <div className="px-4 pt-2 text-[11px] font-bold text-violet-300 text-center">
+                    {voiceBatchMsg}
+                  </div>
                 )}
-
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-black flex items-center justify-center gap-2 shadow-sm active:scale-[0.99]"
-                >
-                  {submitting ? (
-                    <Loader2 size={16} className="animate-spin" />
+                <div className="flex items-center gap-2 px-4 py-3">
+                  {!confirmClearAll ? (
+                    <button
+                      type="button"
+                      disabled={submitting || isBatchTranscribing}
+                      onClick={() => setConfirmClearAll(true)}
+                      className="px-3 py-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-1 shrink-0 disabled:opacity-50"
+                    >
+                      <Trash2 size={14} />
+                      <span>Xóa hết</span>
+                    </button>
                   ) : (
-                    <>
-                      <Send size={15} />
-                      <span>GỬI ĐỀ XUẤT DUYỆT ({draft.items.length})</span>
-                    </>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const allP = await getOfflineInventoryVoicesBySession(DRAFT_VOICE_SESSION_ID)
+                        for (const pv of allP) {
+                          await deleteOfflineInventoryVoiceByKey(pv.key)
+                        }
+                        setPendingVoicesByPos({})
+                        onClearAll()
+                        setConfirmClearAll(false)
+                      }}
+                      className="px-3 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-black flex items-center gap-1 shrink-0"
+                    >
+                      <Trash2 size={14} />
+                      <span>Xác nhận xóa?</span>
+                    </button>
                   )}
-                </button>
+
+                  {totalPendingVoices > 0 && (
+                    <button
+                      type="button"
+                      disabled={submitting || isBatchTranscribing}
+                      onClick={() => void handleBatchTranscribeDraftVoices()}
+                      className="px-3 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white text-xs font-black flex items-center justify-center gap-1.5 shrink-0 active:scale-[0.98]"
+                    >
+                      {isBatchTranscribing ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Mic size={14} />
+                      )}
+                      <span>
+                        {isBatchTranscribing ? 'Đang dịch...' : `Dịch (${totalPendingVoices})`}
+                      </span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={submitting || isBatchTranscribing}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-black flex items-center justify-center gap-2 shadow-sm active:scale-[0.99]"
+                  >
+                    {submitting ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <>
+                        <Send size={15} />
+                        <span>GỬI ĐỀ XUẤT ({draft.items.length})</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             )}
           </>

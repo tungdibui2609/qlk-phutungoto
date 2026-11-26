@@ -17,6 +17,8 @@ interface VoiceMicButtonProps {
   onOfflineAudio?: (payload: OfflineVoicePayload) => void
   /** Có lưu file ghi âm lên Supabase Storage trên Server không */
   saveToServer?: boolean
+  /** Thư mục gốc riêng trên Google Drive (VD: WMS_GhiAm_GhiNhap) */
+  rootFolderOverride?: string | null
   systemCode?: string
   sessionId?: string | null
   sessionName?: string | null
@@ -50,6 +52,7 @@ export function VoiceMicButton({
   onResult,
   onOfflineAudio,
   saveToServer = false,
+  rootFolderOverride = null,
   systemCode = 'KHO_DONG_LANH',
   sessionId,
   sessionName,
@@ -236,6 +239,7 @@ export function VoiceMicButton({
               mimeType: actualMime,
               companyId: companyId || null,
               saveToServer,
+              rootFolderOverride: rootFolderOverride || null,
               systemCode,
               sessionId: sessionId || null,
               sessionName: sessionName || null,
