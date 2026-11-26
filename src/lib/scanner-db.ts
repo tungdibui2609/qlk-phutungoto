@@ -392,6 +392,54 @@ export async function updatePendingPalletStatus(
     })
 }
 
+export async function attachStampDrivePhotoToPendingPallet(
+    stt: string,
+    photoBase64: string,
+    driveInfo: { fileId?: string | null; viewUrl?: string | null; imageUrl?: string | null }
+): Promise<void> {
+    const cleanStt = (stt || '').trim().toUpperCase()
+    const remoteUrl = driveInfo.viewUrl || driveInfo.imageUrl || null
+    if (!cleanStt || (!driveInfo.fileId && !remoteUrl)) return
+
+    const db = await openDatabase()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('pending_pallets', 'readwrite')
+        const store = tx.objectStore('pending_pallets')
+        const req = store.getAll()
+
+        req.onsuccess = () => {
+            const all = (req.result || []) as OfflinePendingPallet[]
+            for (const item of all) {
+                if ((item.stt || '').trim().toUpperCase() !== cleanStt) continue
+                let changed = false
+                const nextBoxes = (item.boxes || []).map((b: any) => {
+                    const meta = b.metadata || {}
+                    const matchesPhoto = !photoBase64 || meta.photo_base64 === photoBase64 || (!meta.drive_file_id && !meta.stamp_image_url)
+                    if (matchesPhoto && !meta.drive_file_id) {
+                        changed = true
+                        return {
+                            ...b,
+                            metadata: {
+                                ...meta,
+                                drive_file_id: driveInfo.fileId || meta.drive_file_id || null,
+                                drive_view_url: remoteUrl || meta.drive_view_url || null,
+                                stamp_image_url: remoteUrl || meta.stamp_image_url || null,
+                            },
+                        }
+                    }
+                    return b
+                })
+                if (changed) {
+                    item.boxes = nextBoxes
+                    store.put(item)
+                }
+            }
+        }
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+    })
+}
+
 // ── METADATA ───────────────────────────────────────────────────────────────
 
 export async function getOfflineMeta(key: string): Promise<any> {

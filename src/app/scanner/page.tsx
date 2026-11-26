@@ -80,6 +80,7 @@ import {
   removePendingPallet,
   removeBoxFromPendingPallet,
   updatePendingPalletStatus,
+  attachStampDrivePhotoToPendingPallet,
   getOfflineMeta,
   setOfflineMeta,
   OfflinePendingPallet,
@@ -1300,7 +1301,7 @@ export default function WebScannerPage() {
       setPendingStamp(null)
       checkTargetReached(currentBoxes.length + count)
 
-      // 2. Tải ảnh con dấu lên Google Drive CON_DAU chạy ngầm trong nền (không làm chậm tiến độ)
+      // 2. Tải ảnh con dấu lên Google Drive CON_DAU chạy ngầm trong nền và gắn fileId/viewUrl ngược vào IndexedDB
       if (capturedPhoto) {
         fetch('/api/stamp-queue/upload', {
           method: 'POST',
@@ -1312,6 +1313,16 @@ export default function WebScannerPage() {
             systemCode: 'KHO_DONG_LANH',
           }),
         })
+          .then(res => res.json().catch(() => null))
+          .then(async data => {
+            if (data?.success && (data.fileId || data.viewUrl || data.imageUrl)) {
+              await attachStampDrivePhotoToPendingPallet(cleanStt, capturedPhoto, {
+                fileId: data.fileId || null,
+                viewUrl: data.viewUrl || null,
+                imageUrl: data.imageUrl || null,
+              })
+            }
+          })
           .catch(e => console.warn('[ScannerStamp] Tải ảnh lên Google Drive CON_DAU ngầm:', e))
       }
     } catch (err: any) {
@@ -2186,8 +2197,54 @@ export default function WebScannerPage() {
           console.warn('Lỗi dọn thùng unlinked cũ trước khi đồng bộ:', delErr)
         }
 
-        const rowsToInsert = p.boxes.map((b: any, idx: number) => {
+        // Đảm bảo ảnh con dấu (nếu chưa kịp upload nền hoặc quét offline) được tải lên Drive & gắn link vào box_labels.metadata
+        const uploadedPhotoCache = new Map<string, { fileId: string | null; remoteUrl: string | null }>()
+        for (const b of p.boxes) {
           const bMeta = b.metadata || {}
+          const rawPhoto = typeof bMeta.photo_base64 === 'string' && bMeta.photo_base64.length > 100 ? bMeta.photo_base64 : null
+          if (!rawPhoto || bMeta.drive_file_id || bMeta.stamp_image_url) continue
+          if (uploadedPhotoCache.has(rawPhoto)) continue
+          let uploaded: { fileId: string | null; remoteUrl: string | null } = { fileId: null, remoteUrl: null }
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              const upRes = await fetch('/api/stamp-queue/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'upload_only',
+                  imageBase64: rawPhoto,
+                  palletStt: cleanStt,
+                  systemCode: b.system_code || 'KHO_DONG_LANH',
+                }),
+              })
+              const upData = await upRes.json().catch(() => null)
+              const remoteUrl = upData?.viewUrl || upData?.imageUrl || null
+              if (upRes.ok && upData?.success && (upData.fileId || remoteUrl)) {
+                uploaded = { fileId: upData.fileId || null, remoteUrl }
+                break
+              }
+            } catch {}
+            if (attempt < 2) await new Promise(r => setTimeout(r, 600))
+          }
+          uploadedPhotoCache.set(rawPhoto, uploaded)
+        }
+
+        const rowsToInsert = p.boxes.map((b: any, idx: number) => {
+          const bMeta = { ...(b.metadata || {}) }
+          const rawPhoto = typeof bMeta.photo_base64 === 'string' ? bMeta.photo_base64 : null
+          if (rawPhoto && !bMeta.drive_file_id && !bMeta.stamp_image_url) {
+            const up = uploadedPhotoCache.get(rawPhoto)
+            if (up && (up.fileId || up.remoteUrl)) {
+              bMeta.drive_file_id = up.fileId
+              bMeta.drive_view_url = up.remoteUrl
+              bMeta.stamp_image_url = up.remoteUrl
+            }
+          }
+          // Xóa chuỗi base64 khổng lồ khỏi DB sau khi đã có link ảnh Drive
+          if (bMeta.drive_file_id || bMeta.stamp_image_url) {
+            delete bMeta.photo_base64
+            delete bMeta.crop_base64
+          }
           return {
             code: b.code,
             quantity: b.weight,
@@ -2255,8 +2312,53 @@ export default function WebScannerPage() {
         console.warn('Lỗi dọn thùng unlinked cũ trước khi đồng bộ:', delErr)
       }
 
-      const rowsToInsert = item.boxes.map((b: any, idx: number) => {
+      // Đảm bảo ảnh con dấu (nếu chưa kịp upload nền hoặc quét offline) được tải lên Drive & gắn link vào box_labels.metadata
+      const uploadedPhotoCache = new Map<string, { fileId: string | null; remoteUrl: string | null }>()
+      for (const b of item.boxes) {
         const bMeta = b.metadata || {}
+        const rawPhoto = typeof bMeta.photo_base64 === 'string' && bMeta.photo_base64.length > 100 ? bMeta.photo_base64 : null
+        if (!rawPhoto || bMeta.drive_file_id || bMeta.stamp_image_url) continue
+        if (uploadedPhotoCache.has(rawPhoto)) continue
+        let uploaded: { fileId: string | null; remoteUrl: string | null } = { fileId: null, remoteUrl: null }
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const upRes = await fetch('/api/stamp-queue/upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'upload_only',
+                imageBase64: rawPhoto,
+                palletStt: cleanStt,
+                systemCode: b.system_code || 'KHO_DONG_LANH',
+              }),
+            })
+            const upData = await upRes.json().catch(() => null)
+            const remoteUrl = upData?.viewUrl || upData?.imageUrl || null
+            if (upRes.ok && upData?.success && (upData.fileId || remoteUrl)) {
+              uploaded = { fileId: upData.fileId || null, remoteUrl }
+              break
+            }
+          } catch {}
+          if (attempt < 2) await new Promise(r => setTimeout(r, 600))
+        }
+        uploadedPhotoCache.set(rawPhoto, uploaded)
+      }
+
+      const rowsToInsert = item.boxes.map((b: any, idx: number) => {
+        const bMeta = { ...(b.metadata || {}) }
+        const rawPhoto = typeof bMeta.photo_base64 === 'string' ? bMeta.photo_base64 : null
+        if (rawPhoto && !bMeta.drive_file_id && !bMeta.stamp_image_url) {
+          const up = uploadedPhotoCache.get(rawPhoto)
+          if (up && (up.fileId || up.remoteUrl)) {
+            bMeta.drive_file_id = up.fileId
+            bMeta.drive_view_url = up.remoteUrl
+            bMeta.stamp_image_url = up.remoteUrl
+          }
+        }
+        if (bMeta.drive_file_id || bMeta.stamp_image_url) {
+          delete bMeta.photo_base64
+          delete bMeta.crop_base64
+        }
         return {
           code: b.code,
           quantity: b.weight,
