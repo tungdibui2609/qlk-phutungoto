@@ -124,7 +124,7 @@ export function LotPageManager() {
     const [selectedLotIds, setSelectedLotIds] = useState<Set<string>>(new Set())
     const [bulkTagLotIds, setBulkTagLotIds] = useState<string[] | null>(null)
     const [showBulkEditDates, setShowBulkEditDates] = useState(false)
-    const [showBulkAssignSelected, setShowBulkAssignSelected] = useState(false)
+    const [bulkAssignLotIds, setBulkAssignLotIds] = useState<string[] | null>(null)
 
     // Selection Handlers
     const handleToggleSelect = (id: string) => {
@@ -178,8 +178,9 @@ export function LotPageManager() {
     }
 
     const handleBulkAssignPositionSelected = () => {
-        if (selectedLotIds.size === 0) return
-        setShowBulkAssignSelected(true)
+        const ids = Array.from(selectedLotIds)
+        if (ids.length === 0) return
+        setBulkAssignLotIds(ids)
     }
 
     const handleBulkClearDailySeqSelected = async () => {
@@ -798,15 +799,15 @@ export function LotPageManager() {
             )}
 
             {/* Bulk Assign Position Modal for Multi-Selected LOTs (supports already-assigned LOTs) */}
-            {showBulkAssignSelected && selectedLotIds.size > 0 && (
+            {bulkAssignLotIds && bulkAssignLotIds.length > 0 && (
                 <LotBulkAssignModal
-                    selectedLotIds={Array.from(selectedLotIds)}
-                    selectedLots={lots.filter(l => selectedLotIds.has(l.id))}
-                    onClose={() => setShowBulkAssignSelected(false)}
+                    selectedLotIds={bulkAssignLotIds}
+                    selectedLots={lots.filter(l => bulkAssignLotIds.includes(l.id))}
+                    onClose={() => setBulkAssignLotIds(null)}
                     onSuccess={(close = true) => {
+                        setSelectedLotIds(new Set())
                         if (close) {
-                            setShowBulkAssignSelected(false)
-                            setSelectedLotIds(new Set())
+                            setBulkAssignLotIds(null)
                         }
                         fetchLots()
                     }}

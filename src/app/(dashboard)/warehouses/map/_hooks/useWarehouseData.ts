@@ -147,6 +147,8 @@ export function useWarehouseData() {
     }, [accessToken])
 
     const hasInitializedCollapsedRef = useRef(false)
+    const isFetchingRef = useRef(false)
+    const pendingRefetchRef = useRef(false)
 
     useEffect(() => {
         hasInitializedCollapsedRef.current = false
@@ -154,6 +156,11 @@ export function useWarehouseData() {
 
     const fetchData = useCallback(async () => {
         if (!accessToken || !systemType) return
+        if (isFetchingRef.current) {
+            pendingRefetchRef.current = true
+            return
+        }
+        isFetchingRef.current = true
         if (!hasInitializedCollapsedRef.current) {
             setLoading(true)
         }
@@ -368,14 +375,33 @@ export function useWarehouseData() {
             setPendingExportPosIds(pendingPos)
 
         } catch (error: any) {
-            console.error('Error fetching warehouse data:', error)
-            if (error.code === 'PGRST301' || error.message?.includes('JWT')) {
-                setErrorMsg("Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.")
+            const msg = String(error?.message || error || '')
+            const isAbortError =
+                error?.name === 'AbortError' ||
+                msg.includes('AbortError') ||
+                msg.includes('signal is aborted')
+            if (isAbortError) {
+                console.warn('Warehouse data fetch aborted (ignored):', msg)
+                if (positionsRef.current.length === 0) {
+                    pendingRefetchRef.current = true
+                }
             } else {
-                setErrorMsg(error.message || "Lỗi không xác định khi tải dữ liệu.")
+                console.error('Error fetching warehouse data:', error)
+                if (error?.code === 'PGRST301' || msg.includes('JWT')) {
+                    setErrorMsg("Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.")
+                } else {
+                    setErrorMsg(error?.message || "Lỗi không xác định khi tải dữ liệu.")
+                }
             }
         } finally {
+            isFetchingRef.current = false
             setLoading(false)
+            if (pendingRefetchRef.current) {
+                pendingRefetchRef.current = false
+                setTimeout(() => {
+                    fetchData()
+                }, 150)
+            }
         }
     }, [accessToken, systemType])
 

@@ -1331,10 +1331,10 @@ function WarehouseMapContent() {
                         setBulkAssignPositionLotIds(null)
                     }}
                     onSuccess={(close = true) => {
+                        setSelectedPositionIds(new Set())
                         if (close) {
                             setIsBulkAssignPositionOpen(false)
                             setBulkAssignPositionLotIds(null)
-                            setSelectedPositionIds(new Set())
                         }
                         fetchData()
                     }}
