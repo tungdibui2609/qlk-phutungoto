@@ -17,6 +17,8 @@ interface GroupedMember {
     full_name: string
     phone: string | null
     role: string | null
+    main_job: string | null
+    sub_job: string | null
     is_active: boolean
     user_id?: string | null
     user?: ConstructionMember['user']
@@ -112,6 +114,8 @@ export default function ConstructionMembersPage() {
                     full_name: m.full_name,
                     phone: m.phone,
                     role: m.role,
+                    main_job: m.main_job || null,
+                    sub_job: m.sub_job || null,
                     is_active: m.is_active,
                     user_id: m.user_id,
                     user: m.user,
@@ -131,6 +135,8 @@ export default function ConstructionMembersPage() {
                 }
                 if (!existing.role && m.role) existing.role = m.role
                 if (!existing.phone && m.phone) existing.phone = m.phone
+                if (!existing.main_job && m.main_job) existing.main_job = m.main_job
+                if (!existing.sub_job && m.sub_job) existing.sub_job = m.sub_job
             }
         })
 
@@ -145,6 +151,8 @@ export default function ConstructionMembersPage() {
             const teamNames = m.teams.map(t => t.team_name.toLowerCase()).join(' ')
             return m.full_name.toLowerCase().includes(q) ||
                 (m.phone && m.phone.includes(q)) ||
+                (m.main_job && m.main_job.toLowerCase().includes(q)) ||
+                (m.sub_job && m.sub_job.toLowerCase().includes(q)) ||
                 (m.user?.username && m.user.username.toLowerCase().includes(q)) ||
                 (m.user?.email && m.user.email.toLowerCase().includes(q)) ||
                 teamNames.includes(q)
@@ -191,14 +199,16 @@ export default function ConstructionMembersPage() {
             // Thiết lập cột
             worksheet.columns = [
                 { header: 'STT', key: 'stt', width: 8 },
-                { header: 'Họ và tên', key: 'full_name', width: 26 },
+                { header: 'Họ và tên', key: 'full_name', width: 24 },
                 { header: 'Mã NV', key: 'employee_code', width: 14 },
-                { header: 'Tài khoản đăng nhập', key: 'account_name', width: 24 },
+                { header: 'Tài khoản đăng nhập', key: 'account_name', width: 22 },
                 { header: 'Username', key: 'username', width: 16 },
                 { header: 'Số lượng đội', key: 'team_count', width: 14 },
-                { header: 'Tổ đội trực thuộc', key: 'team_names', width: 36 },
+                { header: 'Tổ đội trực thuộc', key: 'team_names', width: 28 },
+                { header: 'Công Việc Chính', key: 'main_job', width: 42 },
+                { header: 'Việc Phụ', key: 'sub_job', width: 38 },
                 { header: 'Số điện thoại', key: 'phone', width: 16 },
-                { header: 'Vai trò / Chức vụ', key: 'role', width: 22 },
+                { header: 'Vai trò / Chức vụ', key: 'role', width: 20 },
                 { header: 'Trạng thái', key: 'status', width: 18 }
             ]
 
@@ -209,8 +219,8 @@ export default function ConstructionMembersPage() {
                 []
             )
 
-            worksheet.mergeCells('A1:J1')
-            worksheet.mergeCells('A2:J2')
+            worksheet.mergeCells('A1:L1')
+            worksheet.mergeCells('A2:L2')
 
             const titleCell = worksheet.getCell('A1')
             titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FF1E3A8A' } }
@@ -254,12 +264,14 @@ export default function ConstructionMembersPage() {
                     username: item.user?.username ? `@${item.user.username}` : '',
                     team_count: item.teams.length,
                     team_names: teamNames,
+                    main_job: item.main_job || '',
+                    sub_job: item.sub_job || '',
                     phone: item.phone || '',
                     role: item.role || '',
                     status: item.is_active ? 'Đang hoạt động' : 'Tạm ngừng'
                 })
 
-                row.height = 22
+                row.height = 24
                 row.eachCell((cell, colNumber) => {
                     cell.font = { name: 'Arial', size: 10 }
                     cell.border = {
@@ -269,8 +281,10 @@ export default function ConstructionMembersPage() {
                         right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
                     }
 
-                    if (colNumber === 1 || colNumber === 3 || colNumber === 6 || colNumber === 8 || colNumber === 10) {
+                    if (colNumber === 1 || colNumber === 3 || colNumber === 6 || colNumber === 10 || colNumber === 12) {
                         cell.alignment = { horizontal: 'center', vertical: 'middle' }
+                    } else if (colNumber === 8 || colNumber === 9) {
+                        cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
                     } else {
                         cell.alignment = { horizontal: 'left', vertical: 'middle' }
                     }
@@ -393,7 +407,7 @@ export default function ConstructionMembersPage() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                     <input
                         type="text"
-                        placeholder={activeTab === 'members' ? "Tìm theo tên, SĐT, tên đội..." : "Tìm tên đội..."}
+                        placeholder={activeTab === 'members' ? "Tìm theo tên, SĐT, tên đội, công việc..." : "Tìm tên đội..."}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-9 pr-4 py-2 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -432,19 +446,21 @@ export default function ConstructionMembersPage() {
                             <table className="w-full text-sm">
                                 <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
                                     <tr>
-                                        <th className="text-left px-6 py-3 font-medium text-gray-500">Họ và tên</th>
-                                        <th className="text-left px-6 py-3 font-medium text-gray-500">Tài khoản đăng nhập</th>
-                                        <th className="text-left px-6 py-3 font-medium text-gray-500">Thuộc Đội</th>
-                                        <th className="text-right px-6 py-3 font-medium text-gray-500">Thao tác</th>
+                                        <th className="text-left px-4 py-3 font-medium text-gray-500">Họ và tên</th>
+                                        <th className="text-left px-4 py-3 font-medium text-gray-500">Tài khoản đăng nhập</th>
+                                        <th className="text-left px-4 py-3 font-medium text-gray-500">Thuộc Đội</th>
+                                        <th className="text-left px-4 py-3 font-medium text-gray-500">Công việc chính</th>
+                                        <th className="text-left px-4 py-3 font-medium text-gray-500">Việc phụ</th>
+                                        <th className="text-right px-4 py-3 font-medium text-gray-500">Thao tác</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                                     {filteredGroupedMembers.map((item) => (
                                         <tr key={item.key} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                            <td className="px-6 py-4 font-medium text-gray-900 dark:text-gray-200">
+                                            <td className="px-4 py-4 font-medium text-gray-900 dark:text-gray-200 whitespace-nowrap">
                                                 {item.full_name}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-4">
                                                 {item.user ? (
                                                     <div className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 px-2.5 py-1 rounded-lg w-fit">
                                                         <Shield size={13} className="text-emerald-600 flex-shrink-0" />
@@ -457,11 +473,11 @@ export default function ConstructionMembersPage() {
                                                     <span className="text-xs text-gray-400 italic">Chưa liên kết</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-4 py-4">
                                                 {item.teams.length === 0 ? (
                                                     <span className="text-gray-400 italic text-xs">Chưa gán đội</span>
                                                 ) : item.teams.length === 1 ? (
-                                                    <div className="flex items-center gap-1.5 text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg text-xs font-semibold w-fit">
+                                                    <div className="flex items-center gap-1.5 text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg text-xs font-semibold w-fit whitespace-nowrap">
                                                         <Users size={13} className="text-blue-600 flex-shrink-0" />
                                                         <span>{item.teams[0].team_name}</span>
                                                     </div>
@@ -479,7 +495,25 @@ export default function ConstructionMembersPage() {
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 text-right">
+                                            <td className="px-4 py-4 max-w-[260px]">
+                                                {item.main_job ? (
+                                                    <span className="text-xs text-gray-800 dark:text-gray-200 leading-relaxed">
+                                                        {item.main_job}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400 italic">—</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-4 max-w-[240px]">
+                                                {item.sub_job ? (
+                                                    <span className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                                                        {item.sub_job}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400 italic">—</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-4 text-right whitespace-nowrap">
                                                 <div className="flex justify-end gap-3 text-xs font-semibold">
                                                     <button
                                                         onClick={() => handleEditMember(item.primaryMember, item.teams.map(t => t.team_id))}
@@ -499,7 +533,7 @@ export default function ConstructionMembersPage() {
                                     ))}
                                     {filteredGroupedMembers.length === 0 && (
                                         <tr>
-                                            <td colSpan={4} className="text-center py-10 text-gray-500">Chưa có thành viên nào</td>
+                                            <td colSpan={6} className="text-center py-10 text-gray-500">Chưa có thành viên nào</td>
                                         </tr>
                                     )}
                                 </tbody>

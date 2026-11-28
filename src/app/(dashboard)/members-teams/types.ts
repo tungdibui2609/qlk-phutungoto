@@ -11,6 +11,8 @@ export interface ConstructionMember {
     full_name: string
     phone: string | null
     role: string | null
+    main_job?: string | null
+    sub_job?: string | null
     team_id: string | null
     is_active: boolean
     user_id?: string | null

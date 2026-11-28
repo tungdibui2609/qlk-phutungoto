@@ -53,6 +53,8 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData, i
         full_name: initialData?.full_name || '',
         phone: initialData?.phone || '',
         role: initialData?.role || '',
+        main_job: initialData?.main_job || '',
+        sub_job: initialData?.sub_job || '',
         team_id: initialData?.team_id || '',
         user_id: initialData?.user_id || '',
         is_active: initialData?.is_active ?? true
@@ -64,6 +66,8 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData, i
                 full_name: initialData?.full_name || '',
                 phone: initialData?.phone || '',
                 role: initialData?.role || '',
+                main_job: initialData?.main_job || '',
+                sub_job: initialData?.sub_job || '',
                 team_id: initialData?.team_id || '',
                 user_id: initialData?.user_id || '',
                 is_active: initialData?.is_active ?? true
@@ -262,6 +266,8 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData, i
                 full_name: formData.full_name.trim(),
                 phone: formData.phone?.trim() || null,
                 role: formData.role?.trim() || null,
+                main_job: formData.main_job?.trim() || null,
+                sub_job: formData.sub_job?.trim() || null,
                 user_id: formData.user_id || null,
                 is_active: formData.is_active,
                 updated_at: new Date().toISOString()
@@ -318,13 +324,15 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData, i
                     if (insertErr) throw insertErr
                 }
 
-                // 4. Đồng bộ họ tên, SĐT, vai trò sang tất cả bản ghi còn lại của tài khoản này
+                // 4. Đồng bộ họ tên, SĐT, vai trò, công việc sang tất cả bản ghi còn lại của tài khoản này
                 if (formData.user_id) {
                     await (supabase.from('construction_members') as any)
                         .update({
                             full_name: basePayload.full_name,
                             phone: basePayload.phone,
                             role: basePayload.role,
+                            main_job: basePayload.main_job,
+                            sub_job: basePayload.sub_job,
                             is_active: basePayload.is_active,
                             updated_at: basePayload.updated_at
                         })
@@ -722,6 +730,30 @@ export default function MemberModal({ isOpen, onClose, onSuccess, initialData, i
                                 onChange={e => setFormData({ ...formData, role: e.target.value })}
                                 className="w-full px-3 py-2 border border-stone-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                                 placeholder="VD: Đội trưởng, Thợ chính..."
+                            />
+                        </div>
+                    </div>
+
+                    {/* 3.5. CÔNG VIỆC CHÍNH & VIỆC PHỤ */}
+                    <div className="space-y-3">
+                        <div>
+                            <label className="block text-xs font-bold text-stone-700 mb-1">Công việc chính</label>
+                            <textarea
+                                rows={2}
+                                value={formData.main_job}
+                                onChange={e => setFormData({ ...formData, main_job: e.target.value })}
+                                className="w-full px-3 py-2 border border-stone-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                                placeholder="VD: Vận hành xe nâng cao, thống kê số liệu..."
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-stone-700 mb-1">Việc phụ</label>
+                            <textarea
+                                rows={2}
+                                value={formData.sub_job}
+                                onChange={e => setFormData({ ...formData, sub_job: e.target.value })}
+                                className="w-full px-3 py-2 border border-stone-300 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                                placeholder="VD: Hỗ trợ bốc cont, hỗ trợ kho bao bì..."
                             />
                         </div>
                     </div>

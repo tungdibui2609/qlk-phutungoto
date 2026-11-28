@@ -413,6 +413,8 @@ type ConstructionMembersTable = {
         full_name: string
         phone: string | null
         role: string | null
+        main_job: string | null
+        sub_job: string | null
         is_active: boolean
         created_at: string
         created_by: string | null
@@ -426,6 +428,8 @@ type ConstructionMembersTable = {
         full_name: string
         phone?: string | null
         role?: string | null
+        main_job?: string | null
+        sub_job?: string | null
         is_active?: boolean
         created_at?: string
         created_by?: string | null
@@ -439,6 +443,8 @@ type ConstructionMembersTable = {
         full_name?: string
         phone?: string | null
         role?: string | null
+        main_job?: string | null
+        sub_job?: string | null
         is_active?: boolean
         created_at?: string
         created_by?: string | null
