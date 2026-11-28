@@ -1201,80 +1201,79 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     }
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-zinc-900 rounded-[32px] w-full max-w-5xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[95vh]">
-                {/* Header */}
-                <div className="px-8 py-6 border-b border-stone-100 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-zinc-800/50 shadow-sm shrink-0">
-                    <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-2xl ${isLocked ? 'bg-blue-100 dark:bg-blue-950/30' : 'bg-orange-100 dark:bg-orange-950/30'}`}>
-                            {isLocked ? <FileText className="text-blue-600" size={24} /> : <Factory className="text-orange-600" size={24} />}
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 flex flex-col max-h-[92vh] border border-stone-200 dark:border-zinc-800">
+                {/* Compact Header */}
+                <div className="px-5 py-3.5 border-b border-stone-200/80 dark:border-zinc-800 flex items-center justify-between bg-white dark:bg-zinc-900 shrink-0">
+                    <div className="flex items-center gap-2.5">
+                        <div className={`p-2 rounded-lg ${isLocked ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600' : 'bg-orange-50 dark:bg-orange-950/40 text-orange-600'}`}>
+                            {isLocked ? <FileText size={18} /> : <Factory size={18} />}
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-stone-900 dark:text-white">
+                            <h2 className="text-sm font-bold text-stone-900 dark:text-white leading-tight">
                                 {isLocked 
-                                    ? (editItem?.status === 'DONE' ? 'Chi tiết lệnh đã hoàn thành' : 'Xem chi tiết lệnh đang chạy') 
+                                    ? (editItem?.status === 'DONE' ? 'Chi tiết lệnh đã hoàn thành' : 'Chi tiết lệnh đang chạy') 
                                     : (editItem ? 'Chỉnh sửa lệnh sản xuất' : 'Tạo mới lệnh sản xuất')}
                             </h2>
-                            <p className="text-xs text-stone-500 font-medium">
+                            <p className="text-[11px] text-stone-500">
                                 {isLocked ? `Mã lệnh: ${code}` : 'LSX - Quy trình sản xuất đa mặt hàng'}
                             </p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
-                        <Plus size={24} className="rotate-45 text-stone-400" />
+                    <button onClick={onClose} className="p-1.5 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer">
+                        <X size={18} className="text-stone-400" />
                     </button>
                 </div>
 
-                {/* Body */}
-                <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-stone-50/30 dark:bg-zinc-900">
+                {/* Compact Body */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-stone-50/40 dark:bg-zinc-950/40">
                     {isLocked && editItem?.status === 'DONE' && (
-                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl flex items-center justify-between gap-3 text-blue-700 dark:text-blue-400">
-                            <div className="flex items-center gap-3">
-                                <Lock size={18} />
-                                <span className="text-sm font-bold">Lệnh sản xuất này đã hoàn thành và đang được khóa. Muốn chỉnh sửa vui lòng chuyển trạng thái về Đang sản xuất.</span>
+                        <div className="px-3.5 py-2.5 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl flex items-center justify-between gap-3 text-blue-700 dark:text-blue-400">
+                            <div className="flex items-center gap-2">
+                                <Lock size={15} className="shrink-0" />
+                                <span className="text-xs font-medium">Lệnh sản xuất này đã hoàn thành và đang khóa. Muốn chỉnh sửa vui lòng mở lại lệnh.</span>
                             </div>
                             <button
                                 type="button"
                                 onClick={handleReopen}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shrink-0 flex items-center gap-1.5"
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
                             >
-                                <Unlock size={14} />
+                                <Unlock size={13} />
                                 Mở lại lệnh
                             </button>
                         </div>
                     )}
                     {/* Raw Material Info Summary Bar (If filled) */}
                     {(productionType === 'NEW' ? (inputProductId || inputQuantity > 0) : summary.totalInputWeight > 0) && (
-                        <div className="flex items-center gap-6 p-6 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-[28px] border border-emerald-200/50 dark:border-emerald-900/20 animate-in slide-in-from-top-4">
-                            <div className="p-3 bg-emerald-600 text-white rounded-2xl shadow-lg shadow-emerald-600/20">
-                                <Scale size={20} />
+                        <div className="flex items-center gap-3.5 p-3.5 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/70 dark:border-emerald-900/40">
+                            <div className="p-2 bg-emerald-600 text-white rounded-lg shrink-0">
+                                <Scale size={16} />
                             </div>
-                            <div className="flex-1 flex flex-col md:flex-row md:items-center gap-4 md:gap-12">
+                            <div className="flex-1 flex flex-wrap items-center gap-x-6 gap-y-2">
                                 <div>
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">Nguyên liệu tổng</label>
-                                    <div className="text-lg font-black text-stone-900 dark:text-white flex items-baseline gap-2">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">Nguyên liệu tổng</label>
+                                    <div className="text-sm font-bold text-stone-900 dark:text-white flex items-baseline gap-1">
                                         {formatQuantityFull(summary.totalInputWeight)}
-                                        <span className="text-xs font-bold text-stone-400 uppercase">Kg</span>
+                                        <span className="text-[10px] font-medium text-stone-400 uppercase">kg</span>
                                     </div>
                                 </div>
-                                <div className="h-10 w-px bg-emerald-100 dark:bg-emerald-900/50 hidden md:block" />
+                                <div className="h-7 w-px bg-emerald-200/70 dark:bg-emerald-900/50 hidden sm:block" />
                                 <div>
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
                                         {productionType === 'NEW' ? 'Tên nguyên liệu' : 'Số mã LOT đầu vào'}
                                     </label>
-                                    <div className="text-sm font-bold text-stone-600 dark:text-stone-300">
+                                    <div className="text-xs font-semibold text-stone-700 dark:text-stone-300">
                                         {productionType === 'NEW' ? (inputProductName || '---') : `${productionInputs.length} mã LOT`}
                                     </div>
                                 </div>
                                 {summary.actual > 0 && summary.totalInputWeight > 0 && (
                                     <>
-                                        <div className="h-10 w-px bg-emerald-100 dark:bg-emerald-900/50 hidden md:block" />
+                                        <div className="h-7 w-px bg-emerald-200/70 dark:bg-emerald-900/50 hidden sm:block" />
                                         <div>
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-1 block">Hao hụt sản xuất</label>
-                                            <div className="text-sm font-black text-orange-600 flex items-center gap-1">
-                                                {formatQuantityFull(summary.lossWeight)} Kg
-                                                <span className="text-[10px] opacity-60">({summary.lossRate.toFixed(1)}%)</span>
-                                                <TrendingUp size={14} />
+                                            <label className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">Hao hụt sản xuất</label>
+                                            <div className="text-xs font-bold text-orange-600 flex items-center gap-1">
+                                                {formatQuantityFull(summary.lossWeight)} kg
+                                                <span className="text-[10px] opacity-75">({summary.lossRate.toFixed(1)}%)</span>
                                             </div>
                                         </div>
                                     </>
@@ -1282,60 +1281,60 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             </div>
                         </div>
                     )}
-                    <form id="prod-form" onSubmit={handleSubmit} className="space-y-8">
+                    <form id="prod-form" onSubmit={handleSubmit} className="space-y-4">
                         {/* --- TOP-LEVEL MAIN TABS --- */}
                         {isLocked && (
-                            <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-[20px] w-fit mb-6 shadow-inner border border-stone-200/50 dark:border-zinc-700/30">
+                            <div className="flex p-0.5 bg-stone-100 dark:bg-zinc-800 rounded-lg w-fit border border-stone-200/70 dark:border-zinc-700/50">
                                 <button
                                     type="button"
                                     onClick={() => setMainTab('LOTS')}
-                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${mainTab === 'LOTS' ? 'bg-white dark:bg-zinc-700 text-orange-600 shadow-sm' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-300'}`}
+                                    className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${mainTab === 'LOTS' ? 'bg-white dark:bg-zinc-700 text-orange-600 shadow-xs' : 'text-stone-500 hover:text-stone-700 dark:hover:text-stone-300'}`}
                                 >
-                                    <Package size={14} />
+                                    <Package size={13} />
                                     Quản lý mã Lot
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => { setMainTab('STATS'); if (activeTab === 'products') setActiveTab('allocations'); }}
-                                    className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${mainTab === 'STATS' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-300'}`}
+                                    className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${mainTab === 'STATS' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-xs' : 'text-stone-500 hover:text-stone-700 dark:hover:text-stone-300'}`}
                                 >
-                                    <TrendingUp size={14} />
+                                    <TrendingUp size={13} />
                                     Thống kê
                                 </button>
                             </div>
                         )}
 
                         {isLocked && mainTab === 'STATS' && (
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col items-center justify-center gap-2">
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400">Tổng kế hoạch</span>
-                                    <div className="text-2xl font-black text-stone-800 dark:text-white flex items-baseline gap-1">
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                <div className="p-3.5 bg-white dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-800 shadow-xs flex flex-col items-center justify-center gap-1">
+                                    <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Tổng kế hoạch</span>
+                                    <div className="text-lg font-bold text-stone-800 dark:text-white flex items-baseline gap-1">
                                         {summary.planned.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
-                                        <span className="text-xs font-bold text-stone-400 uppercase">Kg</span>
+                                        <span className="text-[10px] font-medium text-stone-400">kg</span>
                                     </div>
                                 </div>
-                                <div className="p-6 bg-blue-500/5 dark:bg-blue-500/10 rounded-[28px] border border-blue-100 dark:border-blue-900/20 shadow-sm flex flex-col items-center justify-center gap-2">
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500">Sản lượng gốc</span>
-                                    <div className="text-2xl font-black text-blue-600 dark:text-blue-400 flex items-baseline gap-1">
+                                <div className="p-3.5 bg-blue-50/50 dark:bg-blue-950/20 rounded-xl border border-blue-200/60 dark:border-blue-900/30 shadow-xs flex flex-col items-center justify-center gap-1">
+                                    <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-500">Sản lượng gốc</span>
+                                    <div className="text-lg font-bold text-blue-600 dark:text-blue-400 flex items-baseline gap-1">
                                         {summary.actual.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
-                                        <span className="text-xs font-bold text-blue-400/60 uppercase">Kg</span>
+                                        <span className="text-[10px] font-medium text-blue-400">kg</span>
                                     </div>
                                 </div>
-                                <div className="p-6 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-[28px] border border-indigo-100 dark:border-indigo-900/20 shadow-sm flex flex-col items-center justify-center gap-2">
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">Tồn kho hiện có</span>
-                                    <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 flex items-baseline gap-1">
+                                <div className="p-3.5 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-xl border border-indigo-200/60 dark:border-indigo-900/30 shadow-xs flex flex-col items-center justify-center gap-1">
+                                    <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500">Tồn kho hiện có</span>
+                                    <div className="text-lg font-bold text-indigo-600 dark:text-indigo-400 flex items-baseline gap-1">
                                         {summary.inventory.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
-                                        <span className="text-xs font-bold text-indigo-400/60 uppercase">Kg</span>
+                                        <span className="text-[10px] font-medium text-indigo-400">kg</span>
                                     </div>
                                 </div>
-                                <div className="p-6 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-[28px] border border-emerald-100 dark:border-emerald-900/20 shadow-sm flex flex-col items-center justify-center gap-2 col-span-2 lg:col-span-1">
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500">Tỉ lệ hoàn thành</span>
-                                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 flex items-baseline gap-1">
+                                <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/60 dark:border-emerald-900/30 shadow-xs flex flex-col items-center justify-center gap-1 col-span-2 lg:col-span-1">
+                                    <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">Tỉ lệ hoàn thành</span>
+                                    <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 flex items-baseline gap-0.5">
                                         {summary.rate.toFixed(1)}
-                                        <span className="text-xs font-bold text-emerald-400/60 uppercase">%</span>
+                                        <span className="text-[10px] font-medium text-emerald-500">%</span>
                                     </div>
-                                    <div className="w-full bg-stone-200 dark:bg-zinc-700 h-1.5 rounded-full mt-1 overflow-hidden">
-                                        <div className="bg-emerald-500 h-full transition-all duration-1000" style={{ width: `${Math.min(100, summary.rate)}%` }} />
+                                    <div className="w-full bg-stone-200 dark:bg-zinc-700 h-1.5 rounded-full overflow-hidden">
+                                        <div className="bg-emerald-500 h-full transition-all duration-700" style={{ width: `${Math.min(100, summary.rate)}%` }} />
                                     </div>
                                 </div>
                             </div>
@@ -1388,19 +1387,19 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
                         {/* Section 2: Warehouse Filter (Global for items) */}
                         {!isLocked && (
-                            <div className="flex items-center gap-6 p-6 bg-orange-500/5 dark:bg-orange-500/5 rounded-[28px] border border-orange-200/50 dark:border-orange-900/20">
-                                <div className="p-3 bg-orange-600 text-white rounded-2xl shadow-lg shadow-orange-600/20">
-                                    <Warehouse size={20} />
+                            <div className="flex items-center gap-3.5 p-3.5 bg-orange-50/50 dark:bg-orange-950/15 rounded-xl border border-orange-200/60 dark:border-orange-900/30">
+                                <div className="p-2 bg-orange-600 text-white rounded-lg shrink-0">
+                                    <Warehouse size={16} />
                                 </div>
-                                <div className="flex-1">
-                                    <label className="text-xs font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 mb-2 block">Cung cấp sản phẩm từ kho</label>
-                                    <div className="flex gap-4">
+                                <div className="flex-1 min-w-0">
+                                    <label className="text-[11px] font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400 mb-1.5 block">Cung cấp sản phẩm từ kho</label>
+                                    <div className="flex flex-wrap gap-2">
                                         {systems.map(sys => (
                                             <button
                                                 key={sys.code}
                                                 type="button"
                                                 onClick={() => setTargetSystemCode(sys.code)}
-                                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${targetSystemCode === sys.code ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-600/20' : 'bg-white dark:bg-zinc-800 border-stone-200 dark:border-zinc-700 text-stone-500 hover:border-orange-300'}`}
+                                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${targetSystemCode === sys.code ? 'bg-orange-600 border-orange-600 text-white shadow-xs' : 'bg-white dark:bg-zinc-800 border-stone-200 dark:border-zinc-700 text-stone-600 hover:border-orange-300'}`}
                                             >
                                                 {sys.name}
                                             </button>
@@ -1413,43 +1412,43 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         )}
 
                         {/* Section 3: Product & Lot List (DYNAMIC) */}
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                             {!isLocked && mainTab === 'LOTS' && (
-                                <div className="flex items-center justify-between px-2">
-                                    <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
-                                        <Package size={14} className="text-orange-500" /> Danh sách sản phẩm & Lot
+                                <div className="flex items-center justify-between px-1">
+                                    <div className="flex items-center gap-1.5 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
+                                        <Package size={13} className="text-orange-500" /> Danh sách sản phẩm & Lot
                                     </div>
                                     <button
                                         type="button"
                                         onClick={addLotRow}
                                         disabled={!targetSystemCode}
-                                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-orange-600/20 flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                                        className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
                                     >
-                                        <Plus size={16} /> Thêm sản phẩm
+                                        <Plus size={14} /> Thêm sản phẩm
                                     </button>
                                 </div>
                             )}
 
                             {/* Section Header for ReadOnly Mode */}
                             {isLocked && (
-                                <div className="flex items-center gap-2 px-2 text-stone-400 font-black text-[10px] uppercase tracking-widest mb-2">
-                                    <Package size={14} className="text-orange-500" /> 
+                                <div className="flex items-center gap-1.5 px-1 text-stone-500 font-semibold text-[11px] uppercase tracking-wider">
+                                    <Package size={13} className="text-orange-500" /> 
                                     {mainTab === 'LOTS' ? 'Chi tiết Lệnh sản xuất' : 'Thống kê & Cấp phát chi tiết'}
                                 </div>
                             )}
                             
                             {/* Tabs for View Mode */}
                             {isLocked && mainTab === 'STATS' && (
-                                <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-2xl w-fit mb-6">
+                                <div className="flex p-0.5 bg-stone-100 dark:bg-zinc-800 rounded-lg w-fit border border-stone-200/70 dark:border-zinc-700/50">
                                     <button
                                         type="button"
                                         onClick={() => setActiveTab('allocations')}
-                                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'allocations' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-400'}`}
+                                        className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'allocations' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-xs' : 'text-stone-500'}`}
                                     >
-                                        <Truck className={activeTab === 'allocations' ? 'text-blue-600' : 'text-stone-400'} size={14} />
+                                        <Truck className={activeTab === 'allocations' ? 'text-blue-600' : 'text-stone-400'} size={13} />
                                         Vật tư đã cấp phát
                                         {allocations.length > 0 && (
-                                            <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === 'allocations' ? 'bg-blue-100 text-blue-600' : 'bg-stone-200 text-stone-500'}`}>
+                                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${activeTab === 'allocations' ? 'bg-blue-100 text-blue-600' : 'bg-stone-200 text-stone-500'}`}>
                                                 {allocations.length}
                                             </span>
                                         )}
@@ -1457,9 +1456,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                     <button
                                         type="button"
                                         onClick={() => setActiveTab('analysis')}
-                                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'analysis' ? 'bg-white dark:bg-zinc-700 text-emerald-600 shadow-sm' : 'text-stone-400'}`}
+                                        className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'analysis' ? 'bg-white dark:bg-zinc-700 text-emerald-600 shadow-xs' : 'text-stone-500'}`}
                                     >
-                                        <TrendingUp className={activeTab === 'analysis' ? 'text-emerald-600' : 'text-stone-400'} size={14} />
+                                        <TrendingUp className={activeTab === 'analysis' ? 'text-emerald-600' : 'text-stone-400'} size={13} />
                                         Phân tích hiệu suất
                                     </button>
                                 </div>
@@ -1488,50 +1487,50 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                             <p className="text-stone-400 font-bold text-sm uppercase tracking-widest">Chưa có vật tư nào được cấp phát cho lệnh này.</p>
                                         </div>
                                     ) : (
-                                        <div className="bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 overflow-hidden shadow-sm">
+                                        <div className="bg-white dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-800 overflow-hidden shadow-xs">
                                             <table className="w-full text-left border-collapse">
                                                 <thead>
-                                                    <tr className="bg-stone-50/50 dark:bg-zinc-800/50 border-b border-stone-100 dark:border-zinc-800">
-                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Vật tư / Nguyên liệu</th>
-                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Đã cấp</th>
-                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-emerald-500">Đã dùng (Tiêu hao)</th>
-                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400">Người nhận</th>
-                                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-stone-400 text-right">Ngày cấp</th>
+                                                    <tr className="bg-stone-50/80 dark:bg-zinc-800/60 border-b border-stone-200 dark:border-zinc-800">
+                                                        <th className="px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-stone-500">Vật tư / Nguyên liệu</th>
+                                                        <th className="px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-stone-500">Đã cấp</th>
+                                                        <th className="px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Tiêu hao</th>
+                                                        <th className="px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-stone-500">Người nhận</th>
+                                                        <th className="px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-stone-500 text-right">Ngày cấp</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
                                                     {allocations.map((aln, aIdx) => (
                                                         <tr key={aln.id || aIdx} className="hover:bg-stone-50/50 dark:hover:bg-zinc-800/30 transition-colors">
-                                                            <td className="px-6 py-4">
-                                                                <div className="font-bold text-stone-900 dark:text-white text-sm">{aln.products?.name}</div>
-                                                                <div className="text-[10px] font-mono font-bold text-stone-400 uppercase tracking-tighter">{aln.products?.sku || '---'}</div>
+                                                            <td className="px-3.5 py-2.5">
+                                                                <div className="font-semibold text-stone-900 dark:text-white text-xs">{aln.products?.name}</div>
+                                                                <div className="text-[10px] font-mono text-stone-400">{aln.products?.sku || '---'}</div>
                                                             </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="font-black text-blue-600 dark:text-blue-400 flex items-baseline gap-1">
+                                                            <td className="px-3.5 py-2.5">
+                                                                <div className="font-bold text-blue-600 dark:text-blue-400 text-xs flex items-baseline gap-1">
                                                                     {formatQuantityFull(aln.quantity)}
-                                                                    <span className="text-[10px] font-bold text-stone-400 uppercase">{aln.unit}</span>
+                                                                    <span className="text-[10px] font-normal text-stone-400">{aln.unit}</span>
                                                                 </div>
                                                                 {Number(aln.returned_quantity) > 0 && (
-                                                                    <div className="text-[9px] text-emerald-500 font-bold mt-0.5">Đã trả: {formatQuantityFull(aln.returned_quantity)}</div>
+                                                                    <div className="text-[10px] text-emerald-600">Đã trả: {formatQuantityFull(aln.returned_quantity)}</div>
                                                                 )}
                                                             </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="font-black text-orange-600 dark:text-orange-400 flex items-baseline gap-1">
+                                                            <td className="px-3.5 py-2.5">
+                                                                <div className="font-bold text-orange-600 dark:text-orange-400 text-xs flex items-baseline gap-1">
                                                                     {formatQuantityFull((aln.quantity || 0) - (aln.returned_quantity || 0))}
-                                                                    <span className="text-[10px] font-bold text-stone-400 uppercase">{aln.unit}</span>
+                                                                    <span className="text-[10px] font-normal text-stone-400">{aln.unit}</span>
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="text-sm font-medium text-stone-600 dark:text-stone-400 flex items-center gap-2">
-                                                                    <Users size={14} className="text-stone-300" />
+                                                            <td className="px-3.5 py-2.5">
+                                                                <div className="text-xs text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                                                    <Users size={13} className="text-stone-400" />
                                                                     {aln.worker_name || 'N/A'}
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-4 text-right">
-                                                                <div className="text-xs font-bold text-stone-500">
+                                                            <td className="px-3.5 py-2.5 text-right">
+                                                                <div className="text-xs font-medium text-stone-600 dark:text-stone-300">
                                                                     {new Date(aln.loan_date || aln.created_at).toLocaleDateString('vi-VN')}
                                                                 </div>
-                                                                <div className="text-[9px] text-stone-400 italic">
+                                                                <div className="text-[10px] text-stone-400">
                                                                     {new Date(aln.loan_date || aln.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                                                                 </div>
                                                             </td>
@@ -1545,71 +1544,64 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             ) : (
                                 <div className="space-y-4">
                                     {isLocked && (
-                                        <div className="flex flex-wrap items-center justify-between gap-4 bg-stone-50 dark:bg-zinc-800/40 p-5 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm mb-4 w-full">
-                                            <div className="flex flex-wrap items-center gap-6">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="p-2.5 bg-blue-500/10 rounded-xl">
-                                                        <Calendar size={20} className="text-blue-600" />
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest leading-none mb-1">Lọc sản lượng thực tế</div>
-                                                        <div className="text-[11px] font-bold text-stone-500 uppercase tracking-tight">Dựa trên ngày nhập kho</div>
-                                                    </div>
+                                        <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white dark:bg-zinc-800/40 p-3 rounded-xl border border-stone-200 dark:border-zinc-800 shadow-xs w-full">
+                                            <div className="flex flex-wrap items-center gap-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <Calendar size={14} className="text-blue-600" />
+                                                    <span className="text-[11px] font-semibold text-stone-500">Ngày nhập kho:</span>
                                                 </div>
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 px-4 py-2 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-sm">
-                                                        <div className="flex items-center gap-2 text-xs font-bold text-stone-600 dark:text-stone-300">
-                                                            <input 
-                                                                type="date" 
-                                                                value={statsStartDate}
-                                                                onChange={e => setStatsStartDate(e.target.value)}
-                                                                className="bg-transparent border-none focus:ring-0 outline-none w-32 font-bold text-stone-800 dark:text-stone-100"
-                                                            />
-                                                            <ArrowRight size={14} className="text-stone-300" />
-                                                            <input 
-                                                                type="date" 
-                                                                value={statsEndDate}
-                                                                onChange={e => setStatsEndDate(e.target.value)}
-                                                                className="bg-transparent border-none focus:ring-0 outline-none w-32 font-bold text-stone-800 dark:text-stone-100"
-                                                            />
-                                                        </div>
-                                                    </div>
+                                                <div className="flex items-center gap-1.5 bg-stone-50 dark:bg-zinc-800 px-2.5 py-1 rounded-lg border border-stone-200 dark:border-zinc-700">
+                                                    <input 
+                                                        type="date" 
+                                                        value={statsStartDate}
+                                                        onChange={e => setStatsStartDate(e.target.value)}
+                                                        className="bg-transparent border-none focus:ring-0 outline-none w-28 text-xs font-medium text-stone-800 dark:text-stone-100"
+                                                    />
+                                                    <ArrowRight size={12} className="text-stone-400" />
+                                                    <input 
+                                                        type="date" 
+                                                        value={statsEndDate}
+                                                        onChange={e => setStatsEndDate(e.target.value)}
+                                                        className="bg-transparent border-none focus:ring-0 outline-none w-28 text-xs font-medium text-stone-800 dark:text-stone-100"
+                                                    />
+                                                </div>
+                                                {(statsStartDate || statsEndDate) && (
                                                     <button 
                                                         type="button" 
                                                         onClick={() => {
                                                             setStatsStartDate('')
                                                             setStatsEndDate('')
                                                         }}
-                                                        className="p-2 text-stone-400 hover:text-stone-600 transition-colors"
+                                                        className="p-1 text-stone-400 hover:text-stone-600 transition-colors cursor-pointer"
                                                         title="Xóa bộ lọc"
                                                     >
-                                                        <X size={18} />
+                                                        <X size={14} />
                                                     </button>
-                                                    {isRefreshingStats && <Loader2 size={18} className="animate-spin text-blue-500 ml-2" />}
-                                                </div>
+                                                )}
+                                                {isRefreshingStats && <Loader2 size={14} className="animate-spin text-blue-500" />}
                                             </div>
 
                                             {/* Bộ lọc trạng thái mã Lot & Thao tác nhanh */}
-                                            <div className="flex flex-wrap items-center justify-between gap-4 w-full">
-                                                <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-2xl border border-stone-200 dark:border-zinc-700 shadow-sm w-fit">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <div className="flex p-0.5 bg-stone-100 dark:bg-zinc-800 rounded-lg border border-stone-200/70 dark:border-zinc-700">
                                                 <button
                                                     type="button"
                                                     onClick={() => setLotStatusFilter('ALL')}
-                                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${lotStatusFilter === 'ALL' ? 'bg-orange-600 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${lotStatusFilter === 'ALL' ? 'bg-orange-600 text-white shadow-xs' : 'text-stone-500 hover:text-stone-700'}`}
                                                 >
                                                     Tất cả ({lots.length})
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => setLotStatusFilter('ACTIVE')}
-                                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${lotStatusFilter === 'ACTIVE' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${lotStatusFilter === 'ACTIVE' ? 'bg-emerald-600 text-white shadow-xs' : 'text-stone-500 hover:text-stone-700'}`}
                                                 >
                                                     Đang chạy ({lots.filter(l => !l.is_locked).length})
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => setLotStatusFilter('LOCKED')}
-                                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${lotStatusFilter === 'LOCKED' ? 'bg-rose-600 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                                                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${lotStatusFilter === 'LOCKED' ? 'bg-rose-600 text-white shadow-xs' : 'text-stone-500 hover:text-stone-700'}`}
                                                 >
                                                     Đã khóa ({lots.filter(l => l.is_locked).length})
                                                 </button>
@@ -1619,9 +1611,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                     <button
                                                         type="button"
                                                         onClick={() => setShowInlineAddLot(true)}
-                                                        className="px-4 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md hover:shadow-lg active:scale-95 flex items-center gap-1.5 border border-orange-400/20"
+                                                        className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-[11px] font-semibold transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
                                                     >
-                                                        <Plus size={12} />
+                                                        <Plus size={13} />
                                                         Tạo mã Lot mới
                                                     </button>
                                                 )}
@@ -1780,59 +1772,58 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
 
                                          if (isLocked) {
                                              return (
-                                                 <div className="space-y-4 animate-in fade-in duration-200">
+                                                 <div className="space-y-2 animate-in fade-in duration-150">
                                                      {displayLots.map((lot, idx) => {
                                                          const product = products.find(p => p.id === lot.product_id);
                                                          const pk = (lot.planned_quantity || 0) * (lot.weight_per_unit || product?.weight_kg || 1);
                                                          const ak = lot.actual_quantity || 0;
                                                          const percent = pk > 0 ? Math.min(100, (ak / pk) * 100) : 0;
-                                                         const isExported = ak > (lot.inventory_quantity || 0);
 
                                                          return (
-                                                             <div key={lot.id || idx} className="bg-white dark:bg-zinc-800/40 p-5 rounded-[24px] border border-stone-200 dark:border-zinc-800 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:border-blue-400 transition-all duration-300">
+                                                             <div key={lot.id || idx} className="bg-white dark:bg-zinc-800/40 px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-zinc-800 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:border-blue-300 transition-colors">
                                                                  {/* Left: Package icon + Product Name + Lot code */}
-                                                                 <div className="flex items-center gap-4 flex-1">
-                                                                     <div className={`p-3 rounded-2xl ${lot.is_locked ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-600' : 'bg-blue-50 dark:bg-blue-950/20 text-blue-600'}`}>
-                                                                         <Package size={20} />
+                                                                 <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                                                     <div className={`p-2 rounded-lg shrink-0 ${lot.is_locked ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-600' : 'bg-blue-50 dark:bg-blue-950/30 text-blue-600'}`}>
+                                                                         <Package size={15} />
                                                                      </div>
-                                                                     <div className="space-y-1">
-                                                                         <div className="font-bold text-stone-900 dark:text-white text-sm">{pName(lot, product)}</div>
-                                                                         <div className="flex flex-wrap items-center gap-2">
-                                                                             <span className="text-[10px] font-mono font-black text-stone-500 bg-stone-100 dark:bg-zinc-800 px-2 py-0.5 rounded uppercase">{lot.lot_code}</span>
-                                                                             <span className="text-[9px] text-orange-600 font-bold bg-orange-50 dark:bg-orange-950/30 px-2 py-0.5 rounded leading-none">
-                                                                                 Quy cách: {lot.conversion_rules && (lot.conversion_rules as any[]).length > 0 ? (
+                                                                     <div className="min-w-0">
+                                                                         <div className="font-semibold text-stone-900 dark:text-white text-xs truncate">{pName(lot, product)}</div>
+                                                                         <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                                                             <span className="text-[10px] font-mono font-bold text-stone-600 dark:text-zinc-300 bg-stone-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded uppercase">{lot.lot_code}</span>
+                                                                             <span className="text-[10px] text-orange-600 font-medium bg-orange-50 dark:bg-orange-950/30 px-1.5 py-0.5 rounded">
+                                                                                 {lot.conversion_rules && (lot.conversion_rules as any[]).length > 0 ? (
                                                                                      (lot.conversion_rules as any[]).map((r, i) => (
                                                                                          <span key={i}>
                                                                                              1 {r.unit_name || '?'} = {r.factor} {r.ref_unit_name}
                                                                                          </span>
                                                                                      ))
                                                                                  ) : (
-                                                                                     <span>1 {lot.unit || 'đv'} = {lot.weight_per_unit || 0} Kg</span>
+                                                                                     <span>1 {lot.unit || 'đv'} = {lot.weight_per_unit || 0} kg</span>
                                                                                  )}
                                                                              </span>
                                                                              {lot.is_locked && (
-                                                                                 <span className="text-[9px] bg-rose-100 text-rose-600 font-bold px-1.5 py-0.5 rounded leading-none">ĐÃ KHÓA</span>
+                                                                                 <span className="text-[9px] bg-rose-100 text-rose-600 font-bold px-1.5 py-0.5 rounded">ĐÃ KHÓA</span>
                                                                              )}
                                                                          </div>
                                                                      </div>
                                                                  </div>
 
                                                                  {/* Middle: planning, actual, remaining, progress */}
-                                                                 <div className="flex flex-wrap items-center gap-6 lg:gap-8 mt-2 lg:mt-0">
+                                                                 <div className="flex flex-wrap items-center gap-4 lg:gap-5">
                                                                      <div>
-                                                                         <div className="text-[9px] font-black text-stone-400 uppercase tracking-widest mb-0.5">Kế hoạch</div>
-                                                                         <div className="font-bold text-stone-800 dark:text-white text-sm">
+                                                                         <div className="text-[10px] font-semibold text-stone-400">Kế hoạch</div>
+                                                                         <div className="font-bold text-stone-800 dark:text-white text-xs">
                                                                              {(lot.planned_quantity || 0).toLocaleString('vi-VN')}
-                                                                             <span className="text-[10px] ml-1 text-stone-400 italic">{(lot.unit || product?.unit || 'Kg')}</span>
+                                                                             <span className="text-[10px] ml-0.5 text-stone-400 font-normal">{(lot.unit || product?.unit || 'kg')}</span>
                                                                          </div>
-                                                                         <div className="text-[9px] text-zinc-400 font-bold block mt-0.5">~ {((lot.planned_quantity || 0) * (lot.weight_per_unit || product?.weight_kg || 1)).toLocaleString('vi-VN')} kg</div>
+                                                                         <div className="text-[10px] text-zinc-400">~ {((lot.planned_quantity || 0) * (lot.weight_per_unit || product?.weight_kg || 1)).toLocaleString('vi-VN')} kg</div>
                                                                      </div>
 
                                                                      <div>
-                                                                         <div className="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-0.5">Sản lượng gốc (Ban đầu)</div>
-                                                                         <div className="font-black text-blue-600 dark:text-blue-400 text-sm">
+                                                                         <div className="text-[10px] font-semibold text-blue-500">Sản lượng gốc</div>
+                                                                         <div className="font-bold text-blue-600 dark:text-blue-400 text-xs">
                                                                              {(lot as any).quantity_by_unit && (lot as any).quantity_by_unit.length > 0 ? (
-                                                                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                                                 <div className="flex flex-wrap items-center gap-x-1.5">
                                                                                      {(lot as any).quantity_by_unit.map((q: any, i: number) => (
                                                                                          <span key={i} className={q.current_qty === 0 ? 'text-rose-500 line-through opacity-60' : 'text-blue-600'}>
                                                                                              {Number(q.qty).toLocaleString('vi-VN')} {q.unit}
@@ -1840,17 +1831,17 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                                      ))}
                                                                                  </div>
                                                                              ) : (
-                                                                                 <span>{(lot.actual_quantity || 0).toLocaleString('vi-VN')} {lot.unit || 'Kg'}</span>
+                                                                                 <span>{(lot.actual_quantity || 0).toLocaleString('vi-VN')} {lot.unit || 'kg'}</span>
                                                                              )}
                                                                          </div>
-                                                                         <div className="text-[9px] font-bold text-stone-400 italic mt-0.5">~ {(lot.actual_quantity || 0).toLocaleString('vi-VN')} kg</div>
+                                                                         <div className="text-[10px] text-stone-400">~ {(lot.actual_quantity || 0).toLocaleString('vi-VN')} kg</div>
                                                                      </div>
 
                                                                      <div>
-                                                                         <div className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-0.5">Tồn thực tế (Hiện tại)</div>
-                                                                         <div className="font-black text-indigo-600 dark:text-indigo-400 text-sm">
+                                                                         <div className="text-[10px] font-semibold text-indigo-500">Tồn hiện tại</div>
+                                                                         <div className="font-bold text-indigo-600 dark:text-indigo-400 text-xs">
                                                                              {(lot as any).quantity_by_unit && (lot as any).quantity_by_unit.length > 0 ? (
-                                                                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                                                 <div className="flex flex-wrap items-center gap-x-1.5">
                                                                                      {(lot as any).quantity_by_unit.map((q: any, i: number) => {
                                                                                          const isOutOfStock = q.current_qty === 0;
                                                                                          return (
@@ -1861,65 +1852,65 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                                      })}
                                                                                  </div>
                                                                              ) : (
-                                                                                 <span>{((lot as any).inventory_quantity || 0).toLocaleString('vi-VN')} {lot.unit || 'Kg'}</span>
+                                                                                 <span>{((lot as any).inventory_quantity || 0).toLocaleString('vi-VN')} {lot.unit || 'kg'}</span>
                                                                              )}
                                                                          </div>
-                                                                         <div className="text-[9px] font-bold text-stone-400 italic mt-0.5">~ {((lot as any).inventory_quantity || 0).toLocaleString('vi-VN')} kg</div>
+                                                                         <div className="text-[10px] text-stone-400">~ {((lot as any).inventory_quantity || 0).toLocaleString('vi-VN')} kg</div>
                                                                      </div>
 
-                                                                     <div className="flex items-center gap-2">
-                                                                         <div className="w-12 bg-stone-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
+                                                                     <div className="flex items-center gap-1.5">
+                                                                         <div className="w-10 bg-stone-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
                                                                              <div className="bg-blue-500 h-full rounded-full" style={{ width: `${percent}%` }} />
                                                                          </div>
-                                                                         <span className="text-xs font-black text-stone-700 dark:text-zinc-300">{percent.toFixed(0)}%</span>
+                                                                         <span className="text-[11px] font-bold text-stone-700 dark:text-zinc-300">{percent.toFixed(0)}%</span>
                                                                      </div>
                                                                  </div>
 
                                                                  {/* Right: Print / Lock options */}
-                                                                 <div className="flex items-center gap-2 justify-end border-t lg:border-t-0 border-stone-100 dark:border-zinc-800 pt-3 lg:pt-0 mt-2 lg:mt-0">
+                                                                 <div className="flex items-center gap-1 justify-end border-t lg:border-t-0 border-stone-100 dark:border-zinc-800 pt-2 lg:pt-0">
                                                                      {editItem?.status === 'IN_PROGRESS' && (
                                                                          <>
                                                                              <button
                                                                                  type="button"
                                                                                  onClick={(e) => { e.stopPropagation(); handleStartEditLot(lot) }}
-                                                                                 className="p-2 bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100 rounded-xl transition-all shadow-sm active:scale-95 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/30"
+                                                                                 className="p-1.5 bg-amber-50 text-amber-600 border border-amber-200/60 hover:bg-amber-100 rounded-lg transition-colors cursor-pointer dark:bg-amber-950/20 dark:text-amber-400"
                                                                                  title="Chỉnh sửa Lot"
                                                                              >
-                                                                                 <Edit size={14} />
+                                                                                 <Edit size={13} />
                                                                              </button>
                                                                              <button
                                                                                  type="button"
                                                                                  onClick={(e) => { e.stopPropagation(); handleDuplicateLot(lot) }}
-                                                                                 className="p-2 bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 rounded-xl transition-all shadow-sm active:scale-95 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/30"
+                                                                                 className="p-1.5 bg-blue-50 text-blue-600 border border-blue-200/60 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer dark:bg-blue-950/20 dark:text-blue-400"
                                                                                  title="Nhân bản Lot"
                                                                              >
-                                                                                 <Copy size={14} />
+                                                                                 <Copy size={13} />
                                                                              </button>
                                                                          </>
                                                                      )}
                                                                      <button
                                                                          type="button"
                                                                          onClick={(e) => { e.stopPropagation(); if (lot.id) toggleLotLock(lot.id, !!lot.is_locked) }}
-                                                                         className={`p-2 rounded-xl transition-all shadow-sm active:scale-95 ${lot.is_locked ? 'bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900/30' : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100 dark:bg-zinc-800 dark:text-stone-300 dark:border-zinc-700'}`}
+                                                                         className={`p-1.5 rounded-lg transition-colors cursor-pointer ${lot.is_locked ? 'bg-rose-50 text-rose-600 border border-rose-200/60 hover:bg-rose-100 dark:bg-rose-950/20 dark:text-rose-400' : 'bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100 dark:bg-zinc-800 dark:text-stone-300 dark:border-zinc-700'}`}
                                                                          title={lot.is_locked ? 'Mở khóa Lot' : 'Khóa Lot'}
                                                                      >
-                                                                          {lot.is_locked ? <Lock size={14} /> : <Unlock size={14} />}
+                                                                          {lot.is_locked ? <Lock size={13} /> : <Unlock size={13} />}
                                                                      </button>
                                                                      <button
                                                                          type="button"
                                                                          onClick={(e) => { e.stopPropagation(); window.open(`/print/production-lot?id=${lot.id}&type=label`, '_blank') }}
-                                                                         className="p-2 bg-orange-50 text-orange-600 border border-orange-100 hover:bg-orange-100 rounded-xl transition-all shadow-sm active:scale-95 dark:bg-orange-950/20 dark:text-orange-400 dark:border-orange-900/30"
+                                                                         className="p-1.5 bg-orange-50 text-orange-600 border border-orange-200/60 hover:bg-orange-100 rounded-lg transition-colors cursor-pointer dark:bg-orange-950/20 dark:text-orange-400"
                                                                          title="In tem nhãn QR"
                                                                      >
-                                                                         <QrCode size={14} />
+                                                                         <QrCode size={13} />
                                                                      </button>
                                                                      <button
                                                                          type="button"
                                                                          onClick={(e) => { e.stopPropagation(); window.open(`/print/production-lot?id=${lot.id}&type=sheet`, '_blank') }}
-                                                                         className="p-2 bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 rounded-xl transition-all shadow-sm active:scale-95 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/30"
+                                                                         className="p-1.5 bg-blue-50 text-blue-600 border border-blue-200/60 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer dark:bg-blue-950/20 dark:text-blue-400"
                                                                          title="In phiếu nhận hàng"
                                                                      >
-                                                                         <FileText size={14} />
+                                                                         <FileText size={13} />
                                                                      </button>
                                                                  </div>
                                                              </div>
@@ -1934,10 +1925,10 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                  {displayLots.map((lot, idx) => {
                                                      const product = products.find(p => p.id === lot.product_id);
                                                      return (
-                                                         <div key={idx} className="bg-white dark:bg-zinc-800/40 p-5 rounded-[32px] border border-stone-200 dark:border-zinc-800 shadow-sm relative animate-in slide-in-from-right-2 duration-200 flex flex-col gap-4">
+                                                         <div key={idx} className="bg-white dark:bg-zinc-800/40 p-3.5 rounded-xl border border-stone-200 dark:border-zinc-800 shadow-xs relative flex flex-col gap-3">
                                             {/* Row 1: Product Selection (Full Width) */}
                                             <div className="relative">
-                                                <label className="text-[10px] font-bold text-stone-400 uppercase mb-1.5 block px-1 tracking-widest">Sản phẩm sản xuất</label>
+                                                <label className="text-[11px] font-semibold text-stone-500 mb-1 block">Sản phẩm sản xuất</label>
                                                 <div className="relative">
                                                     <input
                                                         type="text"
@@ -1951,14 +1942,14 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                             setRowSearchTerms(p => ({ ...p, [idx]: e.target.value }))
                                                             setActiveRowIdx(idx)
                                                         }}
-                                                        className="w-full px-5 py-4 pl-12 rounded-2xl bg-stone-50 dark:bg-zinc-900 border border-stone-100 dark:border-zinc-800 font-black focus:ring-4 focus:ring-orange-100 outline-none transition-all text-sm text-stone-800 dark:text-white"
+                                                        className="w-full h-8 pl-8 pr-3 rounded-lg bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 font-semibold focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none transition-all text-xs text-stone-800 dark:text-white"
                                                     />
-                                                    <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-orange-500" />
+                                                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-orange-500" />
                                                 </div>
 
                                                 {/* Line Product Results */}
                                                 {activeRowIdx === idx && (
-                                                    <div className="absolute z-[120] top-full mt-2 w-full bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-2xl shadow-2xl max-h-[250px] overflow-y-auto">
+                                                    <div className="absolute z-[120] top-full mt-1 w-full bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-lg max-h-[220px] overflow-y-auto">
                                                         {products
                                                             .filter(p => p.name.toLowerCase().includes((rowSearchTerms[idx] || '').toLowerCase()) || (p.sku && p.sku.toLowerCase().includes((rowSearchTerms[idx] || '').toLowerCase())))
                                                             .map(p => (
@@ -1966,9 +1957,9 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                     key={p.id}
                                                                     type="button"
                                                                     onClick={() => selectProductForRow(idx, p)}
-                                                                    className="w-full text-left px-5 py-3 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors border-b border-stone-50 dark:border-zinc-800 last:border-0"
+                                                                    className="w-full text-left px-3 py-2 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors border-b border-stone-100 dark:border-zinc-800 last:border-0"
                                                                 >
-                                                                    <div className="font-bold text-sm text-stone-800 dark:text-gray-200">{p.name}</div>
+                                                                    <div className="font-semibold text-xs text-stone-800 dark:text-gray-200">{p.name}</div>
                                                                     <div className="text-[10px] font-mono text-stone-400">{p.sku || 'N/A'}</div>
                                                                 </button>
                                                             ))
@@ -1979,14 +1970,14 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                             </div>
 
                                             {/* Row 2: Lot Details & Numbers */}
-                                            <div className="grid grid-cols-12 gap-4 items-end bg-stone-50/50 dark:bg-zinc-900/30 p-4 rounded-2xl border border-stone-100 dark:border-zinc-800/50">
+                                            <div className="grid grid-cols-12 gap-3 items-end bg-stone-50/60 dark:bg-zinc-900/30 p-3 rounded-xl border border-stone-200/70 dark:border-zinc-800/60">
                                                 {/* Details Section: Lot Code & Conversion Rules */}
-                                                <div className="col-span-12 bg-white dark:bg-zinc-900/50 p-6 space-y-6 border border-stone-200 dark:border-zinc-800 rounded-2xl mt-1">
-                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                <div className="col-span-12 bg-white dark:bg-zinc-900/50 p-3.5 space-y-3 border border-stone-200 dark:border-zinc-800 rounded-xl">
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                                         {/* Lot Code Input */}
                                                         <div>
-                                                            <label className="block text-xs font-bold text-stone-500 mb-2 uppercase tracking-wider flex items-center gap-1.5">
-                                                                <Hash size={14} className="text-orange-500" />
+                                                            <label className="text-[11px] font-semibold text-stone-500 mb-1 flex items-center gap-1">
+                                                                <Hash size={12} className="text-orange-500" />
                                                                 Mã LOT Sản xuất
                                                             </label>
                                                             <input
@@ -1994,31 +1985,31 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                                 placeholder="L003CC260-TN..."
                                                                 value={lot.lot_code}
                                                                 onChange={e => updateLotRow(idx, 'lot_code', e.target.value.toUpperCase())}
-                                                                className="w-full px-4 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 font-black focus:ring-4 focus:ring-orange-100 outline-none transition-all text-sm uppercase text-stone-900 dark:text-white"
+                                                                className="w-full h-8 px-2.5 rounded-lg bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 font-semibold font-mono focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none text-xs uppercase text-stone-900 dark:text-white"
                                                             />
                                                         </div>
 
                                                         {/* Production Date Input */}
                                                         <div>
-                                                            <label className="block text-xs font-bold text-stone-500 mb-2 uppercase tracking-wider flex items-center gap-1.5">
-                                                                <Calendar size={14} className="text-orange-500" />
+                                                            <label className="text-[11px] font-semibold text-stone-500 mb-1 flex items-center gap-1">
+                                                                <Calendar size={12} className="text-orange-500" />
                                                                 Ngày sản xuất
                                                             </label>
                                                             <input
                                                                 type="date"
                                                                 value={lot.production_date || ''}
                                                                 onChange={e => updateLotRow(idx, 'production_date', e.target.value || null)}
-                                                                className="w-full px-4 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all text-sm text-stone-900 dark:text-white"
+                                                                className="w-full h-8 px-2.5 rounded-lg bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 font-medium focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none text-xs text-stone-900 dark:text-white"
                                                             />
                                                         </div>
 
                                                         {/* Base Unit Display */}
                                                         <div>
-                                                            <label className="block text-xs font-bold text-stone-500 mb-2 uppercase tracking-wider flex items-center gap-1.5">
-                                                                <Weight size={14} className="text-orange-500" />
+                                                            <label className="text-[11px] font-semibold text-stone-500 mb-1 flex items-center gap-1">
+                                                                <Weight size={12} className="text-orange-500" />
                                                                 Đơn vị cơ bản
                                                             </label>
-                                                            <div className="px-4 py-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl text-sm font-bold text-stone-500 dark:text-stone-400 italic">
+                                                            <div className="h-8 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-500 dark:text-stone-400 flex items-center">
                                                                 {lot.unit || 'Kg'} (Mặc định)
                                                             </div>
                                                         </div>
@@ -2212,81 +2203,76 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                                                     </div>
                                                 </div>
 
-                                                {/* Action Row for Item */}
-                                                <div className="col-span-12 lg:col-span-4 flex items-end justify-between px-2 pb-1 mt-2">
-                                                    <div className="flex items-center gap-4">
-                                                        {/* Status info or extra fields could go here */}
-                                                    </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => cloneLotRow(idx)}
-                                                            className="flex items-center gap-2 px-6 py-3 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-xl transition-all font-bold text-xs uppercase tracking-widest active:scale-95"
-                                                        >
-                                                            <Copy size={16} /> Nhân bản Lô
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => removeLotRow(idx)}
-                                                            className="flex items-center gap-2 px-6 py-3 text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-all font-bold text-xs uppercase tracking-widest active:scale-95"
-                                                        >
-                                                            <Trash2 size={16} /> Gỡ bỏ sản phẩm
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                                )
-                                            })}
-                                        </div>
-                                    );
-                                })()}
-                            </div>
-                            )}
-                        </div>
+                                                 {/* Action Row for Item */}
+                                                 <div className="col-span-12 lg:col-span-4 flex items-end justify-end gap-2 pb-0.5 mt-1">
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => cloneLotRow(idx)}
+                                                         className="flex items-center gap-1.5 px-3 py-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg transition-colors font-semibold text-xs cursor-pointer"
+                                                     >
+                                                         <Copy size={13} /> Nhân bản
+                                                     </button>
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => removeLotRow(idx)}
+                                                         className="flex items-center gap-1.5 px-3 py-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors font-semibold text-xs cursor-pointer"
+                                                     >
+                                                         <Trash2 size={13} /> Gỡ bỏ
+                                                     </button>
+                                                 </div>
+                                             </div>
+                                         </div>
+                                                 )
+                                             })}
+                                         </div>
+                                     );
+                                 })()}
+                             </div>
+                             )}
+                         </div>
 
-                        {/* Description */}
-                        {(!isLocked || mainTab === 'LOTS') && (
-                            <div className="space-y-2 px-2">
-                                 <label className="text-[10px] font-black uppercase tracking-widest text-stone-400">Ghi chú lệnh sản xuất</label>
-                                 {isLocked ? (
-                                    <div className="p-6 rounded-[24px] bg-white dark:bg-zinc-800/40 border border-stone-100 dark:border-zinc-800 text-stone-600 dark:text-gray-400 text-sm italic">
-                                        {description || 'Không có ghi chú.'}
-                                    </div>
-                                 ) : (
-                                    <textarea
-                                        value={description}
-                                        onChange={e => setDescription(e.target.value)}
-                                        rows={2}
-                                        className="w-full px-6 py-4 rounded-[24px] bg-white dark:bg-zinc-800/40 border border-stone-100 dark:border-zinc-800 focus:outline-none focus:ring-4 focus:ring-orange-100 outline-none transition-all font-medium text-stone-800 dark:text-gray-200"
-                                    />
-                                 )}
-                            </div>
-                        )}
-                    </form>
-                </div>
+                         {/* Description */}
+                         {(!isLocked || mainTab === 'LOTS') && (
+                             <div className="space-y-1">
+                                  <label className="text-[11px] font-semibold text-stone-500">Ghi chú lệnh sản xuất</label>
+                                  {isLocked ? (
+                                     <div className="px-3.5 py-2.5 rounded-xl bg-white dark:bg-zinc-800/40 border border-stone-200 dark:border-zinc-800 text-stone-600 dark:text-gray-400 text-xs italic">
+                                         {description || 'Không có ghi chú.'}
+                                     </div>
+                                  ) : (
+                                     <textarea
+                                         value={description}
+                                         onChange={e => setDescription(e.target.value)}
+                                         rows={2}
+                                         className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-800/40 border border-stone-200 dark:border-zinc-800 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 text-xs text-stone-800 dark:text-gray-200"
+                                     />
+                                  )}
+                             </div>
+                         )}
+                     </form>
+                 </div>
 
-                {/* Footer */}
-                <div className="px-8 py-6 border-t border-stone-100 dark:border-zinc-800 bg-white dark:bg-zinc-800 flex items-center justify-end gap-3 shrink-0 shadow-lg">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-6 py-3 rounded-2xl border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-gray-300 font-bold hover:bg-stone-50 dark:hover:bg-zinc-800 transition-colors"
-                    >
-                        {isLocked ? 'Đóng lại' : 'Hủy bỏ'}
-                    </button>
-                    {!isLocked && (
-                        <button
-                            form="prod-form"
-                            type="submit"
-                            disabled={isSaving || isFetchingLots}
-                            className="px-10 py-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-black uppercase tracking-widest shadow-xl shadow-orange-600/30 flex items-center gap-2 transition-all transform active:scale-95 disabled:opacity-70"
-                        >
-                            {(isSaving || isFetchingLots) ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-                            {isFetchingLots ? 'ĐANG TẢI DỮ LIỆU...' : (editItem ? 'LƯU THAY ĐỔI' : 'TẠO LỆNH SẢN XUẤT')}
-                        </button>
-                    )}
-                </div>
+                 {/* Compact Footer */}
+                 <div className="px-5 py-3 border-t border-stone-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-end gap-2 shrink-0">
+                     <button
+                         type="button"
+                         onClick={onClose}
+                         className="px-4 py-2 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-gray-300 text-xs font-semibold hover:bg-stone-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                     >
+                         {isLocked ? 'Đóng lại' : 'Hủy bỏ'}
+                     </button>
+                     {!isLocked && (
+                         <button
+                             form="prod-form"
+                             type="submit"
+                             disabled={isSaving || isFetchingLots}
+                             className="px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors disabled:opacity-60 cursor-pointer"
+                         >
+                             {(isSaving || isFetchingLots) ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                             {isFetchingLots ? 'Đang tải...' : (editItem ? 'Lưu thay đổi' : 'Tạo lệnh sản xuất')}
+                         </button>
+                     )}
+                 </div>
             </div>
 
             {/* Modal chỉnh sửa Lot con */}

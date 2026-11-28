@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Factory, Search } from 'lucide-react'
+import { Factory, Search, Plus } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
-import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
+import Protected from '@/components/auth/Protected'
 import { useListingData } from '@/hooks/useListingData'
 import ProductionTable from './_components/ProductionTable'
 import ProductionModal from './_components/ProductionModal'
@@ -153,90 +153,107 @@ export default function ProductionPage() {
     }
 
     return (
-        <div className="space-y-6">
-            <PageHeader
-                title="Sản xuất"
-                subtitle="Production Management"
-                description="Quản lý thông tin và đợt sản xuất dùng chung cho hệ thống"
-                icon={Factory}
-                actionText="Tạo lệnh mới"
-                onActionClick={handleAdd}
-                permission="production.create"
-            />
+        <div className="space-y-3.5">
+            {/* COMPACT HEADER */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-950/40 border border-orange-200/70 dark:border-orange-900/50 flex items-center justify-center text-orange-600 dark:text-orange-400 shrink-0">
+                        <Factory size={16} />
+                    </div>
+                    <div>
+                        <h1 className="text-base font-bold text-stone-800 dark:text-zinc-100 leading-tight">
+                            Sản xuất
+                        </h1>
+                        <p className="text-[11px] text-stone-500 dark:text-zinc-400">
+                            Quản lý lệnh và đợt sản xuất dùng chung cho hệ thống
+                        </p>
+                    </div>
+                </div>
 
-            {/* FILTERS */}
-            <div className="bg-white dark:bg-zinc-900 rounded-[24px] p-5 border border-stone-200 dark:border-zinc-800 flex flex-col md:flex-row flex-wrap gap-4 md:items-center shadow-sm">
-                <div className="relative flex-1 w-full md:min-w-[300px]">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
+                <Protected permission="production.create">
+                    <button
+                        onClick={handleAdd}
+                        className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
+                    >
+                        <Plus size={14} strokeWidth={2.5} />
+                        Tạo lệnh mới
+                    </button>
+                </Protected>
+            </div>
+
+            {/* COMPACT FILTERS */}
+            <div className="bg-white dark:bg-zinc-900 rounded-xl p-2.5 border border-stone-200 dark:border-zinc-800 flex flex-col md:flex-row flex-wrap gap-2.5 md:items-center shadow-sm">
+                <div className="relative flex-1 w-full md:min-w-[240px]">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
                     <input
                         type="text"
-                        placeholder="Tìm theo mã, tên, mô tả..."
+                        placeholder="Tìm theo mã lệnh, tên, mô tả..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-stone-800 dark:text-gray-200 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all font-medium"
+                        className="w-full h-8 pl-8 pr-3 rounded-lg bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs text-stone-800 dark:text-gray-200 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 dark:focus:ring-orange-900/30 transition-all"
                     />
                 </div>
-                
-                <div className="flex gap-4 items-center flex-wrap">
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase text-stone-400 tracking-widest hidden md:block">Lệnh:</span>
-                        <div className="flex bg-stone-100 dark:bg-zinc-800 p-1.5 rounded-2xl">
+
+                <div className="flex gap-2.5 items-center flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-semibold text-stone-400 hidden md:block">Lệnh:</span>
+                        <div className="flex bg-stone-100 dark:bg-zinc-800 p-0.5 rounded-lg border border-stone-200/60 dark:border-zinc-700/60">
                             <button
                                 onClick={() => setStatusFilter('ALL')}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${statusFilter === 'ALL' ? 'bg-white dark:bg-zinc-700 text-stone-800 dark:text-zinc-100 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${statusFilter === 'ALL' ? 'bg-white dark:bg-zinc-700 text-stone-800 dark:text-zinc-100 shadow-xs' : 'text-stone-500 hover:text-stone-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
                             >
                                 Tất cả
                             </button>
                             <button
                                 onClick={() => setStatusFilter('IN_PROGRESS')}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${statusFilter === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-blue-500'}`}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${statusFilter === 'IN_PROGRESS' ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 shadow-xs' : 'text-stone-500 hover:text-blue-600 dark:text-zinc-400'}`}
                             >
                                 Đang chạy
                             </button>
                             <button
                                 onClick={() => setStatusFilter('DONE')}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${statusFilter === 'DONE' ? 'bg-emerald-50 text-emerald-600 shadow-sm' : 'text-stone-500 hover:text-emerald-500'}`}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${statusFilter === 'DONE' ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shadow-xs' : 'text-stone-500 hover:text-emerald-600 dark:text-zinc-400'}`}
                             >
                                 Hoàn thành
                             </button>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase text-stone-400 tracking-widest hidden md:block">Mã Lot:</span>
-                        <div className="flex bg-stone-100 dark:bg-zinc-800 p-1.5 rounded-2xl">
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-semibold text-stone-400 hidden md:block">Lot:</span>
+                        <div className="flex bg-stone-100 dark:bg-zinc-800 p-0.5 rounded-lg border border-stone-200/60 dark:border-zinc-700/60">
                             <button
                                 onClick={() => setLotFilter('ALL')}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${lotFilter === 'ALL' ? 'bg-white dark:bg-zinc-700 text-stone-800 dark:text-zinc-100 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${lotFilter === 'ALL' ? 'bg-white dark:bg-zinc-700 text-stone-800 dark:text-zinc-100 shadow-xs' : 'text-stone-500 hover:text-stone-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
                             >
                                 Tất cả
                             </button>
                             <button
                                 onClick={() => setLotFilter('ACTIVE')}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${lotFilter === 'ACTIVE' ? 'bg-orange-50 text-orange-600 shadow-sm' : 'text-stone-500 hover:text-orange-500'}`}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${lotFilter === 'ACTIVE' ? 'bg-orange-50 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 shadow-xs' : 'text-stone-500 hover:text-orange-600 dark:text-zinc-400'}`}
                             >
                                 Đang chạy
                             </button>
                             <button
                                 onClick={() => setLotFilter('LOCKED')}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${lotFilter === 'LOCKED' ? 'bg-rose-50 text-rose-600 shadow-sm' : 'text-stone-500 hover:text-rose-500'}`}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${lotFilter === 'LOCKED' ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 shadow-xs' : 'text-stone-500 hover:text-rose-600 dark:text-zinc-400'}`}
                             >
                                 Đã khóa
                             </button>
                         </div>
                     </div>
-                </div>
 
-                <div className="flex items-center gap-2 px-4 py-2 bg-stone-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest text-stone-400">
-                    {displayProductions.length} / {allData.length} Lệnh
+                    <div className="flex items-center px-2.5 py-1 bg-stone-100 dark:bg-zinc-800 rounded-lg text-[11px] font-semibold text-stone-500 dark:text-zinc-400 whitespace-nowrap">
+                        {displayProductions.length} / {allData.length} lệnh
+                    </div>
                 </div>
             </div>
 
             {/* CONTENT */}
             {loading ? (
-                <div className="bg-white dark:bg-zinc-900 rounded-[32px] border border-stone-200 dark:border-zinc-800 p-20 text-center shadow-sm">
-                    <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-stone-500 font-bold uppercase tracking-widest text-xs">Đang tải dữ liệu...</p>
+                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-stone-200 dark:border-zinc-800 p-10 text-center shadow-sm">
+                    <div className="w-7 h-7 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-2.5" />
+                    <p className="text-stone-400 font-medium text-xs">Đang tải dữ liệu...</p>
                 </div>
             ) : displayProductions.length === 0 ? (
                 <EmptyState
@@ -245,20 +262,20 @@ export default function ProductionPage() {
                     description={searchTerm || statusFilter !== 'ALL' ? `Không tìm thấy kết quả nào phù hợp.` : "Hãy bắt đầu bằng cách tạo lệnh sản xuất đầu tiên để gắn vào công việc."}
                 />
             ) : (
-                <ProductionTable 
-                    data={displayProductions} 
-                    onEdit={handleEdit} 
-                    onDelete={handleDelete} 
+                <ProductionTable
+                    data={displayProductions}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
                     onStatusToggle={handleStatusToggle}
                     onLotLockToggle={handleLotLockToggle}
                     onView={handleView}
                 />
             )}
 
-            <ProductionModal 
-                isOpen={isModalOpen} 
-                onClose={() => setIsModalOpen(false)} 
-                onSuccess={enhancedRefresh} 
+            <ProductionModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSuccess={enhancedRefresh}
                 editItem={editingItem}
                 readOnly={isReadOnly}
             />
