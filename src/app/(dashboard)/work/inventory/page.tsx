@@ -145,7 +145,24 @@ export default function InternalInventoryPage() {
 
     const [loading, setLoading] = useState(true)
     const [sessions, setSessions] = useState<Session[]>([])
+    const [sessionStatusFilter, setSessionStatusFilter] = useState<'all' | 'active' | 'completed'>('all')
     const [selectedSession, setSelectedSession] = useState<Session | null>(null)
+
+    const sessionCounts = useMemo(() => {
+        let active = 0
+        let completed = 0
+        sessions.forEach(s => {
+            if (s.status === 'active') active++
+            else completed++
+        })
+        return { all: sessions.length, active, completed }
+    }, [sessions])
+
+    const filteredSessions = useMemo(() => {
+        if (sessionStatusFilter === 'active') return sessions.filter(s => s.status === 'active')
+        if (sessionStatusFilter === 'completed') return sessions.filter(s => s.status !== 'active')
+        return sessions
+    }, [sessions, sessionStatusFilter])
 
     // Detail view state
     const [zones, setZones] = useState<Zone[]>([])
@@ -481,6 +498,7 @@ export default function InternalInventoryPage() {
             setIsCreateOpen(false)
             setNewName('')
             setNewSelectionPath([])
+            if (sessionStatusFilter === 'completed') setSessionStatusFilter('active')
             fetchSessions()
         } catch (e: any) {
             showToast('Lỗi tạo phiếu: ' + e.message, 'error')
@@ -1954,81 +1972,130 @@ export default function InternalInventoryPage() {
                         <p className="text-stone-500 font-bold">Chưa có phiếu kiểm kê nội bộ nào</p>
                     </div>
                 ) : (
-                    <div className="grid gap-3">
-                        {sessions.map(session => {
-                            const s = session.stats || { total: 0, checked: 0, discrepancy: 0, modified: 0, resolved: 0 }
-                            const pct = s.total > 0 ? Math.round((s.checked / s.total) * 100) : 0
-                            return (
-                                <div
-                                    key={session.id}
-                                    onClick={() => loadDetail(session)}
-                                    className={`rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer p-4 flex flex-col md:flex-row md:items-center gap-4 group ${s.discrepancy > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-stone-200'}`}
+                    <div className="space-y-4">
+                        <div className="flex flex-wrap items-center gap-2 border-b border-stone-200 pb-3">
+                            {(
+                                [
+                                    { key: 'all', label: 'Tất cả', count: sessionCounts.all, activeCls: 'bg-purple-600 text-white border-purple-600 shadow-sm', badgeActiveCls: 'bg-white/20 text-white', badgeIdleCls: 'bg-stone-100 text-stone-500' },
+                                    { key: 'active', label: 'Đang làm', count: sessionCounts.active, activeCls: 'bg-blue-600 text-white border-blue-600 shadow-sm', badgeActiveCls: 'bg-white/20 text-white', badgeIdleCls: 'bg-blue-50 text-blue-600' },
+                                    { key: 'completed', label: 'Đã hoàn thành', count: sessionCounts.completed, activeCls: 'bg-stone-900 text-white border-stone-900 shadow-sm', badgeActiveCls: 'bg-white/20 text-white', badgeIdleCls: 'bg-stone-100 text-stone-600' },
+                                ] as const
+                            ).map(tab => {
+                                const isActive = sessionStatusFilter === tab.key
+                                return (
+                                    <button
+                                        key={tab.key}
+                                        type="button"
+                                        onClick={() => setSessionStatusFilter(tab.key)}
+                                        className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-bold border transition-all ${
+                                            isActive
+                                                ? tab.activeCls
+                                                : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50 hover:border-stone-300'
+                                        }`}
+                                    >
+                                        <span>{tab.label}</span>
+                                        <span className={`px-1.5 py-0.5 rounded-md text-xs font-black tabular-nums ${isActive ? tab.badgeActiveCls : tab.badgeIdleCls}`}>
+                                            {tab.count}
+                                        </span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+
+                        {filteredSessions.length === 0 ? (
+                            <div className="text-center py-16 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
+                                <ClipboardCheck size={42} className="mx-auto text-stone-300 mb-3" />
+                                <p className="text-stone-500 font-bold">
+                                    {sessionStatusFilter === 'active'
+                                        ? 'Hiện không có phiếu kiểm kê nào đang làm'
+                                        : 'Chưa có phiếu kiểm kê nào đã hoàn thành'}
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => setSessionStatusFilter('all')}
+                                    className="mt-3 px-4 py-2 rounded-xl bg-white border border-stone-200 text-xs font-bold text-stone-600 hover:bg-stone-100 transition-all"
                                 >
-                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${s.discrepancy > 0 ? 'bg-red-500 text-white shadow-lg shadow-red-100' : 'bg-purple-50 text-purple-600'}`}>
-                                        <ClipboardCheck size={24} />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                                            <h3 className="font-bold text-stone-800">{session.name}</h3>
-                                            {session.status === 'active' ? (
-                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-blue-50 text-blue-600 border border-blue-100 italic tracking-wider">Đang kiểm</span>
-                                            ) : (
-                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-stone-900 text-white flex items-center gap-1 shadow-sm border border-stone-800 tracking-wider">
-                                                    <Lock size={10} className="text-amber-400" />
-                                                    Hoàn thành
-                                                </span>
-                                            )}
-                                            {s.discrepancy > 0 && (
-                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-red-500 text-white animate-pulse">Có sai lệch</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-400 font-medium">
-                                            <span className="font-bold text-stone-600">Khu vực: {session.warehouse_path}</span>
-                                            <span>•</span>
-                                            <span>{format(new Date(session.created_at), 'dd/MM/yyyy')}</span>
-                                            <span>•</span>
-                                            <span className="flex items-center gap-1.5">
-                                                <User size={12} className="text-stone-400" />
-                                                <span className="font-bold text-stone-800">{session.creator_name}</span>
-                                                {session.participant_names && session.participant_names.length > 0 && (
-                                                    <span className="flex items-center gap-1.5">
-                                                        <span className="text-[10px] font-normal italic text-stone-400">cùng với</span>
-                                                        <span className="font-bold text-stone-600">
-                                                            {session.participant_names.join(', ')}
+                                    Xem tất cả ({sessionCounts.all})
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="grid gap-3">
+                                {filteredSessions.map(session => {
+                                    const s = session.stats || { total: 0, checked: 0, discrepancy: 0, modified: 0, resolved: 0 }
+                                    const pct = s.total > 0 ? Math.round((s.checked / s.total) * 100) : 0
+                                    return (
+                                        <div
+                                            key={session.id}
+                                            onClick={() => loadDetail(session)}
+                                            className={`rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer p-4 flex flex-col md:flex-row md:items-center gap-4 group ${s.discrepancy > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-stone-200'}`}
+                                        >
+                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${s.discrepancy > 0 ? 'bg-red-500 text-white shadow-lg shadow-red-100' : 'bg-purple-50 text-purple-600'}`}>
+                                                <ClipboardCheck size={24} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                    <h3 className="font-bold text-stone-800">{session.name}</h3>
+                                                    {session.status === 'active' ? (
+                                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-blue-50 text-blue-600 border border-blue-100 italic tracking-wider">Đang kiểm</span>
+                                                    ) : (
+                                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-stone-900 text-white flex items-center gap-1 shadow-sm border border-stone-800 tracking-wider">
+                                                            <Lock size={10} className="text-amber-400" />
+                                                            Hoàn thành
                                                         </span>
+                                                    )}
+                                                    {s.discrepancy > 0 && (
+                                                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-red-500 text-white animate-pulse">Có sai lệch</span>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-400 font-medium">
+                                                    <span className="font-bold text-stone-600">Khu vực: {session.warehouse_path}</span>
+                                                    <span>•</span>
+                                                    <span>{format(new Date(session.created_at), 'dd/MM/yyyy')}</span>
+                                                    <span>•</span>
+                                                    <span className="flex items-center gap-1.5">
+                                                        <User size={12} className="text-stone-400" />
+                                                        <span className="font-bold text-stone-800">{session.creator_name}</span>
+                                                        {session.participant_names && session.participant_names.length > 0 && (
+                                                            <span className="flex items-center gap-1.5">
+                                                                <span className="text-[10px] font-normal italic text-stone-400">cùng với</span>
+                                                                <span className="font-bold text-stone-600">
+                                                                    {session.participant_names.join(', ')}
+                                                                </span>
+                                                            </span>
+                                                        )}
                                                     </span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4 shrink-0">
+                                                {s.modified > 0 && (
+                                                    <div className="text-center px-3 border-r border-blue-100">
+                                                        <div className="text-lg font-black text-blue-600">{s.modified}</div>
+                                                        <div className="text-[8px] font-bold text-blue-400 uppercase tracking-widest leading-none">Đã sửa</div>
+                                                    </div>
                                                 )}
-                                            </span>
+                                                {s.resolved > 0 && (
+                                                    <div className="text-center px-3 border-r border-emerald-100">
+                                                        <div className="text-lg font-black text-emerald-600">{s.resolved}</div>
+                                                        <div className="text-[8px] font-bold text-emerald-400 uppercase tracking-widest leading-none">Đã xử lý</div>
+                                                    </div>
+                                                )}
+                                                {s.discrepancy > 0 && (
+                                                    <div className="text-center px-3 border-r border-red-100">
+                                                        <div className="text-lg font-black text-red-600">-{s.discrepancy}</div>
+                                                        <div className="text-[8px] font-bold text-red-400 uppercase tracking-widest leading-none">Sai lệch</div>
+                                                    </div>
+                                                )}
+                                                <div className="text-center px-3 border-r border-stone-100">
+                                                    <div className="text-lg font-black text-stone-800">{s.checked}/{s.total}</div>
+                                                    <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest leading-none">Tiến độ</div>
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(session.id) }} className="p-2 text-stone-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={18} /></button>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="flex items-center gap-4 shrink-0">
-                                        {s.modified > 0 && (
-                                            <div className="text-center px-3 border-r border-blue-100">
-                                                <div className="text-lg font-black text-blue-600">{s.modified}</div>
-                                                <div className="text-[8px] font-bold text-blue-400 uppercase tracking-widest leading-none">Đã sửa</div>
-                                            </div>
-                                        )}
-                                        {s.resolved > 0 && (
-                                            <div className="text-center px-3 border-r border-emerald-100">
-                                                <div className="text-lg font-black text-emerald-600">{s.resolved}</div>
-                                                <div className="text-[8px] font-bold text-emerald-400 uppercase tracking-widest leading-none">Đã xử lý</div>
-                                            </div>
-                                        )}
-                                        {s.discrepancy > 0 && (
-                                            <div className="text-center px-3 border-r border-red-100">
-                                                <div className="text-lg font-black text-red-600">-{s.discrepancy}</div>
-                                                <div className="text-[8px] font-bold text-red-400 uppercase tracking-widest leading-none">Sai lệch</div>
-                                            </div>
-                                        )}
-                                        <div className="text-center px-3 border-r border-stone-100">
-                                            <div className="text-lg font-black text-stone-800">{s.checked}/{s.total}</div>
-                                            <div className="text-[10px] text-stone-400 font-bold uppercase tracking-widest leading-none">Tiến độ</div>
-                                        </div>
-                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(session.id) }} className="p-2 text-stone-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={18} /></button>
-                                    </div>
-                                </div>
-                            )
-                        })}
+                                    )
+                                })}
+                            </div>
+                        )}
                     </div>
                 )
             )}
