@@ -16,68 +16,70 @@ import { useSystem } from '@/contexts/SystemContext'
 
 function GoodsRecordingBlock() {
     return (
-        <table className="goods-block-table w-full h-full border-collapse table-fixed">
-            <colgroup>
-                <col style={{ width: '16%' }} />
-                <col style={{ width: '12%' }} />
-                <col style={{ width: '24%' }} />
-                <col style={{ width: '24%' }} />
-                <col style={{ width: '24%' }} />
-            </colgroup>
-            <tbody>
-                {/* Hàng 1: TÊN HÀNG */}
-                <tr style={{ height: '22%' }}>
-                    <td className="goods-cell text-center font-bold whitespace-nowrap">
-                        TÊN HÀNG
-                    </td>
-                    <td colSpan={4} className="goods-cell" />
-                </tr>
+        <div className="goods-block-frame w-full h-full box-border">
+            <table className="goods-block-table w-full h-full border-collapse table-fixed">
+                <colgroup>
+                    <col style={{ width: '17%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '23.66%' }} />
+                    <col style={{ width: '23.67%' }} />
+                    <col style={{ width: '23.67%' }} />
+                </colgroup>
+                <tbody>
+                    {/* Hàng 1: TÊN HÀNG */}
+                    <tr style={{ height: '22%' }}>
+                        <td className="goods-cell text-center font-bold whitespace-nowrap">
+                            TÊN HÀNG
+                        </td>
+                        <td colSpan={4} className="goods-cell" />
+                    </tr>
 
-                {/* Hàng 2: TẦNG | STT VỊ TRÍ | KHO : | DÃY : | Ô : */}
-                <tr style={{ height: '15%' }}>
-                    <td rowSpan={2} className="goods-cell text-center font-bold">
-                        TẦNG
-                    </td>
-                    <td rowSpan={2} className="goods-cell text-center font-bold leading-none">
-                        <div>STT</div>
-                        <div className="mt-0.5">VỊ TRÍ</div>
-                    </td>
-                    <td className="goods-cell text-left font-bold pl-1">
-                        KHO :
-                    </td>
-                    <td className="goods-cell text-left font-bold pl-1">
-                        DÃY :
-                    </td>
-                    <td className="goods-cell text-left font-bold pl-1">
-                        Ô :
-                    </td>
-                </tr>
+                    {/* Hàng 2: TẦNG | STT VỊ TRÍ | KHO : | DÃY : | Ô : */}
+                    <tr style={{ height: '15%' }}>
+                        <td rowSpan={2} className="goods-cell text-center font-bold">
+                            TẦNG
+                        </td>
+                        <td rowSpan={2} className="goods-cell text-center font-bold leading-none">
+                            <div>STT</div>
+                            <div className="mt-0.5">VỊ TRÍ</div>
+                        </td>
+                        <td className="goods-cell text-left font-bold pl-1">
+                            KHO :
+                        </td>
+                        <td className="goods-cell text-left font-bold pl-1">
+                            DÃY :
+                        </td>
+                        <td className="goods-cell text-left font-bold pl-1">
+                            Ô :
+                        </td>
+                    </tr>
 
-                {/* Hàng 3: A | B | C */}
-                <tr style={{ height: '13%' }}>
-                    <td className="goods-cell text-center font-bold">A</td>
-                    <td className="goods-cell text-center font-bold">B</td>
-                    <td className="goods-cell text-center font-bold">C</td>
-                </tr>
+                    {/* Hàng 3: A | B | C */}
+                    <tr style={{ height: '13%' }}>
+                        <td className="goods-cell text-center font-bold">A</td>
+                        <td className="goods-cell text-center font-bold">B</td>
+                        <td className="goods-cell text-center font-bold">C</td>
+                    </tr>
 
-                {/* Hàng 4: Tầng 2 */}
-                <tr style={{ height: '25%' }}>
-                    <td rowSpan={2} className="goods-cell" />
-                    <td className="goods-cell text-center font-bold">2</td>
-                    <td className="goods-cell" />
-                    <td className="goods-cell" />
-                    <td className="goods-cell" />
-                </tr>
+                    {/* Hàng 4: Tầng 2 */}
+                    <tr style={{ height: '25%' }}>
+                        <td rowSpan={2} className="goods-cell" />
+                        <td className="goods-cell text-center font-bold">2</td>
+                        <td className="goods-cell" />
+                        <td className="goods-cell" />
+                        <td className="goods-cell" />
+                    </tr>
 
-                {/* Hàng 5: Tầng 1 */}
-                <tr style={{ height: '25%' }}>
-                    <td className="goods-cell text-center font-bold">1</td>
-                    <td className="goods-cell" />
-                    <td className="goods-cell" />
-                    <td className="goods-cell" />
-                </tr>
-            </tbody>
-        </table>
+                    {/* Hàng 5: Tầng 1 */}
+                    <tr style={{ height: '25%' }}>
+                        <td className="goods-cell text-center font-bold">1</td>
+                        <td className="goods-cell" />
+                        <td className="goods-cell" />
+                        <td className="goods-cell" />
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     )
 }
 
@@ -96,7 +98,8 @@ export default function GoodsRecordingMapPrintPage() {
     const [sheetCount, setSheetCount] = useState(1) // Số tờ giấy A4
     const [rowCount, setRowCount] = useState(7) // Mặc định 7 hàng / mặt (14 ô / mặt)
     const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait') // Mặc định A4 Dọc để chứa >= 7 hàng tối ưu
-    const [topMarginMm, setTopMarginMm] = useState(8) // Chỉ căn lề trên (trái/phải/dưới = 0)
+    const [topMarginMm, setTopMarginMm] = useState(8) // Lề trên
+    const [sideMarginMm, setSideMarginMm] = useState(5) // Lề an toàn trái/phải cho máy in (tránh cắt chữ & mất viền phải)
 
     const isModuleEnabled = hasModule('print_goods_recording_map')
 
@@ -124,6 +127,7 @@ export default function GoodsRecordingMapPrintPage() {
         setRowCount(7)
         setOrientation('portrait')
         setTopMarginMm(8)
+        setSideMarginMm(5)
     }
 
     const handlePrint = () => {
@@ -259,10 +263,10 @@ export default function GoodsRecordingMapPrintPage() {
                             />
                         </div>
 
-                        {/* Căn lề trên */}
+                        {/* Căn lề trên & lề trái/phải an toàn */}
                         <div
                             className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs"
-                            title="Chỉ căn lề trên; lề trái, phải, dưới đều bằng 0mm"
+                            title="Lề trên và lề an toàn trái/phải để máy in không cắt mất chữ và viền"
                         >
                             <span className="text-stone-500 font-medium">Lề trên:</span>
                             <input
@@ -271,7 +275,16 @@ export default function GoodsRecordingMapPrintPage() {
                                 max={30}
                                 value={topMarginMm}
                                 onChange={(e) => setTopMarginMm(Math.max(0, Math.min(30, Number(e.target.value) || 0)))}
-                                className="w-11 px-1 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
+                                className="w-10 px-1 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
+                            />
+                            <span className="text-stone-500 font-medium ml-1">Trái/Phải:</span>
+                            <input
+                                type="number"
+                                min={0}
+                                max={20}
+                                value={sideMarginMm}
+                                onChange={(e) => setSideMarginMm(Math.max(0, Math.min(20, Number(e.target.value) || 0)))}
+                                className="w-10 px-1 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
                             />
                             <span className="text-stone-500">mm</span>
                         </div>
@@ -404,9 +417,9 @@ export default function GoodsRecordingMapPrintPage() {
                                 width: `${pageWidthMm}mm`,
                                 height: `${pageHeightMm}mm`,
                                 paddingTop: `${topMarginMm}mm`,
-                                paddingLeft: 0,
-                                paddingRight: 0,
-                                paddingBottom: 0
+                                paddingLeft: `${sideMarginMm}mm`,
+                                paddingRight: `${sideMarginMm}mm`,
+                                paddingBottom: '3mm'
                             }}
                         >
                             {/* Tiêu đề NGÀY ... THÁNG ... NĂM ... */}
@@ -473,8 +486,13 @@ export default function GoodsRecordingMapPrintPage() {
                     column-gap: 1.8mm;
                     row-gap: 1.6mm;
                 }
+                .goods-block-frame {
+                    border: 1.5px solid #000;
+                    box-sizing: border-box;
+                }
                 .goods-block-table {
-                    border: 1.6px solid #000;
+                    border-collapse: collapse;
+                    border-style: hidden;
                 }
                 .goods-cell {
                     border: 1px solid #000;
@@ -524,9 +542,9 @@ export default function GoodsRecordingMapPrintPage() {
                         height: ${pageHeightMm}mm !important;
                         margin: 0 !important;
                         padding-top: ${topMarginMm}mm !important;
-                        padding-left: 0 !important;
-                        padding-right: 0 !important;
-                        padding-bottom: 0 !important;
+                        padding-left: ${sideMarginMm}mm !important;
+                        padding-right: ${sideMarginMm}mm !important;
+                        padding-bottom: 3mm !important;
                         box-sizing: border-box !important;
                         overflow: hidden !important;
                         page-break-inside: avoid !important;
