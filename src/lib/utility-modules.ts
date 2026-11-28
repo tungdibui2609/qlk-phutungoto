@@ -206,6 +206,15 @@ export const UTILITY_MODULES: UtilityModule[] = [
         category: 'specialized',
         is_basic: true,
         default_enabled: false
+    },
+    {
+        id: 'consignment_manager',
+        name: 'Quản lý Hàng hóa Ký gửi',
+        description: 'Quản lý hàng hóa của kho mang đi gửi ở kho bên ngoài: nhập, xuất, tồn kho ký gửi theo từng kho gửi và chuyển phiếu 2 chiều với Kế toán gốc.',
+        icon: Building2,
+        category: 'specialized',
+        is_basic: true,
+        default_enabled: false
     }
 ]
 

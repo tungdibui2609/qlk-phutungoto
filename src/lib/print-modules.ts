@@ -40,7 +40,7 @@ export const PRINT_MODULES: PrintModule[] = [
     {
         id: 'print_goods_recording_map',
         name: 'In sơ đồ ghi hàng',
-        description: 'In biểu mẫu sơ đồ ghi hàng khổ A4 (2 mặt, 6 ô/mặt) phục vụ ghi nhận vị trí kho, dãy, ô và tầng.',
+        description: 'In biểu mẫu sơ đồ ghi hàng khổ A4 (2 mặt, mặc định 7 hàng × 2 cột = 14 ô/mặt) phục vụ ghi nhận vị trí kho, dãy, ô và tầng.',
         icon: LayoutGrid,
         is_basic: true
     },

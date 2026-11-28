@@ -9,7 +9,8 @@ import {
     Copy,
     Info,
     RotateCcw,
-    Lock
+    Lock,
+    Rows3
 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 
@@ -17,15 +18,15 @@ function GoodsRecordingBlock() {
     return (
         <table className="goods-block-table w-full h-full border-collapse table-fixed">
             <colgroup>
-                <col style={{ width: '13%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '25.33%' }} />
-                <col style={{ width: '25.33%' }} />
-                <col style={{ width: '25.34%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '24%' }} />
+                <col style={{ width: '24%' }} />
+                <col style={{ width: '24%' }} />
             </colgroup>
             <tbody>
                 {/* Hàng 1: TÊN HÀNG */}
-                <tr style={{ height: '24%' }}>
+                <tr style={{ height: '22%' }}>
                     <td className="goods-cell text-center font-bold whitespace-nowrap">
                         TÊN HÀNG
                     </td>
@@ -33,27 +34,27 @@ function GoodsRecordingBlock() {
                 </tr>
 
                 {/* Hàng 2: TẦNG | STT VỊ TRÍ | KHO : | DÃY : | Ô : */}
-                <tr style={{ height: '14%' }}>
+                <tr style={{ height: '15%' }}>
                     <td rowSpan={2} className="goods-cell text-center font-bold">
                         TẦNG
                     </td>
-                    <td rowSpan={2} className="goods-cell text-center font-bold leading-tight">
+                    <td rowSpan={2} className="goods-cell text-center font-bold leading-none">
                         <div>STT</div>
-                        <div>VỊ TRÍ</div>
+                        <div className="mt-0.5">VỊ TRÍ</div>
                     </td>
-                    <td className="goods-cell text-left font-bold pl-1.5">
+                    <td className="goods-cell text-left font-bold pl-1">
                         KHO :
                     </td>
-                    <td className="goods-cell text-left font-bold pl-1.5">
+                    <td className="goods-cell text-left font-bold pl-1">
                         DÃY :
                     </td>
-                    <td className="goods-cell text-left font-bold pl-1.5">
+                    <td className="goods-cell text-left font-bold pl-1">
                         Ô :
                     </td>
                 </tr>
 
                 {/* Hàng 3: A | B | C */}
-                <tr style={{ height: '12%' }}>
+                <tr style={{ height: '13%' }}>
                     <td className="goods-cell text-center font-bold">A</td>
                     <td className="goods-cell text-center font-bold">B</td>
                     <td className="goods-cell text-center font-bold">C</td>
@@ -90,9 +91,11 @@ export default function GoodsRecordingMapPrintPage() {
     const [dayText, setDayText] = useState('')
     const [monthText, setMonthText] = useState('')
     const [yearText, setYearText] = useState(defaultYear)
+    const [performerName, setPerformerName] = useState('')
     const [duplex, setDuplex] = useState(true) // Mặc định in 2 mặt khổ A4
     const [sheetCount, setSheetCount] = useState(1) // Số tờ giấy A4
-    const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape')
+    const [rowCount, setRowCount] = useState(7) // Mặc định 7 hàng / mặt (14 ô / mặt)
+    const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait') // Mặc định A4 Dọc để chứa >= 7 hàng tối ưu
     const [topMarginMm, setTopMarginMm] = useState(8) // Chỉ căn lề trên (trái/phải/dưới = 0)
 
     const isModuleEnabled = hasModule('print_goods_recording_map')
@@ -109,13 +112,17 @@ export default function GoodsRecordingMapPrintPage() {
         }))
     }, [sheetCount, duplex])
 
+    const safeRowCount = Math.max(3, Math.min(10, Number(rowCount) || 7))
+
     const handleReset = () => {
         setDayText('')
         setMonthText('')
         setYearText(defaultYear)
+        setPerformerName('')
         setDuplex(true)
         setSheetCount(1)
-        setOrientation('landscape')
+        setRowCount(7)
+        setOrientation('portrait')
         setTopMarginMm(8)
     }
 
@@ -153,6 +160,16 @@ export default function GoodsRecordingMapPrintPage() {
 
     const pageWidthMm = orientation === 'landscape' ? 297 : 210
     const pageHeightMm = orientation === 'landscape' ? 210 : 297
+    const cellFontSizePx =
+        orientation === 'portrait'
+            ? safeRowCount >= 8
+                ? 8
+                : safeRowCount >= 7
+                    ? 8.5
+                    : 9.5
+            : safeRowCount >= 7
+                ? 8
+                : 11
 
     return (
         <div className="min-h-screen bg-stone-100 print:bg-white print:min-h-0">
@@ -177,14 +194,14 @@ export default function GoodsRecordingMapPrintPage() {
                                     In sơ đồ ghi hàng
                                 </h1>
                                 <p className="text-xs text-stone-500">
-                                    Khổ A4 • {duplex ? 'In 2 mặt' : 'In 1 mặt'} • 6 ô/mặt • Chỉ căn lề trên ({topMarginMm}mm)
+                                    A4 {orientation === 'portrait' ? 'Dọc' : 'Ngang'} • {duplex ? 'In 2 mặt' : 'In 1 mặt'} • {safeRowCount} hàng ({safeRowCount * 2} ô/mặt) • Lề trên {topMarginMm}mm
                                 </p>
                             </div>
                         </div>
                     </div>
 
                     {/* Các tuỳ chọn nhanh */}
-                    <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
                         {/* Ngày / Tháng / Năm */}
                         <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs">
                             <span className="text-stone-500 font-medium">Ngày:</span>
@@ -193,7 +210,7 @@ export default function GoodsRecordingMapPrintPage() {
                                 value={dayText}
                                 onChange={(e) => setDayText(e.target.value)}
                                 placeholder="Trống"
-                                className="w-11 px-1.5 py-0.5 bg-white border border-stone-200 rounded text-center text-stone-800 focus:outline-none focus:border-orange-500"
+                                className="w-10 px-1 py-0.5 bg-white border border-stone-200 rounded text-center text-stone-800 focus:outline-none focus:border-orange-500"
                             />
                             <span className="text-stone-500 font-medium">Tháng:</span>
                             <input
@@ -201,7 +218,7 @@ export default function GoodsRecordingMapPrintPage() {
                                 value={monthText}
                                 onChange={(e) => setMonthText(e.target.value)}
                                 placeholder="Trống"
-                                className="w-11 px-1.5 py-0.5 bg-white border border-stone-200 rounded text-center text-stone-800 focus:outline-none focus:border-orange-500"
+                                className="w-10 px-1 py-0.5 bg-white border border-stone-200 rounded text-center text-stone-800 focus:outline-none focus:border-orange-500"
                             />
                             <span className="text-stone-500 font-medium">Năm:</span>
                             <input
@@ -209,7 +226,36 @@ export default function GoodsRecordingMapPrintPage() {
                                 value={yearText}
                                 onChange={(e) => setYearText(e.target.value)}
                                 placeholder="2026"
-                                className="w-14 px-1.5 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
+                                className="w-14 px-1 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
+                            />
+                        </div>
+
+                        {/* Người thực hiện */}
+                        <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs">
+                            <span className="text-stone-500 font-medium">Người thực hiện:</span>
+                            <input
+                                type="text"
+                                value={performerName}
+                                onChange={(e) => setPerformerName(e.target.value)}
+                                placeholder="Để trống ký tay"
+                                className="w-28 px-1.5 py-0.5 bg-white border border-stone-200 rounded text-stone-800 focus:outline-none focus:border-orange-500"
+                            />
+                        </div>
+
+                        {/* Số hàng / mặt */}
+                        <div
+                            className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1.5 text-xs"
+                            title="Số hàng sơ đồ trên 1 mặt giấy A4 (mỗi hàng gồm 2 ô)"
+                        >
+                            <Rows3 size={13} className="text-stone-500" />
+                            <span className="text-stone-500 font-medium">Số hàng:</span>
+                            <input
+                                type="number"
+                                min={3}
+                                max={10}
+                                value={rowCount}
+                                onChange={(e) => setRowCount(Math.max(3, Math.min(10, Number(e.target.value) || 7)))}
+                                className="w-11 px-1 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
                             />
                         </div>
 
@@ -225,7 +271,7 @@ export default function GoodsRecordingMapPrintPage() {
                                 max={30}
                                 value={topMarginMm}
                                 onChange={(e) => setTopMarginMm(Math.max(0, Math.min(30, Number(e.target.value) || 0)))}
-                                className="w-12 px-1.5 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
+                                className="w-11 px-1 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
                             />
                             <span className="text-stone-500">mm</span>
                         </div>
@@ -260,17 +306,6 @@ export default function GoodsRecordingMapPrintPage() {
                         <div className="flex items-center rounded-lg border border-stone-200 overflow-hidden text-xs font-medium">
                             <button
                                 type="button"
-                                onClick={() => setOrientation('landscape')}
-                                className={`px-2.5 py-1.5 transition-colors cursor-pointer ${
-                                    orientation === 'landscape'
-                                        ? 'bg-stone-800 text-white'
-                                        : 'bg-white text-stone-600 hover:bg-stone-50'
-                                }`}
-                            >
-                                A4 Ngang
-                            </button>
-                            <button
-                                type="button"
                                 onClick={() => setOrientation('portrait')}
                                 className={`px-2.5 py-1.5 transition-colors cursor-pointer ${
                                     orientation === 'portrait'
@@ -279,6 +314,17 @@ export default function GoodsRecordingMapPrintPage() {
                                 }`}
                             >
                                 A4 Dọc
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setOrientation('landscape')}
+                                className={`px-2.5 py-1.5 transition-colors cursor-pointer ${
+                                    orientation === 'landscape'
+                                        ? 'bg-stone-800 text-white'
+                                        : 'bg-white text-stone-600 hover:bg-stone-50'
+                                }`}
+                            >
+                                A4 Ngang
                             </button>
                         </div>
 
@@ -292,7 +338,7 @@ export default function GoodsRecordingMapPrintPage() {
                                 max={50}
                                 value={sheetCount}
                                 onChange={(e) => setSheetCount(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
-                                className="w-12 px-1.5 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
+                                className="w-11 px-1 py-0.5 bg-white border border-stone-200 rounded text-center font-semibold text-stone-800 focus:outline-none focus:border-orange-500"
                             />
                         </div>
 
@@ -322,7 +368,7 @@ export default function GoodsRecordingMapPrintPage() {
                         <div className="max-w-7xl mx-auto flex items-center gap-2 text-xs text-amber-800">
                             <Info size={14} className="shrink-0" />
                             <span>
-                                Biểu mẫu đã dàn sẵn <strong>2 mặt ({pages.length} trang A4)</strong>, chỉ căn lề trên <strong>{topMarginMm}mm</strong> (trái/phải/dưới = 0mm). Khi hộp thoại in hiện ra, hãy bật <strong>In 2 mặt (Two-sided)</strong> và đặt <strong>Lề (Margins) = Không (None)</strong> để in tràn chuẩn khổ A4.
+                                Biểu mẫu đã dàn sẵn <strong>{safeRowCount} hàng ({safeRowCount * 2} ô/mặt)</strong> trên <strong>2 mặt A4</strong>, chỉ căn lề trên <strong>{topMarginMm}mm</strong> (trái/phải/dưới = 0mm). Khi in hãy chọn <strong>In 2 mặt (Two-sided)</strong> và <strong>Lề (Margins) = Không (None)</strong>.
                             </span>
                         </div>
                     </div>
@@ -337,12 +383,15 @@ export default function GoodsRecordingMapPrintPage() {
                         className="flex flex-col items-center print:block"
                     >
                         {/* Nhãn xem trước (ẩn khi in) */}
-                        <div className="w-full flex items-center justify-between mb-1.5 px-1 text-xs font-medium text-stone-500 print:hidden">
+                        <div
+                            className="flex items-center justify-between mb-1.5 px-1 text-xs font-medium text-stone-500 print:hidden"
+                            style={{ width: `${pageWidthMm}mm` }}
+                        >
                             <span>
                                 Tờ {page.sheetNumber} — {page.sideLabel}
                             </span>
                             <span>
-                                Trang {page.pageNumber}/{pages.length} • A4 {orientation === 'landscape' ? 'Ngang (297×210mm)' : 'Dọc (210×297mm)'}
+                                Trang {page.pageNumber}/{pages.length} • {safeRowCount} hàng ({safeRowCount * 2} ô) • A4 {orientation === 'portrait' ? 'Dọc (210×297mm)' : 'Ngang (297×210mm)'}
                             </span>
                         </div>
 
@@ -363,26 +412,46 @@ export default function GoodsRecordingMapPrintPage() {
                             {/* Tiêu đề NGÀY ... THÁNG ... NĂM ... */}
                             <div className="goods-map-header text-center font-bold text-black shrink-0 flex items-center justify-center">
                                 <span>NGÀY</span>
-                                <span className="inline-block min-w-[22mm] text-center px-1">
+                                <span className="inline-block min-w-[18mm] text-center px-1">
                                     {dayText}
                                 </span>
                                 <span>THÁNG</span>
-                                <span className="inline-block min-w-[22mm] text-center px-1">
+                                <span className="inline-block min-w-[18mm] text-center px-1">
                                     {monthText}
                                 </span>
                                 <span>NĂM</span>
-                                <span className="inline-block min-w-[16mm] text-center px-1.5">
+                                <span className="inline-block min-w-[14mm] text-center px-1">
                                     {yearText}
                                 </span>
                             </div>
 
-                            {/* Lưới 2 cột × 3 hàng = 6 khối sơ đồ */}
-                            <div className="goods-map-grid flex-1 grid grid-cols-2 grid-rows-3 min-h-0">
-                                {Array.from({ length: 6 }).map((_, blockIdx) => (
+                            {/* Lưới 2 cột × N hàng (mặc định 7 hàng = 14 ô/mặt) */}
+                            <div
+                                className="goods-map-grid flex-1 grid grid-cols-2 min-h-0"
+                                style={{
+                                    gridTemplateRows: `repeat(${safeRowCount}, minmax(0, 1fr))`
+                                }}
+                            >
+                                {Array.from({ length: safeRowCount * 2 }).map((_, blockIdx) => (
                                     <div key={blockIdx} className="min-h-0 min-w-0 h-full w-full">
                                         <GoodsRecordingBlock />
                                     </div>
                                 ))}
+                            </div>
+
+                            {/* Phần ký tên người thực hiện phía dưới cùng */}
+                            <div className="goods-map-signature shrink-0 flex justify-end">
+                                <div className="goods-map-signature-box text-center">
+                                    <div className="font-bold uppercase tracking-wide">
+                                        NGƯỜI THỰC HIỆN
+                                    </div>
+                                    <div className="italic goods-map-signature-note">
+                                        (Ký, ghi rõ họ tên)
+                                    </div>
+                                    <div className="goods-map-signature-space flex items-end justify-center font-bold">
+                                        {performerName}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -396,23 +465,42 @@ export default function GoodsRecordingMapPrintPage() {
                     background: #fff;
                 }
                 .goods-map-header {
-                    font-size: ${orientation === 'landscape' ? '15px' : '14px'};
-                    line-height: 1.2;
-                    padding-bottom: 2.5mm;
+                    font-size: 13px;
+                    line-height: 1.15;
+                    padding-bottom: 1.8mm;
                 }
                 .goods-map-grid {
-                    column-gap: 2.2mm;
-                    row-gap: 2.2mm;
+                    column-gap: 1.8mm;
+                    row-gap: 1.6mm;
                 }
                 .goods-block-table {
-                    border: 2px solid #000;
+                    border: 1.6px solid #000;
                 }
                 .goods-cell {
-                    border: 1.5px solid #000;
-                    font-size: ${orientation === 'landscape' ? '12.5px' : '11px'};
+                    border: 1px solid #000;
+                    font-size: ${cellFontSizePx}px;
+                    line-height: 1.1;
                     color: #000;
                     vertical-align: middle;
-                    padding: 1px 3px;
+                    padding: 0.5px 2px;
+                }
+                .goods-map-signature {
+                    padding-top: 2mm;
+                    padding-right: 12mm;
+                    padding-bottom: 1.5mm;
+                }
+                .goods-map-signature-box {
+                    min-width: 48mm;
+                    font-size: 11px;
+                    line-height: 1.2;
+                    color: #000;
+                }
+                .goods-map-signature-note {
+                    font-size: 9.5px;
+                }
+                .goods-map-signature-space {
+                    height: 10mm;
+                    font-size: 11px;
                 }
 
                 @media print {
@@ -422,7 +510,7 @@ export default function GoodsRecordingMapPrintPage() {
                     }
                     html,
                     body {
-                        width: ${pageWidthMm}mm !important;
+                        width: 100% !important;
                         height: auto !important;
                         margin: 0 !important;
                         padding: 0 !important;
@@ -431,7 +519,8 @@ export default function GoodsRecordingMapPrintPage() {
                         print-color-adjust: exact !important;
                     }
                     .goods-map-sheet {
-                        width: ${pageWidthMm}mm !important;
+                        width: 100% !important;
+                        max-width: ${pageWidthMm}mm !important;
                         height: ${pageHeightMm}mm !important;
                         margin: 0 !important;
                         padding-top: ${topMarginMm}mm !important;

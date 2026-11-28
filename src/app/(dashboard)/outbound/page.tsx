@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
-import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, Download, CheckSquare, Square, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Copy, Printer, Eye, X, ChevronDown } from 'lucide-react'
+import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, Download, CheckSquare, Square, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Copy, Printer, Eye, X, ChevronDown, Building2 } from 'lucide-react'
+import TransferToConsignmentModal from '@/components/accounting/consignment/TransferToConsignmentModal'
 import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
 import OutboundOrderDetailModal from './OutboundOrderDetailModal'
 import { LotExportBuffer } from '@/components/warehouse/lots/LotExportBuffer'
@@ -86,6 +87,7 @@ export default function OutboundPage() {
     const [isBatchDownloading, setIsBatchDownloading] = useState(false)
     const [previewItemsOrder, setPreviewItemsOrder] = useState<any | null>(null)
     const [duplicateOrderId, setDuplicateOrderId] = useState<string | null>(null)
+    const [consignmentTargetOrder, setConsignmentTargetOrder] = useState<any | null>(null)
 
     // Dữ liệu kết toán từ trang số liệu (nếu có)
     const [settlementShiftId, setSettlementShiftId] = useState<string | null>(null)
@@ -1098,6 +1100,19 @@ export default function OutboundPage() {
                                             <Copy size={13} className="text-purple-600" />
                                             <span>Nhân bản</span>
                                         </button>
+                                        {hasModule('consignment_manager') && currentActionOrder.status !== 'Cancelled' && (
+                                            <button
+                                                onClick={() => {
+                                                    const ord = currentActionOrder
+                                                    setActionMenu(null)
+                                                    setConsignmentTargetOrder(ord)
+                                                }}
+                                                className="w-full px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-zinc-700 flex items-center gap-2 transition-colors cursor-pointer font-medium"
+                                            >
+                                                <Building2 size={13} className="text-amber-600" />
+                                                <span>Gửi sang Kho ký gửi</span>
+                                            </button>
+                                        )}
                                         {currentActionOrder.status === 'Completed' && (
                                             <button
                                                 onClick={() => {
@@ -1357,6 +1372,15 @@ export default function OutboundPage() {
                 onClose={() => setIsAllExportModalOpen(false)} 
                 type="all"
             />
+
+            {hasModule('consignment_manager') && (
+                <TransferToConsignmentModal
+                    isOpen={Boolean(consignmentTargetOrder)}
+                    outboundOrder={consignmentTargetOrder}
+                    onClose={() => setConsignmentTargetOrder(null)}
+                    onSuccess={() => fetchOrders()}
+                />
+            )}
         </div>
     )
 }

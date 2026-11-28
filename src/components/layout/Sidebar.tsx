@@ -124,6 +124,7 @@ const menuItems: MenuItem[] = [
             { id: 'outbound', name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'outbound.view' },
             { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'audit.view' },
             { id: 'handover', name: 'Bàn giao hàng hóa', href: '/handover', icon: Handshake, requiredModule: 'handover' },
+            { id: 'consignment', name: 'Hàng ký gửi', href: '/accounting/consignment', icon: Building2, requiredModule: 'consignment_manager' },
             { id: 'reconciliation', name: 'Đối chiếu', href: '/accounting/reconciliation', icon: Scale, requiredPermission: 'report.view' },
         ]
     },

@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { X, Calendar, Package, User, FileText, CheckCircle, Printer, ChevronDown, Eye, Landmark, Hash, Tag, Trash2 } from 'lucide-react'
+import { X, Calendar, Package, User, FileText, CheckCircle, Printer, ChevronDown, Eye, Landmark, Hash, Tag, Trash2, Building2 } from 'lucide-react'
+import TransferToConsignmentModal from '@/components/accounting/consignment/TransferToConsignmentModal'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -77,6 +78,7 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
     const [uploading, setUploading] = useState(false)
     const [visibleNoteId, setVisibleNoteId] = useState<string | null>(null)
     const [showConfirmApprove, setShowConfirmApprove] = useState(false)
+    const [showTransferConsignment, setShowTransferConsignment] = useState(false)
     const fileInputRef = React.useRef<HTMLInputElement>(null)
 
     const targetUnit = order?.metadata?.targetUnit
@@ -627,6 +629,16 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                         </button>
 
                         <div className="flex items-center gap-3">
+                            {hasModule('consignment_manager') && order.status !== 'Cancelled' && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowTransferConsignment(true)}
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800 rounded-lg font-semibold text-sm transition-all active:scale-95"
+                                >
+                                    <Building2 size={17} />
+                                    Gửi Kho ký gửi
+                                </button>
+                            )}
                             <div className="relative">
                             <button
                                 onClick={() => setShowPrintMenu(!showPrintMenu)}
@@ -709,6 +721,17 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                     </div>
                 </DialogContent>
             </Dialog >
+
+            {hasModule('consignment_manager') && (
+                <TransferToConsignmentModal
+                    isOpen={showTransferConsignment}
+                    outboundOrder={order}
+                    onClose={() => setShowTransferConsignment(false)}
+                    onSuccess={() => {
+                        if (onUpdate) onUpdate()
+                    }}
+                />
+            )}
         </>
     )
 }
