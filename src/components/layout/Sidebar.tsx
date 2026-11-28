@@ -174,6 +174,7 @@ const menuItems: MenuItem[] = [
             { id: 'bank_inbound', name: 'Nhập ngân hàng', href: '/bank-inbound', icon: ArrowDownToLine, requiredModule: 'bank_inbound' },
             { id: 'bank_outbound', name: 'Xuất ngân hàng', href: '/bank-outbound', icon: ArrowUpFromLine, requiredModule: 'bank_outbound' },
             { id: 'print_sequence_number', name: 'In số thứ tự', href: '/print/production-lot?type=sheet', icon: Hash, requiredModule: 'print_sequence_number' },
+            { id: 'print_goods_recording_map', name: 'In sơ đồ ghi hàng', href: '/print/goods-recording-map', icon: LayoutGrid, requiredModule: 'print_goods_recording_map' },
         ]
     },
     {

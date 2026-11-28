@@ -1,4 +1,4 @@
-import { FileText, ArrowDownToLine, ArrowUpFromLine, Hash, Printer } from 'lucide-react'
+import { FileText, ArrowDownToLine, ArrowUpFromLine, Hash, Printer, LayoutGrid } from 'lucide-react'
 
 export interface PrintModule {
     id: string
@@ -35,6 +35,13 @@ export const PRINT_MODULES: PrintModule[] = [
         name: 'In số thứ tự (STT)',
         description: 'In bảng danh sách và biểu mẫu số thứ tự LOT theo ngày / lô sản xuất.',
         icon: Hash,
+        is_basic: true
+    },
+    {
+        id: 'print_goods_recording_map',
+        name: 'In sơ đồ ghi hàng',
+        description: 'In biểu mẫu sơ đồ ghi hàng khổ A4 (2 mặt, 6 ô/mặt) phục vụ ghi nhận vị trí kho, dãy, ô và tầng.',
+        icon: LayoutGrid,
         is_basic: true
     },
     {
